@@ -136,6 +136,9 @@ app.post('/api/transcribe', upload.single('file'), async (req, res) => {
     formData.append('model', 'whisper-large-v3');
     formData.append('temperature', '0');
     formData.append('response_format', 'verbose_json');
+    // Remarks are written in Telugu script (e.g. "పేమెంట్ ఇస్తాడు")
+    formData.append('language', 'te');
+    formData.append('prompt', 'పేమెంట్ ఇస్తాడు. రేపు కడతాను. ఫోన్ ఎత్తలేదు.');
     formData.append('file', fs.createReadStream(req.file.path), {
       filename,
       contentType: req.file.mimetype || 'audio/webm',

@@ -9,6 +9,12 @@ interface VoiceRecorderProps {
 
 export type RecordingStatus = 'IDLE' | 'RECORDING' | 'UPLOADING' | 'TRANSCRIBING' | 'ERROR' | 'SUCCESS';
 
+// Callback remarks are transcribed into Telugu script.
+// The prompt is a short Telugu sample that keeps Whisper writing Telugu letters
+// (English words like "payment" come out as "పేమెంట్").
+const TRANSCRIPTION_LANGUAGE = 'te';
+const TRANSCRIPTION_PROMPT = 'పేమెంట్ ఇస్తాడు. రేపు కడతాను. ఫోన్ ఎత్తలేదు.';
+
 const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCompleted, disabled }) => {
   const [status, setStatus] = useState<RecordingStatus>('IDLE');
   const [statusText, setStatusText] = useState<string>('');
@@ -178,6 +184,9 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCompleted,
         clientFormData.append('model', 'whisper-large-v3');
         clientFormData.append('temperature', '0');
         clientFormData.append('response_format', 'verbose_json');
+        // Remarks are written in Telugu script (e.g. "పేమెంట్ ఇస్తాడు")
+        clientFormData.append('language', TRANSCRIPTION_LANGUAGE);
+        clientFormData.append('prompt', TRANSCRIPTION_PROMPT);
         clientFormData.append('file', blob, filename);
 
         const clientResp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {

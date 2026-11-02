@@ -318,11 +318,12 @@ const DailyReportFinance: React.FC = () => {
       toast.error('No data to export');
       return;
     }
-    const headers = ['Date', 'Account', 'Particulars', 'Receipt No', 'Credit', 'Debit', 'Username', 'Entry Time'];
+    const headers = ['Date', 'Account', 'CD No', 'Particulars', 'Receipt No', 'Credit', 'Debit', 'Username', 'Entry Time'];
     const rows = filteredTransactions.map(tx => [
       tx.transactionDate,
       tx.headOfAccount,
-      tx.particulars,
+      getCdNo(tx),
+      getParticulars(tx),
       tx.receiptOrVoucherNo || '',
       tx.credit,
       tx.debit,
@@ -351,6 +352,20 @@ const DailyReportFinance: React.FC = () => {
       return `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
     return dateStr;
+  };
+
+  // CD / loan number of a row (only real loan numbers such as CD522, HP12, STBD7, TBD3)
+  const getCdNo = (tx: DailyFinancialTransaction): string => {
+    const v = (tx.accountOrLoanNo || '').trim().toUpperCase();
+    return /^(CD|HP|STBD|TBD)[-\s]?\d+/.test(v) ? v : '';
+  };
+
+  // Particulars always end with the receipt number, e.g. "80-Days Renewed - RC2547"
+  const getParticulars = (tx: DailyFinancialTransaction): string => {
+    const text = (tx.particulars || '').trim();
+    const rc = (tx.receiptOrVoucherNo || '').trim();
+    if (!rc || text.toUpperCase().includes(rc.toUpperCase())) return text;
+    return text ? `${text} - ${rc}` : rc;
   };
 
   const printContent = useMemo(() => {
@@ -401,9 +416,9 @@ const DailyReportFinance: React.FC = () => {
             <thead>
               <tr className="border-b border-slate-900 bg-slate-100">
                 <th className="p-2 border-r">Date</th>
+                <th className="p-2 border-r">CD No</th>
                 <th className="p-2 border-r">Account</th>
                 <th className="p-2 border-r">Particulars</th>
-                <th className="p-2 border-r">Receipt No</th>
                 <th className="p-2 border-r text-right">Credit</th>
                 <th className="p-2 text-right">Debit</th>
               </tr>
@@ -412,9 +427,9 @@ const DailyReportFinance: React.FC = () => {
               {filteredTransactions.map((tx) => (
                 <tr key={tx.id} className="border-b border-slate-200">
                   <td className="p-2 border-r">{formatTransDate(tx.transactionDate)}</td>
+                  <td className="p-2 border-r whitespace-nowrap font-black">{getCdNo(tx) || '—'}</td>
                   <td className="p-2 border-r">{tx.headOfAccount}</td>
-                  <td className="p-2 border-r">{tx.particulars}</td>
-                  <td className="p-2 border-r">{tx.receiptOrVoucherNo || '—'}</td>
+                  <td className="p-2 border-r">{getParticulars(tx)}</td>
                   <td className="p-2 border-r text-right text-emerald-700">{tx.credit > 0 ? tx.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}</td>
                   <td className="p-2 text-right text-red-700">{tx.debit > 0 ? tx.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}</td>
                 </tr>
@@ -554,8 +569,8 @@ const DailyReportFinance: React.FC = () => {
                     <tr>
                       <th className="px-4 py-3">Date</th>
                       <th className="px-4 py-3">Account</th>
+                      <th className="px-4 py-3">CD No</th>
                       <th className="px-4 py-3">Particulars</th>
-                      <th className="px-4 py-3">Receipt No</th>
                       <th className="px-4 py-3 text-right">Credit (Cr)</th>
                       <th className="px-4 py-3 text-right">Debit (Dr)</th>
                       <th className="px-4 py-3">Staff</th>
@@ -571,17 +586,20 @@ const DailyReportFinance: React.FC = () => {
                       >
                         <td className="px-4 py-3 font-mono text-slate-500">{formatTransDate(tx.transactionDate)}</td>
                         <td className="px-4 py-3 uppercase text-slate-900">{tx.headOfAccount}</td>
-                        <td className="px-4 py-3">
-                          <div className="text-slate-800">{tx.particulars}</div>
-                          {tx.accountOrLoanNo && (
-                            <div className="text-[9px] text-slate-400 font-mono mt-0.5 hover:underline text-indigo-700" onClick={(e) => { e.stopPropagation(); handleLoanClick(tx.accountOrLoanNo!); }}>
-                              LOAN AC: {tx.accountOrLoanNo}
-                            </div>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {getCdNo(tx) ? (
+                            <span
+                              className="inline-block px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 font-black text-[19px] leading-tight tracking-wide text-indigo-800 hover:underline cursor-pointer"
+                              data-help="CD loan number. Click it to open this loan's ledger."
+                              onClick={(e) => { e.stopPropagation(); handleLoanClick(getCdNo(tx)); }}
+                            >
+                              {getCdNo(tx)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 font-mono font-bold text-indigo-700 hover:underline" onClick={(e) => { e.stopPropagation(); handleReceiptClick(tx); }}>
-                          {tx.receiptOrVoucherNo || '—'}
-                        </td>
+                        <td className="px-4 py-3 text-slate-800">{getParticulars(tx)}</td>
                         <td className="px-4 py-3 text-right text-emerald-600 font-mono">
                           {tx.credit > 0 ? `${tx.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
                         </td>

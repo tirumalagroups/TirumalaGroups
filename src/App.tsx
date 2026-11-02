@@ -12,6 +12,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { TableModeProvider, useTableMode } from './contexts/TableModeContext';
 import { queryClient } from './lib/queryClient';
 import Layout from './components/Layout/Layout';
+import HoverHelp from './components/UI/HoverHelp';
 import Login from './pages/Login';
 import ModeSelection from './pages/ModeSelection';
 import Dashboard from './pages/Dashboard';
@@ -212,6 +213,7 @@ const AppContent: React.FC = () => {
 
   return (
     <Router>
+      <HoverHelp />
       <Toaster
         position='top-right'
         toastOptions={{

@@ -3412,6 +3412,61 @@ const CDLedger: React.FC = () => {
                 </div>
               </div>
 
+              {/* Account Position — same figures as the ledger screen, plus Total Outstanding */}
+              {(() => {
+                const money = (v: number) => formatCDCurrency(Number(v) || 0);
+                const docChargesDue = Number((ledgerMetrics as any).docChargesBalance || (selectedLoan as any).document_charges_due || 0);
+                const totalOutstanding = Number((
+                  (ledgerMetrics.principalBalance || 0) +
+                  (ledgerMetrics.pendingInterest || 0) +
+                  (ledgerMetrics.pendingPenalty || 0) +
+                  docChargesDue
+                ).toFixed(2));
+                const details: Array<[string, string]> = [
+                  ['Loan Amount', money(originalLoanAmount)],
+                  ['Rate / Penalty', `${Number(selectedLoan.interest_rate).toFixed(2)}% / ${Number(selectedLoan.penalty_percent || 0.75).toFixed(2)}%`],
+                  ['Compound Interest (CI)', Math.round(compoundInterestData.summary?.compoundInterestEarned || 0).toLocaleString('en-IN')],
+                  ['Loan Date', formatDateOld(originalLoanDate || selectedLoan.date) || '—'],
+                  ['Last Payment', renewCalculations?.error ? '—' : (formatDateOld(renewCalculations?.lastPaymentDate) || '—')],
+                  ['Current Due Date', renewCalculations?.error ? '—' : (formatDateOld(renewCalculations?.currentDueDate) || '—')],
+                  ['Days / Due Days', renewCalculations?.error ? '—' : `${Number(renewCalculations?.displayDays || 0).toFixed(2)} / ${renewCalculations?.displayDueDays ?? 0}`],
+                  ['Document Status', documentReturned ? 'Returned' : 'Submitted'],
+                ];
+                const position: Array<[string, string, string]> = [
+                  ['Principal Balance', money(ledgerMetrics.principalBalance), ''],
+                  ['Today Due', money(ledgerMetrics.todayDue), ''],
+                  ['Accrued Interest', money(ledgerMetrics.pendingInterest), ''],
+                  ['Accrued Penalty', money(ledgerMetrics.pendingPenalty), ''],
+                  ['Document Charges Due', money(docChargesDue), ''],
+                  ['Total for Renewal', money(ledgerMetrics.renewalDue), 'To extend the standard cycle'],
+                  ['Total to Regularize', money(ledgerMetrics.totalToRegularize), 'Overdue interest + penalty + renewal'],
+                  ['Total for Close', money(ledgerMetrics.totalClose), 'Full payoff of principal and dues'],
+                ];
+                return (
+                  <div className="grid grid-cols-2 gap-6 p-4 rounded-2xl border border-slate-300" style={{ breakInside: 'avoid' }}>
+                    <div className="space-y-1.5 text-[11px] font-sans">
+                      <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider block border-b pb-1 mb-1.5">Loan Details</span>
+                      {details.map(([label, value]) => (
+                        <div key={label} className="flex justify-between gap-3"><span className="text-slate-500">{label}:</span> <span className="font-extrabold text-slate-900 whitespace-nowrap">{value}</span></div>
+                      ))}
+                    </div>
+                    <div className="space-y-1.5 text-[11px] font-sans">
+                      <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider block border-b pb-1 mb-1.5">Account Position</span>
+                      {position.map(([label, value, hint]) => (
+                        <div key={label} className="flex justify-between gap-3">
+                          <span className="text-slate-500">{label}:{hint && <span className="block text-[9px] text-slate-400">{hint}</span>}</span>
+                          <span className="font-extrabold text-slate-900 whitespace-nowrap">{value}</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between gap-3 border-t-2 border-slate-800 pt-1.5 mt-1.5 text-[13px]">
+                        <span className="font-black text-slate-900 uppercase">Total Outstanding:<span className="block text-[9px] font-semibold normal-case text-slate-500">Principal + interest + penalty + document charges</span></span>
+                        <span className="font-black text-rose-700 whitespace-nowrap">{money(totalOutstanding)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Grouped horizontal statement table */}
               <div className="space-y-2">
                 <h4 className="text-green-800 border-b pb-1 text-[10px] font-bold uppercase tracking-wider">Statement Ledger (Pivot Event History)</h4>
