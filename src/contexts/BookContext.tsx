@@ -59,13 +59,15 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [books, setBooks] = useState<Book[]>([]);
   const [currentBook, setCurrentBook] = useState<Book | null>(null);
   const [loading, setLoading] = useState(true);
+  // The header "Report" selector was removed: reports always show All Reports
+  // (Profit & Loss and Balance Sheet). Forget any choice saved by the old selector.
   const [reportFilter, setReportFilter] = useState<string>(() => {
-    return localStorage.getItem('globalReportFilter') || 'ALL';
+    try { localStorage.removeItem('globalReportFilter'); } catch { /* storage unavailable */ }
+    return 'ALL';
   });
 
   const handleSetReportFilter = (filter: string) => {
     setReportFilter(filter);
-    localStorage.setItem('globalReportFilter', filter);
   };
 
   // Map active book mode (only regular and itr modes support books)

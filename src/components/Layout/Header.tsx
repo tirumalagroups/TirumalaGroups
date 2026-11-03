@@ -12,7 +12,7 @@ const Header: React.FC = () => {
   const today = new Date();
   const { user } = useAuth();
   const { mode, setMode, isFinanceMode, isITRMode } = useTableMode();
-  const { currentBook, books, selectBook, createBook, reportFilter, setReportFilter } = useBook();
+  const { currentBook, books, selectBook, createBook } = useBook();
   const { connectionStatus, isSyncing, pendingCount, lastSyncAt, offlineSince } = useOffline();
   
   const [isOpen, setIsOpen] = useState(false);
@@ -164,28 +164,6 @@ const Header: React.FC = () => {
                       <Plus className="w-3.5 h-3.5" />
                     </button>
                   )}
-                </div>
-
-                <span className="text-gray-300">|</span>
-
-                {/* Report Select */}
-                <div className="flex items-center gap-1">
-                  <span className="text-gray-500 font-semibold">Report:</span>
-                  <select
-                    value={reportFilter}
-                    onChange={(e) => setReportFilter(e.target.value)}
-                    className={`bg-transparent font-bold focus:outline-none cursor-pointer pr-1 ${
-                      currentBook?.is_locked 
-                        ? 'text-red-700'
-                        : isFinanceMode
-                          ? 'text-green-700'
-                          : 'text-blue-700'
-                    }`}
-                  >
-                    <option value="ALL">All Reports</option>
-                    <option value="BALANCE_SHEET">Balance Sheet</option>
-                    <option value="PROFIT_LOSS">Profit & Loss</option>
-                  </select>
                 </div>
               </div>
             )}

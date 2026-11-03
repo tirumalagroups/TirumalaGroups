@@ -300,12 +300,20 @@ const BalanceSheet: React.FC = () => {
       return;
     }
 
+    const credit = parseFloat(newRowData.credit.toString()) || 0;
+    const debit = parseFloat(newRowData.debit.toString()) || 0;
+    const typedBalance = newRowData.balance.toString().trim();
+    // Same rule as the real rows: balance = credit - debit, unless a balance is typed in.
+    const balance = typedBalance !== '' ? parseFloat(typedBalance) || 0 : credit - debit;
+    const net = credit !== 0 || debit !== 0 ? credit - debit : balance;
+
     const customRow: BalanceSheetAccount = {
       accountName: newRowData.accountName.trim(),
-      credit: parseFloat(newRowData.credit.toString()) || 0,
-      debit: parseFloat(newRowData.debit.toString()) || 0,
-      balance: parseFloat(newRowData.balance.toString()) || 0,
-      result: newRowData.result,
+      credit,
+      debit,
+      balance,
+      result: net >= 0 ? 'CREDIT' : 'DEBIT',
+      // 'YES' = Profit & Loss table, 'NO' = Balance Sheet table (chosen in the form)
       plYesNo: newRowData.plYesNo,
       bothYesNo: newRowData.bothYesNo,
     };
@@ -681,6 +689,9 @@ const BalanceSheet: React.FC = () => {
                     </td>
                     <td className='px-3 py-2 text-center font-bold'>
                       {customRow.result}
+                      <span className='block text-[11px] font-semibold text-blue-700'>
+                        {customRow.plYesNo === 'YES' ? 'Profit & Loss' : 'Balance Sheet'}
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -734,14 +745,16 @@ const BalanceSheet: React.FC = () => {
                       />
                     </td>
                     <td className='px-3 py-2'>
+                      {/* Which printed table this row goes in. Credit/Debit come from the amounts typed. */}
                       <select
-                        value={newRowData.result}
-                        onChange={(e) => handleNewRowDataChange('result', e.target.value)}
+                        value={newRowData.plYesNo}
+                        onChange={(e) => handleNewRowDataChange('plYesNo', e.target.value)}
                         className='w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500'
                         disabled={currentBook?.is_locked}
+                        data-help='Choose which printed table this row goes in: Balance Sheet or Profit & Loss.'
                       >
-                        <option value='CREDIT'>CREDIT</option>
-                        <option value='DEBIT'>DEBIT</option>
+                        <option value='NO'>Balance Sheet</option>
+                        <option value='YES'>Profit & Loss</option>
                       </select>
                     </td>
                   </tr>

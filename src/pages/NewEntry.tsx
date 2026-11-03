@@ -289,6 +289,8 @@ const NewEntry: React.FC = () => {
   const [showNewCompany, setShowNewCompany] = useState(false);
   const [showNewAccount, setShowNewAccount] = useState(false);
   const [showManageAccounts, setShowManageAccounts] = useState(false);
+  // Which form the Add / Manage / Del buttons were pressed in: the main entry or the dual entry.
+  const [actionTarget, setActionTarget] = useState<'main' | 'dual'>('main');
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [editingAccountName, setEditingAccountName] = useState('');
   const [editingAccountCategory, setEditingAccountCategory] = useState<'BALANCE_SHEET' | 'PROFIT_LOSS'>('BALANCE_SHEET');
@@ -446,7 +448,6 @@ const NewEntry: React.FC = () => {
   const dateRef = useRef<HTMLInputElement>(null);
   const companyNameRef = useRef<HTMLInputElement>(null);
   const mainAccountRef = useRef<HTMLInputElement>(null);
-  const reportRef = useRef<HTMLInputElement>(null);
   const subAccountRef = useRef<HTMLInputElement>(null);
   const particularsRef = useRef<HTMLInputElement>(null);
   const staffRef = useRef<HTMLInputElement>(null);
@@ -461,7 +462,6 @@ const NewEntry: React.FC = () => {
   // Refs for dual entry form navigation
   const dualCompanyNameRef = useRef<HTMLInputElement>(null);
   const dualMainAccountRef = useRef<HTMLInputElement>(null);
-  const dualReportRef = useRef<HTMLInputElement>(null);
   const dualSubAccountRef = useRef<HTMLInputElement>(null);
   const dualParticularsRef = useRef<HTMLInputElement>(null);
   const dualCreditRef = useRef<HTMLInputElement>(null);
@@ -882,7 +882,8 @@ const NewEntry: React.FC = () => {
 
       const matchedAcc = companyAccounts.find(acc => acc.acc_name === entry.accountName);
       const headOfAccountId = matchedAcc ? matchedAcc.id : null;
-      const reportCategory = entry.reportCategory || (matchedAcc ? matchedAcc.report_category : null);
+      // Balance Sheet / Profit & Loss comes from the account (set via Add / Manage under Main Account)
+      const reportCategory = matchedAcc?.report_category || entry.reportCategory || null;
       
       const mainEntryData = {
         acc_name: entry.accountName,
@@ -915,7 +916,7 @@ const NewEntry: React.FC = () => {
         const dualDebitNum = parseFloat(dualEntry.debit) || 0;
         const dualMatchedAcc = dualCompanyAccounts.find(acc => acc.acc_name === dualEntry.accountName);
         const dualHeadOfAccountId = dualMatchedAcc ? dualMatchedAcc.id : null;
-        const dualReportCategory = dualEntry.reportCategory || (dualMatchedAcc ? dualMatchedAcc.report_category : null);
+        const dualReportCategory = dualMatchedAcc?.report_category || dualEntry.reportCategory || null;
         
         // Payment mode removed from dual entry per user request
         const dualEntryData = {
@@ -1085,6 +1086,43 @@ const NewEntry: React.FC = () => {
     }
   };
 
+  // Company / accounts of the form (main or dual) the user is working in.
+  const targetEntry = actionTarget === 'dual' ? dualEntry : entry;
+  const setTargetEntry = actionTarget === 'dual' ? setDualEntry : setEntry;
+  const targetCompanyAccounts = actionTarget === 'dual' ? dualCompanyAccounts : companyAccounts;
+
+  // Reload the account lists of every form showing this company (main and/or dual).
+  const refreshAccountsForCompany = async (companyName: string) => {
+    const [names, fullAccs] = await Promise.all([
+      supabaseDB.getDistinctAccountNamesByCompany(companyName),
+      supabaseDB.getAccountsByCompany(companyName)
+    ]);
+    const options = names.map(name => ({ value: name, label: name }));
+    if (entry.companyName === companyName) {
+      setAccountOptions(options);
+      setCompanyAccounts(fullAccs);
+    }
+    if (dualEntry.companyName === companyName) {
+      setDualAccountOptions(options);
+      setDualCompanyAccounts(fullAccs);
+    }
+  };
+
+  const openNewAccount = (target: 'main' | 'dual') => {
+    setActionTarget(target);
+    setShowNewAccount(true);
+  };
+
+  const openManageAccounts = (target: 'main' | 'dual') => {
+    const companyName = target === 'dual' ? dualEntry.companyName : entry.companyName;
+    if (!companyName) {
+      toast.error('Please select a company first');
+      return;
+    }
+    setActionTarget(target);
+    setShowManageAccounts(true);
+  };
+
   const handleCreateCompany = async () => {
     if (!newCompanyName.trim()) {
       toast.error('Company name is required');
@@ -1106,7 +1144,7 @@ const NewEntry: React.FC = () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.dropdowns.companies() });
       await queryClient.refetchQueries({ queryKey: queryKeys.dropdowns.companies() });
       
-      setEntry(prev => ({ ...prev, companyName: company.company_name }));
+      setTargetEntry(prev => ({ ...prev, companyName: company.company_name }));
       setNewCompanyName('');
       setNewCompanyAddress('');
       setShowNewCompany(false);
@@ -1120,31 +1158,27 @@ const NewEntry: React.FC = () => {
   };
 
   const handleCreateAccount = async () => {
-    if (!newAccountName.trim() || !entry.companyName) {
+    const companyName = targetEntry.companyName;
+    if (!newAccountName.trim() || !companyName) {
       toast.error('Account name and company selection are required');
       return;
     }
 
     try {
       const account = await supabaseDB.addAccount(
-        entry.companyName,
+        companyName,
         newAccountName.trim(),
         newAccountReportCategory
       );
-      
-      // Refresh account options for the current company
-      const [names, fullAccs] = await Promise.all([
-        supabaseDB.getDistinctAccountNamesByCompany(entry.companyName),
-        supabaseDB.getAccountsByCompany(entry.companyName)
-      ]);
-      setAccountOptions(names.map(name => ({ value: name, label: name })));
-      setCompanyAccounts(fullAccs);
-      
+
+      // Refresh account options for the current company (main and/or dual form)
+      await refreshAccountsForCompany(companyName);
+
       // Invalidate companies query to refresh the dropdown (in case account creation affects company data)
       queryClient.invalidateQueries({ queryKey: queryKeys.dropdowns.companies() });
-      
+
       // Set the newly created account as selected
-      setEntry(prev => ({ 
+      setTargetEntry(prev => ({
         ...prev, 
         accountName: account.acc_name,
         reportCategory: account.report_category
@@ -1164,22 +1198,26 @@ const NewEntry: React.FC = () => {
       return;
     }
     try {
+      const companyName = targetEntry.companyName;
+      const newName = editingAccountName.trim().toUpperCase();
       const res = await supabaseDB.updateAccount(
-        entry.companyName,
+        companyName,
         acc.acc_name,
-        editingAccountName.trim().toUpperCase(),
+        newName,
         editingAccountCategory
       );
       if (res.success) {
         toast.success('Account updated successfully');
         setEditingAccountId(null);
         // Refresh accounts list
-        const [names, fullAccs] = await Promise.all([
-          supabaseDB.getDistinctAccountNamesByCompany(entry.companyName),
-          supabaseDB.getAccountsByCompany(entry.companyName)
-        ]);
-        setAccountOptions(names.map(name => ({ value: name, label: name })));
-        setCompanyAccounts(fullAccs);
+        await refreshAccountsForCompany(companyName);
+        // Keep the selected account's report category in step with the edit
+        const syncSelected = (prev: NewEntryForm) =>
+          prev.companyName === companyName && prev.accountName === acc.acc_name
+            ? { ...prev, accountName: newName, reportCategory: editingAccountCategory }
+            : prev;
+        setEntry(syncSelected);
+        setDualEntry(syncSelected);
       } else {
         toast.error(res.error || 'Failed to update account');
       }
@@ -1193,16 +1231,12 @@ const NewEntry: React.FC = () => {
       return;
     }
     try {
-      const res = await supabaseDB.deleteAccount(entry.companyName, acc.acc_name);
+      const companyName = targetEntry.companyName;
+      const res = await supabaseDB.deleteAccount(companyName, acc.acc_name);
       if (res.success) {
         toast.success('Account deleted successfully');
         // Refresh accounts list
-        const [names, fullAccs] = await Promise.all([
-          supabaseDB.getDistinctAccountNamesByCompany(entry.companyName),
-          supabaseDB.getAccountsByCompany(entry.companyName)
-        ]);
-        setAccountOptions(names.map(name => ({ value: name, label: name })));
-        setCompanyAccounts(fullAccs);
+        await refreshAccountsForCompany(companyName);
       } else {
         toast.error(res.error || 'Failed to delete account');
       }
@@ -1273,7 +1307,11 @@ const NewEntry: React.FC = () => {
     }
   };
 
-  const handleDelete = (type: 'company' | 'account' | 'subAccount' | 'staff') => {
+  const handleDelete = (
+    type: 'company' | 'account' | 'subAccount' | 'staff',
+    target: 'main' | 'dual' = 'main'
+  ) => {
+    setActionTarget(target);
     setDeleteType(type);
     setShowDeleteModal(true);
   };
@@ -1285,20 +1323,22 @@ const NewEntry: React.FC = () => {
 
       switch (deleteType) {
         case 'company':
-          if (entry.companyName) {
-            const result = await supabaseDB.deleteCompany(entry.companyName);
+          if (targetEntry.companyName) {
+            const deletedCompany = targetEntry.companyName;
+            const result = await supabaseDB.deleteCompany(deletedCompany);
             success = result.success;
             if (success) {
               // Invalidate and refetch companies query
               await queryClient.invalidateQueries({ queryKey: queryKeys.dropdowns.companies() });
               await queryClient.refetchQueries({ queryKey: queryKeys.dropdowns.companies() });
               // Companies are now managed by React Query - will be refetched automatically
-              setEntry(prev => ({
-                ...prev,
-                companyName: '',
-                accountName: '',
-                subAccount: '',
-              }));
+              // Clear the company in every form (main and/or dual) that had it selected
+              const clearCompany = (prev: NewEntryForm) =>
+                prev.companyName === deletedCompany
+                  ? { ...prev, companyName: '', accountName: '', reportCategory: '', subAccount: '' }
+                  : prev;
+              setEntry(clearCompany);
+              setDualEntry(clearCompany);
               message = 'Company deleted successfully!';
             } else {
               message = result.error || 'Failed to delete company';
@@ -1306,15 +1346,23 @@ const NewEntry: React.FC = () => {
           }
           break;
         case 'account':
-          if (entry.companyName && entry.accountName) {
-            const result = await supabaseDB.deleteAccount(entry.companyName, entry.accountName);
+          if (targetEntry.companyName && targetEntry.accountName) {
+            const companyName = targetEntry.companyName;
+            const deletedAccount = targetEntry.accountName;
+            const result = await supabaseDB.deleteAccount(companyName, deletedAccount);
             success = result.success;
             if (success) {
               // Invalidate and refetch accounts query
               await queryClient.invalidateQueries({ queryKey: ['dropdowns', 'accounts'] });
               await queryClient.refetchQueries({ queryKey: ['dropdowns', 'accounts'] });
-              // Accounts are now managed by React Query - will be refetched automatically
-              setEntry(prev => ({ ...prev, accountName: '', subAccount: '' }));
+              await refreshAccountsForCompany(companyName);
+              // Clear the account in every form (main and/or dual) that had it selected
+              const clearAccount = (prev: NewEntryForm) =>
+                prev.companyName === companyName && prev.accountName === deletedAccount
+                  ? { ...prev, accountName: '', reportCategory: '', subAccount: '' }
+                  : prev;
+              setEntry(clearAccount);
+              setDualEntry(clearAccount);
               message = 'Account deleted successfully!';
             } else {
               message = result.error || 'Failed to delete account';
@@ -2333,7 +2381,7 @@ const NewEntry: React.FC = () => {
                         type='button'
                         size='sm'
                         variant='secondary'
-                        onClick={() => setShowNewCompany(true)}
+                        onClick={() => { setActionTarget('main'); setShowNewCompany(true); }}
                         className='text-xs px-1 py-1'
                         icon={Building}
                         tabIndex={-1}
@@ -2345,7 +2393,7 @@ const NewEntry: React.FC = () => {
                           type='button'
                           size='sm'
                           variant='danger'
-                          onClick={() => handleDelete('company')}
+                          onClick={() => handleDelete('company', 'main')}
                           className='text-xs px-1 py-1'
                           icon={AlertCircle}
                           tabIndex={-1}
@@ -2357,7 +2405,7 @@ const NewEntry: React.FC = () => {
                   </div>
 
                   <div className='flex gap-1 items-end w-full' style={{ minWidth: 0 }}>
-                    <div className='w-[65%]' style={{ minWidth: 0 }}>
+                    <div className='w-full' style={{ minWidth: 0 }}>
                       <SearchableSelect
                         ref={mainAccountRef}
                         label='Main Account'
@@ -2366,19 +2414,19 @@ const NewEntry: React.FC = () => {
                           handleInputChange('accountName', value)
                         }
                         onSelect={value => {
+                          // The report (Balance Sheet / Profit & Loss) comes from the account itself,
+                          // set when the account is created with "Add" or changed in "Manage".
                           const matchedAcc = companyAccounts.find(acc => acc.acc_name === value);
-                          if (matchedAcc && matchedAcc.report_category) {
-                            handleInputChange('reportCategory', matchedAcc.report_category);
-                          }
+                          handleInputChange('reportCategory', matchedAcc?.report_category || '');
                           setTimeout(() => {
-                            if (reportRef.current) {
-                              reportRef.current.focus();
+                            if (staffRef.current) {
+                              staffRef.current.focus();
                             }
                           }, 100);
                         }}
                         options={accountOptions}
                         placeholder='Select account...'
-                        onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleKeyDown(e, reportRef)}
+                        onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleKeyDown(e, staffRef)}
                         required
                         disabled={!entry.companyName}
                         size='sm'
@@ -2388,7 +2436,7 @@ const NewEntry: React.FC = () => {
                           type='button'
                           size='sm'
                           variant='secondary'
-                          onClick={() => setShowNewAccount(true)}
+                          onClick={() => openNewAccount('main')}
                           className='text-xs px-1 py-1'
                           icon={FileText}
                           tabIndex={-1}
@@ -2399,13 +2447,7 @@ const NewEntry: React.FC = () => {
                           type='button'
                           size='sm'
                           variant='secondary'
-                          onClick={() => {
-                            if (!entry.companyName) {
-                              toast.error('Please select a company first');
-                              return;
-                            }
-                            setShowManageAccounts(true);
-                          }}
+                          onClick={() => openManageAccounts('main')}
                           className='text-xs px-1 py-1'
                           icon={Settings}
                           tabIndex={-1}
@@ -2417,7 +2459,7 @@ const NewEntry: React.FC = () => {
                             type='button'
                             size='sm'
                             variant='danger'
-                            onClick={() => handleDelete('account')}
+                            onClick={() => handleDelete('account', 'main')}
                             className='text-xs px-1 py-1'
                             icon={AlertCircle}
                             tabIndex={-1}
@@ -2426,33 +2468,6 @@ const NewEntry: React.FC = () => {
                           </Button>
                         )}
                       </div>
-                    </div>
-                    <div className='w-[35%]' style={{ minWidth: 0 }}>
-                      <SearchableSelect
-                        ref={reportRef}
-                        label='Report'
-                        value={entry.reportCategory || ''}
-                        onChange={value =>
-                          handleInputChange('reportCategory', value)
-                        }
-                        onSelect={() => {
-                          setTimeout(() => {
-                            if (staffRef.current) {
-                              staffRef.current.focus();
-                            }
-                          }, 100);
-                        }}
-                        options={[
-                          { value: 'BALANCE_SHEET', label: 'Balance Sheet' },
-                          { value: 'PROFIT_LOSS', label: 'Profit & Loss' }
-                        ]}
-                        placeholder='Category...'
-                        onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleKeyDown(e, staffRef)}
-                        required
-                        disabled={!entry.accountName}
-                        size='sm'
-                      />
-                      <div className='h-[26px] mt-1' />
                     </div>
                   </div>
                 </div>
@@ -2748,32 +2763,60 @@ const NewEntry: React.FC = () => {
                           style={{ fontWeight: 'bold', fontSize: '14px' }}
                         />
                       </div>
-                      <SearchableSelect
-                        ref={dualCompanyNameRef}
-                        label='Company Name'
-                        value={dualEntry.companyName}
-                        onChange={value =>
-                          setDualEntry(prev => ({
-                            ...prev,
-                            companyName: value,
-                          }))
-                        }
-                        onSelect={() => {
-                          // Auto-navigate to next field when company is selected
-                          setTimeout(() => {
-                            if (dualMainAccountRef.current) {
-                              dualMainAccountRef.current.focus();
-                            }
-                          }, 100);
-                        }}
-                        options={companiesOptions}
-                        placeholder='Select company...'
-                        onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleKeyDown(e, dualMainAccountRef)}
-                        required
-                        size='sm'
-                      />
+                      <div className='space-y-0.5'>
+                        <SearchableSelect
+                          ref={dualCompanyNameRef}
+                          label='Company Name'
+                          value={dualEntry.companyName}
+                          onChange={value =>
+                            setDualEntry(prev => ({
+                              ...prev,
+                              companyName: value,
+                            }))
+                          }
+                          onSelect={() => {
+                            // Auto-navigate to next field when company is selected
+                            setTimeout(() => {
+                              if (dualMainAccountRef.current) {
+                                dualMainAccountRef.current.focus();
+                              }
+                            }, 100);
+                          }}
+                          options={companiesOptions}
+                          placeholder='Select company...'
+                          onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleKeyDown(e, dualMainAccountRef)}
+                          required
+                          size='sm'
+                        />
+                        <div className='flex gap-1'>
+                          <Button
+                            type='button'
+                            size='sm'
+                            variant='secondary'
+                            onClick={() => { setActionTarget('dual'); setShowNewCompany(true); }}
+                            className='text-xs px-1 py-1'
+                            icon={Building}
+                            tabIndex={-1}
+                          >
+                            Add
+                          </Button>
+                          {dualEntry.companyName && (
+                            <Button
+                              type='button'
+                              size='sm'
+                              variant='danger'
+                              onClick={() => handleDelete('company', 'dual')}
+                              className='text-xs px-1 py-1'
+                              icon={AlertCircle}
+                              tabIndex={-1}
+                            >
+                              Del
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                       <div className='flex gap-1 items-end w-full' style={{ minWidth: 0 }}>
-                        <div className='w-[65%]' style={{ minWidth: 0 }}>
+                        <div className='w-full' style={{ minWidth: 0 }}>
                           <SearchableSelect
                             ref={dualMainAccountRef}
                             label='Main Account'
@@ -2785,52 +2828,59 @@ const NewEntry: React.FC = () => {
                               }))
                             }
                             onSelect={value => {
+                              // The report (Balance Sheet / Profit & Loss) comes from the account itself.
                               const matchedAcc = dualCompanyAccounts.find(acc => acc.acc_name === value);
-                              if (matchedAcc && matchedAcc.report_category) {
-                                setDualEntry(prev => ({ ...prev, reportCategory: matchedAcc.report_category }));
-                              }
-                              setTimeout(() => {
-                                if (dualReportRef.current) {
-                                  dualReportRef.current.focus();
-                                }
-                              }, 100);
-                            }}
-                            options={dualAccountOptions}
-                            placeholder='Select account...'
-                            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleKeyDown(e, dualReportRef)}
-                            required
-                            disabled={!dualEntry.companyName}
-                            size='sm'
-                          />
-                        </div>
-                        <div className='w-[35%]' style={{ minWidth: 0 }}>
-                          <SearchableSelect
-                            ref={dualReportRef}
-                            label='Report'
-                            value={dualEntry.reportCategory || ''}
-                            onChange={value =>
-                              setDualEntry(prev => ({
-                                ...prev,
-                                reportCategory: value,
-                              }))
-                            }
-                            onSelect={() => {
+                              setDualEntry(prev => ({ ...prev, reportCategory: matchedAcc?.report_category || '' }));
                               setTimeout(() => {
                                 if (dualSubAccountRef.current) {
                                   dualSubAccountRef.current.focus();
                                 }
                               }, 100);
                             }}
-                            options={[
-                              { value: 'BALANCE_SHEET', label: 'Balance Sheet' },
-                              { value: 'PROFIT_LOSS', label: 'Profit & Loss' }
-                            ]}
-                            placeholder='Category...'
+                            options={dualAccountOptions}
+                            placeholder='Select account...'
                             onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleKeyDown(e, dualSubAccountRef)}
                             required
-                            disabled={!dualEntry.accountName}
+                            disabled={!dualEntry.companyName}
                             size='sm'
                           />
+                          <div className='flex gap-1 mt-1'>
+                            <Button
+                              type='button'
+                              size='sm'
+                              variant='secondary'
+                              onClick={() => openNewAccount('dual')}
+                              className='text-xs px-1 py-1'
+                              icon={FileText}
+                              tabIndex={-1}
+                            >
+                              Add
+                            </Button>
+                            <Button
+                              type='button'
+                              size='sm'
+                              variant='secondary'
+                              onClick={() => openManageAccounts('dual')}
+                              className='text-xs px-1 py-1'
+                              icon={Settings}
+                              tabIndex={-1}
+                            >
+                              Manage
+                            </Button>
+                            {dualEntry.accountName && (
+                              <Button
+                                type='button'
+                                size='sm'
+                                variant='danger'
+                                onClick={() => handleDelete('account', 'dual')}
+                                className='text-xs px-1 py-1'
+                                icon={AlertCircle}
+                                tabIndex={-1}
+                              >
+                                Del
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -3186,7 +3236,7 @@ const NewEntry: React.FC = () => {
         <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
           <div className='bg-white rounded-lg max-w-2xl w-full p-6 max-h-[85vh] flex flex-col'>
             <div className='flex justify-between items-center mb-4'>
-              <h3 className='text-lg font-semibold text-gray-900'>Manage Main Accounts ({entry.companyName})</h3>
+              <h3 className='text-lg font-semibold text-gray-900'>Manage Main Accounts ({targetEntry.companyName})</h3>
               <button 
                 onClick={() => { setShowManageAccounts(false); setEditingAccountId(null); }}
                 className='text-gray-400 hover:text-gray-650 text-xl font-bold'
@@ -3205,7 +3255,7 @@ const NewEntry: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className='divide-y divide-gray-200'>
-                  {companyAccounts.map(acc => {
+                  {targetCompanyAccounts.map(acc => {
                     const isEditing = editingAccountId === acc.id;
                     return (
                       <tr key={acc.id} className='hover:bg-gray-50'>
@@ -3277,7 +3327,7 @@ const NewEntry: React.FC = () => {
                       </tr>
                     );
                   })}
-                  {companyAccounts.length === 0 && (
+                  {targetCompanyAccounts.length === 0 && (
                     <tr>
                       <td colSpan={3} className='text-center py-4 text-gray-500'>
                         No accounts created for this company yet.
