@@ -1783,10 +1783,10 @@ const EditEntry: React.FC = () => {
               <table className='fit-table fit-dense'>
                 <thead className='bg-gray-50 border-b border-gray-200'>
                   <tr>
-                    <th className='px-1 py-0 text-left font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-left font-medium text-gray-700'>
                       S.No
                     </th>
-                    <th className='px-1 py-0 text-left font-medium text-gray-700 whitespace-nowrap'>
+                    <th className='px-1 py-1 text-left font-medium text-gray-700 whitespace-nowrap'>
                       Date
                     </th>
                     <th className='px-1 py-1 text-left font-medium text-gray-700'>
@@ -1842,11 +1842,11 @@ const EditEntry: React.FC = () => {
                       }`}
                       onClick={() => setSelectedEntry(entry)}
                     >
-                      <td className='px-1 py-0 font-medium text-sm font-bold'>{index + 1}</td>
-                      <td className='px-1 py-0 text-sm font-bold fit-nowrap'>
+                      <td className='px-1 py-1 font-medium text-sm font-bold'>{index + 1}</td>
+                      <td className='px-1 py-1 text-sm font-bold fit-nowrap'>
                         {format(new Date(entry.c_date), 'dd/MM/yyyy')}
                       </td>
-                      <td className='px-1 py-1 font-medium text-blue-600 text-sm font-bold' title={entry.company_name}>
+                      <td className='px-1 py-1 font-medium text-blue-600 text-sm font-bold fit-name' title={entry.company_name}>
                         {entry.company_name}
                       </td>
                       
@@ -1858,14 +1858,16 @@ const EditEntry: React.FC = () => {
                       >
                         {entry.particulars}
                       </td>
-                      <td className='px-1 py-1 text-right text-sm font-bold fit-nowrap'>
-                        {entry.sale_qty !== null && entry.sale_qty !== undefined && entry.sale_qty !== ''
-                          ? `${Number(entry.sale_qty).toLocaleString()}`
-                          : '-'}
-                      </td>
+                      {/* Purchase Qty column */}
                       <td className='px-1 py-1 text-right text-sm font-bold fit-nowrap'>
                         {entry.purchase_qty !== null && entry.purchase_qty !== undefined && entry.purchase_qty !== ''
                           ? `${Number(entry.purchase_qty).toLocaleString()}`
+                          : '-'}
+                      </td>
+                      {/* Sale Qty column */}
+                      <td className='px-1 py-1 text-right text-sm font-bold fit-nowrap'>
+                        {entry.sale_qty !== null && entry.sale_qty !== undefined && entry.sale_qty !== ''
+                          ? `${Number(entry.sale_qty).toLocaleString()}`
                           : '-'}
                       </td>
                       <td className='px-1 py-1 text-right font-medium text-green-600 text-sm font-bold fit-nowrap'>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, X, User } from 'lucide-react';
+import { Search, X, User, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { supabaseFinance } from '../../lib/supabaseFinance';
@@ -7,7 +7,7 @@ import { formatRelationship } from '../../utils/relationship';
 
 /**
  * Aadhaar Search
- * Type an Aadhaar number (or name / phone / customer ID) and pick the customer from the dropdown.
+ * Search by Aadhaar number only, or pick an existing customer from the "Select Customer" dropdown.
  * Shows 4 tables: Running Loans, All Loans, As Guarantor 1, As Guarantor 2.
  * All figures come from the same calculation the Dues List uses (getDuesLedgerSummary).
  */
@@ -72,94 +72,110 @@ const fmtDate = (iso: string) => {
   return y && m && d ? `${d}/${m}/${y}` : iso;
 };
 
-// Characters that would break the PostgREST "or" filter
-const cleanQuery = (q: string) => q.replace(/[,()*%\\]/g, ' ').trim();
+const digitsOnly = (v: string | null | undefined) => (v || '').replace(/\D/g, '');
 
 const AadhaarSearch: React.FC = () => {
-  const [query, setQuery] = useState('');
-  const [options, setOptions] = useState<CustomerOption[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [highlight, setHighlight] = useState(0);
+  // All customers, for the "Select Customer" dropdown and Aadhaar matching
+  const [allCustomers, setAllCustomers] = useState<CustomerOption[]>([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(true);
+
+  // Aadhaar box: searches by Aadhaar number only
+  const [aadhaarInput, setAadhaarInput] = useState('');
+  const [showAadhaarList, setShowAadhaarList] = useState(false);
+  const [aadhaarHighlight, setAadhaarHighlight] = useState(0);
+
+  // "Select Customer" dropdown
+  const [showCustomerList, setShowCustomerList] = useState(false);
+  const [customerFilter, setCustomerFilter] = useState('');
+  const [customerHighlight, setCustomerHighlight] = useState(0);
+
   const [selected, setSelected] = useState<CustomerOption | null>(null);
   const [loadingLoans, setLoadingLoans] = useState(false);
   const [ownLoans, setOwnLoans] = useState<LoanRow[]>([]);
   const [g1Loans, setG1Loans] = useState<LoanRow[]>([]);
   const [g2Loans, setG2Loans] = useState<LoanRow[]>([]);
-  const boxRef = useRef<HTMLDivElement>(null);
-  const searchSeq = useRef(0);
-  // Set when the box text is filled in by picking a customer, so it doesn't search again
-  const skipNextSearch = useRef(false);
+  const aadhaarBoxRef = useRef<HTMLDivElement>(null);
+  const customerBoxRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
+  // Load every customer once (sorted by name)
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        let rows: CustomerOption[] = [];
+        for (let page = 0; page < 50; page++) {
+          const { data, error } = await supabase
+            .from('finance_customers')
+            .select(CUSTOMER_FIELDS)
+            .order('name', { ascending: true })
+            .range(page * 1000, page * 1000 + 999);
+          if (error) throw error;
+          rows = rows.concat((data || []) as CustomerOption[]);
+          if (!data || data.length < 1000) break;
+        }
+        if (alive) setAllCustomers(rows);
+      } catch (err) {
+        console.error('Failed to load customers:', err);
+        toast.error('Failed to load customers');
+      } finally {
+        if (alive) setLoadingCustomers(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Close the lists on an outside click
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setShowDropdown(false);
+      if (aadhaarBoxRef.current && !aadhaarBoxRef.current.contains(e.target as Node)) setShowAadhaarList(false);
+      if (customerBoxRef.current && !customerBoxRef.current.contains(e.target as Node)) setShowCustomerList(false);
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, []);
 
-  // Customer lookup while typing (Aadhaar first; name / phone / ID also work)
-  useEffect(() => {
-    if (skipNextSearch.current) {
-      skipNextSearch.current = false;
-      return;
-    }
-    const q = cleanQuery(query);
-    if (q.length < 2) {
-      setOptions([]);
-      return;
-    }
-    const seq = ++searchSeq.current;
-    const timer = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const digits = q.replace(/\s+/g, '');
-        let filter = `aadhaar.ilike.%${digits}%,name.ilike.%${q}%,phone.ilike.%${digits}%,phone_1.ilike.%${digits}%,phone_2.ilike.%${digits}%`;
-        if (/^\d{1,9}$/.test(digits)) filter += `,customer_id.eq.${digits}`;
-        const { data, error } = await supabase
-          .from('finance_customers')
-          .select(CUSTOMER_FIELDS)
-          .or(filter)
-          .order('name', { ascending: true })
-          .limit(25);
-        if (seq !== searchSeq.current) return;
-        if (error) throw error;
-        const list = (data || []) as CustomerOption[];
-        setOptions(list);
-        setHighlight(0);
-        // A full 12-digit Aadhaar that matches exactly one customer is selected straight away
-        const exact = /^\d{12}$/.test(digits) ? list.filter(c => (c.aadhaar || '').replace(/\s+/g, '') === digits) : [];
-        if (exact.length === 1) {
-          pickCustomer(exact[0]);
-        } else {
-          setShowDropdown(true);
-        }
-      } catch (err) {
-        console.error('Aadhaar search failed:', err);
-        if (seq === searchSeq.current) toast.error('Search failed. Please try again.');
-      } finally {
-        if (seq === searchSeq.current) setSearching(false);
-      }
-    }, 300);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  const aadhaarDigits = digitsOnly(aadhaarInput);
+
+  // Customers whose Aadhaar contains the typed digits (from 4 digits on)
+  const aadhaarMatches = useMemo(() => {
+    if (aadhaarDigits.length < 4) return [];
+    return allCustomers.filter(c => digitsOnly(c.aadhaar).includes(aadhaarDigits)).slice(0, 25);
+  }, [allCustomers, aadhaarDigits]);
+
+  // Dropdown list, narrowed by the small filter box inside it (name or customer ID)
+  const customerOptions = useMemo(() => {
+    const f = customerFilter.trim().toLowerCase().replace(/^#/, '');
+    if (!f) return allCustomers;
+    return allCustomers.filter(c => (c.name || '').toLowerCase().includes(f) || String(c.customer_id ?? '') === f);
+  }, [allCustomers, customerFilter]);
 
   const pickCustomer = (c: CustomerOption) => {
     setSelected(c);
-    setShowDropdown(false);
-    const text = c.aadhaar || c.name;
-    if (text !== query) skipNextSearch.current = true;
-    setQuery(text);
+    setAadhaarInput(digitsOnly(c.aadhaar));
+    setShowAadhaarList(false);
+    setShowCustomerList(false);
+    setCustomerFilter('');
     loadLoans(c);
+  };
+
+  const onAadhaarChange = (value: string) => {
+    const d = digitsOnly(value).slice(0, 12);
+    setAadhaarInput(d);
+    setAadhaarHighlight(0);
+    setShowAadhaarList(true);
+    // A full 12-digit Aadhaar that belongs to exactly one customer is opened straight away
+    if (d.length === 12) {
+      const exact = allCustomers.filter(c => digitsOnly(c.aadhaar) === d);
+      if (exact.length === 1) pickCustomer(exact[0]);
+    }
   };
 
   const clearSelection = () => {
     setSelected(null);
-    setQuery('');
-    setOptions([]);
+    setAadhaarInput('');
+    setCustomerFilter('');
+    setShowAadhaarList(false);
+    setShowCustomerList(false);
     setOwnLoans([]);
     setG1Loans([]);
     setG2Loans([]);
@@ -236,87 +252,138 @@ const AadhaarSearch: React.FC = () => {
 
   const runningLoans = useMemo(() => ownLoans.filter(l => l.isRunning), [ownLoans]);
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!showDropdown || options.length === 0) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => Math.min(h + 1, options.length - 1)); }
+  const listKeys = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    list: CustomerOption[],
+    highlight: number,
+    setHighlight: React.Dispatch<React.SetStateAction<number>>,
+    close: () => void
+  ) => {
+    if (e.key === 'Escape') { close(); return; }
+    if (list.length === 0) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => Math.min(h + 1, list.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)); }
-    else if (e.key === 'Enter') { e.preventDefault(); pickCustomer(options[highlight]); }
-    else if (e.key === 'Escape') setShowDropdown(false);
+    else if (e.key === 'Enter') { e.preventDefault(); pickCustomer(list[Math.min(highlight, list.length - 1)]); }
   };
 
   const village = (c: CustomerOption) => c.present_village || c.village || '';
   const phoneOf = (c: CustomerOption) => c.phone_1 || c.phone || '';
 
+  const optionRow = (c: CustomerOption, active: boolean, onHover: () => void) => (
+    <button
+      key={c.id}
+      type="button"
+      onMouseEnter={onHover}
+      onClick={() => pickCustomer(c)}
+      className={`w-full text-left px-3 py-2 border-b border-slate-100 last:border-0 ${active ? 'bg-slate-100' : 'bg-white'}`}
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="font-bold text-[15px] text-slate-900 uppercase">{c.name}</span>
+        <span className="font-mono text-[13px] text-slate-700 whitespace-nowrap">{c.aadhaar || 'NO AADHAAR'}</span>
+      </div>
+      <div className="text-[12px] text-slate-500 font-semibold uppercase">
+        #{c.customer_id ?? '—'}
+        {formatRelationship(c.father_name || c.father_husband_name) ? ` · ${formatRelationship(c.father_name || c.father_husband_name)}` : ''}
+        {phoneOf(c) ? ` · ${phoneOf(c)}` : ''}
+        {village(c) ? ` · ${village(c)}` : ''}
+      </div>
+    </button>
+  );
+
   return (
     <div className="space-y-3 w-full font-outfit text-slate-800 p-2">
       {/* Header + search */}
       <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4 space-y-3">
-        <div>
-          <h1 className="text-[22px] font-bold uppercase text-slate-900 leading-tight">Aadhaar Search</h1>
-          <p className="text-[13px] text-slate-500 font-bold uppercase">
-            Enter the Aadhaar number (or name / phone) and select the customer to see their loans and guarantees
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-[22px] font-bold uppercase text-slate-900 leading-tight">Aadhaar Search</h1>
+            <p className="text-[13px] text-slate-500 font-bold uppercase">
+              Enter the Aadhaar number, or select an existing customer, to see their loans and guarantees
+            </p>
+          </div>
+          {selected && (
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="inline-flex items-center gap-1 h-[38px] px-3 border border-slate-300 rounded text-[14px] font-bold uppercase text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+            >
+              <X className="w-4 h-4" /> Clear
+            </button>
+          )}
         </div>
 
-        <div ref={boxRef} className="relative max-w-2xl">
-          <div className="relative">
-            <Search className="w-5 h-5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => { setQuery(e.target.value); setShowDropdown(true); }}
-              onFocus={() => options.length > 0 && setShowDropdown(true)}
-              onKeyDown={onKeyDown}
-              placeholder="Aadhaar number, name or phone…"
-              className="w-full h-[48px] bg-white border border-slate-300 rounded pl-10 pr-10 text-[16px] font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-            />
-            {(query || selected) && (
-              <button
-                type="button"
-                onClick={clearSelection}
-                title="Clear"
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-slate-100 text-slate-500"
-              >
-                <X className="w-4 h-4" />
-              </button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-4xl">
+          {/* Aadhaar number only */}
+          <div ref={aadhaarBoxRef} className="relative">
+            <label className="block mb-1 text-[13px] font-bold uppercase text-slate-700">Aadhaar Number</label>
+            <div className="relative">
+              <Search className="w-5 h-5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                inputMode="numeric"
+                value={aadhaarInput}
+                onChange={(e) => onAadhaarChange(e.target.value)}
+                onFocus={() => aadhaarDigits.length >= 4 && setShowAadhaarList(true)}
+                onKeyDown={(e) => listKeys(e, aadhaarMatches, aadhaarHighlight, setAadhaarHighlight, () => setShowAadhaarList(false))}
+                placeholder="12-digit Aadhaar number"
+                className="w-full h-[48px] bg-white border border-slate-300 rounded pl-10 pr-3 text-[16px] font-bold font-mono tracking-wider text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+              />
+            </div>
+            {showAadhaarList && aadhaarDigits.length >= 4 && !(selected && digitsOnly(selected.aadhaar) === aadhaarDigits) && (
+              <div className="absolute z-30 mt-1 w-full bg-white border border-slate-300 rounded shadow-lg max-h-[320px] overflow-y-auto">
+                {loadingCustomers && <div className="px-3 py-2 text-[13px] text-slate-500 font-bold uppercase">Loading customers…</div>}
+                {!loadingCustomers && aadhaarMatches.length === 0 && (
+                  <div className="px-3 py-2 text-[13px] text-slate-500 font-bold uppercase">No customer with this Aadhaar number</div>
+                )}
+                {aadhaarMatches.map((c, i) => optionRow(c, i === aadhaarHighlight, () => setAadhaarHighlight(i)))}
+              </div>
             )}
           </div>
 
-          {showDropdown && cleanQuery(query).length >= 2 && (
-            <div className="absolute z-30 mt-1 w-full bg-white border border-slate-300 rounded shadow-lg max-h-[320px] overflow-y-auto">
-              {searching && <div className="px-3 py-2 text-[13px] text-slate-500 font-bold uppercase">Searching…</div>}
-              {!searching && options.length === 0 && (
-                <div className="px-3 py-2 text-[13px] text-slate-500 font-bold uppercase">No customer found</div>
-              )}
-              {!searching && options.map((c, i) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onMouseEnter={() => setHighlight(i)}
-                  onClick={() => pickCustomer(c)}
-                  className={`w-full text-left px-3 py-2 border-b border-slate-100 last:border-0 ${i === highlight ? 'bg-slate-100' : 'bg-white'}`}
-                >
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="font-bold text-[15px] text-slate-900 uppercase">{c.name}</span>
-                    <span className="font-mono text-[13px] text-slate-700 whitespace-nowrap">{c.aadhaar || 'NO AADHAAR'}</span>
-                  </div>
-                  <div className="text-[12px] text-slate-500 font-semibold uppercase">
-                    #{c.customer_id ?? '—'}
-                    {formatRelationship(c.father_name || c.father_husband_name) ? ` · ${formatRelationship(c.father_name || c.father_husband_name)}` : ''}
-                    {phoneOf(c) ? ` · ${phoneOf(c)}` : ''}
-                    {village(c) ? ` · ${village(c)}` : ''}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Select an existing customer */}
+          <div ref={customerBoxRef} className="relative">
+            <label className="block mb-1 text-[13px] font-bold uppercase text-slate-700">
+              Select Customer {!loadingCustomers && <span className="text-slate-400">({allCustomers.length})</span>}
+            </label>
+            <button
+              type="button"
+              onClick={() => { setShowCustomerList(v => !v); setCustomerHighlight(0); }}
+              className="w-full h-[48px] bg-white border border-slate-300 rounded px-3 flex items-center justify-between gap-2 text-left focus:outline-none focus:ring-1 focus:ring-slate-900"
+            >
+              <span className={`truncate text-[16px] font-bold uppercase ${selected ? 'text-slate-900' : 'text-slate-400'}`}>
+                {selected ? `${selected.name}  #${selected.customer_id ?? '—'}` : loadingCustomers ? 'Loading customers…' : 'Select existing customer'}
+              </span>
+              <ChevronDown className="w-5 h-5 text-slate-500 shrink-0" />
+            </button>
+            {showCustomerList && (
+              <div className="absolute z-30 mt-1 w-full bg-white border border-slate-300 rounded shadow-lg">
+                <div className="p-2 border-b border-slate-200">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={customerFilter}
+                    onChange={(e) => { setCustomerFilter(e.target.value); setCustomerHighlight(0); }}
+                    onKeyDown={(e) => listKeys(e, customerOptions, customerHighlight, setCustomerHighlight, () => setShowCustomerList(false))}
+                    placeholder="Type name or customer ID to narrow the list"
+                    className="w-full h-[38px] border border-slate-300 rounded px-2 text-[14px] font-semibold focus:outline-none focus:ring-1 focus:ring-slate-900"
+                  />
+                </div>
+                <div className="max-h-[320px] overflow-y-auto">
+                  {customerOptions.length === 0 && (
+                    <div className="px-3 py-2 text-[13px] text-slate-500 font-bold uppercase">No customer found</div>
+                  )}
+                  {customerOptions.map((c, i) => optionRow(c, i === customerHighlight, () => setCustomerHighlight(i)))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {!selected && (
         <div className="bg-white border border-dashed border-slate-300 rounded-lg p-10 text-center">
           <Search className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-          <p className="text-[14px] font-bold uppercase text-slate-500">Search a customer to see their loans</p>
+          <p className="text-[14px] font-bold uppercase text-slate-500">Enter an Aadhaar number or select a customer to see their loans</p>
         </div>
       )}
 

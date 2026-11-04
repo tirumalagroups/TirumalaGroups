@@ -746,7 +746,7 @@ const DeletedRecords: React.FC = () => {
                       >
                         <td className='px-1 py-1 font-medium text-sm font-bold'>{serialNumber}</td>
                       <td className='px-1 py-1 text-sm font-bold fit-nowrap'>{format(new Date(record.c_date), 'dd/MM/yyyy')}</td>
-                      <td className='px-1 py-1 text-sm font-bold' title={record.company_name}>{record.company_name}</td>
+                      <td className='px-1 py-1 text-sm font-bold fit-name' title={record.company_name}>{record.company_name}</td>
                       <td className='px-1 py-1 text-sm font-bold' title={record.acc_name}>{record.acc_name}</td>
                       <td className='px-1 py-1 text-sm font-bold' title={record.sub_acc_name || undefined}>{record.sub_acc_name || '-'}</td>
                       <td className='px-1 py-1 text-sm font-bold fit-particulars' title={record.particulars || ''}>

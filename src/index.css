@@ -72,9 +72,59 @@
   table.fit-table td span {
     font-size: inherit !important;
   }
+  /* Clear space between every column (overrides the tight px-1 / px-2 set on cells),
+     so neighbouring columns never read as one ("Thirumala Trading RAMESH TRADERS") */
+  table.fit-table th,
+  table.fit-table td {
+    padding-left: 7px !important;
+    padding-right: 7px !important;
+  }
+  table.fit-table.fit-dense th,
+  table.fit-table.fit-dense td {
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+  }
+  @media (max-width: 1599px) {
+    table.fit-table th, table.fit-table td { padding-left: 4px !important; padding-right: 4px !important; }
+    table.fit-table.fit-dense th, table.fit-table.fit-dense td { padding-left: 3px !important; padding-right: 3px !important; }
+  }
+  @media (max-width: 1399px) {
+    table.fit-table th, table.fit-table td { padding-left: 3px !important; padding-right: 3px !important; }
+    table.fit-table.fit-dense th, table.fit-table.fit-dense td { padding-left: 2px !important; padding-right: 2px !important; }
+  }
+  /* Action buttons stay side by side on one line */
   table.fit-table td > .flex {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 4px;
+  }
+  /* A right-aligned number column followed by a left-aligned text column
+     (e.g. Debit | Payment Mode) would touch: give the text column a clear gap */
+  table.fit-table td.text-right + td:not(.text-right):not(.text-center),
+  table.fit-table th.text-right + th:not(.text-right):not(.text-center) {
+    padding-left: 14px !important;
+  }
+  /* ...and the same before a number column that follows a centered one */
+  table.fit-table td.text-center + td.text-right,
+  table.fit-table th.text-center + th.text-right {
+    padding-left: 10px !important;
+  }
+  @media (max-width: 1599px) {
+    table.fit-table td.text-right + td:not(.text-right):not(.text-center),
+    table.fit-table th.text-right + th:not(.text-right):not(.text-center) {
+      padding-left: 10px !important;
+    }
+  }
+  /* Small laptops (1366px): less room, so smaller gaps and action buttons may wrap */
+  @media (max-width: 1399px) {
+    table.fit-table td > .flex { flex-wrap: wrap; }
+    table.fit-table td.text-right + td:not(.text-right):not(.text-center),
+    table.fit-table th.text-right + th:not(.text-right):not(.text-center) {
+      padding-left: 8px !important;
+    }
+    table.fit-table td.text-center + td.text-right,
+    table.fit-table th.text-center + th.text-right {
+      padding-left: 6px !important;
+    }
   }
   table.fit-table span.inline-flex,
   table.fit-table span.rounded,
@@ -88,6 +138,10 @@
   table.fit-table .fit-particulars {
     min-width: 9rem;
     overflow-wrap: anywhere;
+  }
+  /* Company names: on bigger screens keep them to 2 lines at most instead of 3 */
+  @media (min-width: 1600px) {
+    table.fit-table .fit-name { min-width: 9.5rem; }
   }
   /* Smaller laptop screens: slightly smaller text so every column still fits */
   @media (max-width: 1499px) {

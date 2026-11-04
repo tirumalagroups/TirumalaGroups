@@ -1877,7 +1877,7 @@ const ApproveRecords: React.FC = () => {
                       <td className='px-3 py-2 fit-nowrap'>
                         {format(new Date(entry.c_date), 'dd/MM/yyyy')}
                       </td>
-                      <td className='px-3 py-2 font-medium text-blue-600'>
+                      <td className='px-3 py-2 font-medium text-blue-600 fit-name'>
                         {entry.company_name}
                       </td>
                       <td className='px-3 py-2'>{entry.acc_name}</td>
@@ -2100,7 +2100,7 @@ const ApproveRecords: React.FC = () => {
                       <td className='px-3 py-2 fit-nowrap'>
                         {format(new Date(entry.c_date), 'dd/MM/yyyy')}
                       </td>
-                      <td className='px-3 py-2 font-medium text-blue-600'>
+                      <td className='px-3 py-2 font-medium text-blue-600 fit-name'>
                         {entry.company_name}
                       </td>
                       <td className='px-3 py-2'>{entry.acc_name}</td>
@@ -2329,7 +2329,7 @@ const ApproveRecords: React.FC = () => {
                     <td className='px-1 py-1 text-xs fit-nowrap'>
                       {format(new Date(d.c_date), 'dd/MM/yyyy')}
                     </td>
-                    <td className='px-1 py-1 font-medium text-blue-600 text-xs' title={d.company_name}>
+                    <td className='px-1 py-1 font-medium text-blue-600 text-xs fit-name' title={d.company_name}>
                       {d.company_name}
                     </td>
                     <td className='px-1 py-1 text-xs' title={d.acc_name?.replace(/\[DELETED\]\s*/g, '')}>

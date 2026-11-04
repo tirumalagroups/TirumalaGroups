@@ -1385,7 +1385,7 @@ const DetailedLedger: React.FC = () => {
                     <td className='px-0.5 py-1 text-gray-900 font-medium fit-nowrap'>
                       {format(new Date(entry.date), 'dd/MM/yyyy')}
                     </td>
-                    <td className='px-0.5 py-1 text-blue-600 font-semibold' title={entry.companyName}>
+                    <td className='px-0.5 py-1 text-blue-600 font-semibold fit-name' title={entry.companyName}>
                       {entry.companyName}
                     </td>
                     <td className='px-0.5 py-1 text-gray-900 font-medium' title={entry.accountName}>

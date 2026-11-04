@@ -971,7 +971,7 @@ const DailyReport: React.FC = () => {
                             index % 2 === 0 ? 'bg-white' : 'bg-gray-25'
                           }`}
                         >
-                          <td className='py-3 px-4 font-medium text-gray-900'>
+                          <td className='py-3 px-4 font-medium text-gray-900 fit-name'>
                             {companyName}
                           </td>
                           <td className='py-3 px-4 text-right text-green-600 font-medium'>
