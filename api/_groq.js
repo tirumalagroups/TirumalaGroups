@@ -4,7 +4,10 @@
 
 export const getGroqKey = () => (process.env.GROQ_API_KEY || '').trim();
 
-export const TEXT_MODEL = process.env.GROQ_TEXT_MODEL || 'llama-3.3-70b-versatile';
+// Text models tried in order. Groq retires models from time to time; if one is gone
+// (model_not_found) the next one is used. GROQ_TEXT_MODEL in Vercel can put another first.
+export const TEXT_MODELS = [process.env.GROQ_TEXT_MODEL, 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b']
+  .filter((m, i, all) => m && all.indexOf(m) === i);
 
 export const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -23,34 +26,51 @@ const TELUGU_SYSTEM_PROMPT = [
   '- Reply with only the converted Telugu text. No quotes, no explanation.',
 ].join('\n');
 
+// Remarks are often typed in CAPITALS; lower-case words read better as Telugu-English,
+// but words with digits (CD505, 5000) are kept exactly as typed.
+const prepareInput = (text) => text.split(/(\s+)/).map(w => (/\d/.test(w) ? w : w.toLowerCase())).join('');
+
+const cleanOutput = (text) => String(text || '')
+  .replace(/<think>[\s\S]*?<\/think>/gi, '')
+  .trim()
+  .replace(/^["'“”]+|["'“”]+$/g, '')
+  .trim();
+
 /** Convert any English / Telugu-English text to Telugu script. Returns the original text if nothing to convert. */
 export const convertToTelugu = async (text, key) => {
   const input = String(text || '').trim();
   if (!input || !/[A-Za-z]/.test(input)) return input;
 
-  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: TEXT_MODEL,
+  let lastErr = null;
+  for (const model of TEXT_MODELS) {
+    const body = {
+      model,
       temperature: 0,
-      max_tokens: 600,
+      max_tokens: 1500,
       messages: [
         { role: 'system', content: TELUGU_SYSTEM_PROMPT },
-        { role: 'user', content: input.toLowerCase() },
+        { role: 'user', content: prepareInput(input) },
       ],
-    }),
-  });
+    };
+    if (model.includes('gpt-oss')) body.reasoning_effort = 'low';
 
-  if (!resp.ok) {
+    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      return cleanOutput(data?.choices?.[0]?.message?.content) || input;
+    }
+
     const detail = await resp.text().catch(() => '');
-    const err = new Error(`Telugu conversion failed (HTTP ${resp.status})`);
-    err.status = resp.status;
-    err.detail = detail.slice(0, 300);
-    throw err;
+    lastErr = new Error(`Telugu conversion failed (HTTP ${resp.status})`);
+    lastErr.status = resp.status;
+    lastErr.detail = detail.slice(0, 300);
+    // Only move to the next model when this one is retired / not available
+    if (!/model_not_found|decommissioned|does not exist/i.test(detail)) break;
   }
-
-  const data = await resp.json();
-  const out = (data?.choices?.[0]?.message?.content || '').trim().replace(/^["'“”]+|["'“”]+$/g, '');
-  return out || input;
+  throw lastErr || new Error('Telugu conversion failed');
 };

@@ -49,18 +49,19 @@ export const convertTextToTelugu = async (text: string): Promise<string> => {
       method: 'POST',
       headers: { Authorization: `Bearer ${devKey}`, 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'qwen/qwen3.8-27b',
         temperature: 0,
-        max_tokens: 600,
+        max_tokens: 1500,
         messages: [
           { role: 'system', content: TELUGU_SYSTEM_PROMPT },
-          { role: 'user', content: input.toLowerCase() },
+          // lower-case for Telugu-English, but keep CD505 / 5000 as typed
+          { role: 'user', content: input.split(/(\s+)/).map(w => (/\d/.test(w) ? w : w.toLowerCase())).join('') },
         ],
       }),
     });
     if (resp.ok) {
       const data = await resp.json();
-      const out = (data?.choices?.[0]?.message?.content || '').trim().replace(/^["'“”]+|["'“”]+$/g, '');
+      const out = (data?.choices?.[0]?.message?.content || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim().replace(/^["'“”]+|["'“”]+$/g, '').trim();
       return out || input;
     }
     serverError = `Telugu conversion failed (HTTP ${resp.status})`;
