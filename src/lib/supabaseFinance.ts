@@ -465,6 +465,39 @@ export interface FinanceWaiverAudit {
 // --------------------------------------------------
 // Settings & System Configuration Interfaces
 
+
+/**
+ * Loan columns that may not exist yet in an older live database
+ * (e.g. finance.loans.partner_id before its migration is run).
+ * If the database says one of these is missing, the save is retried without it
+ * so the loan still saves instead of failing with "Could not find the 'partner_id' column".
+ */
+const OPTIONAL_LOAN_COLUMNS = ['partner_id', 'partner_name'];
+
+const missingOptionalLoanColumn = (err: any): string | null => {
+  if (!err) return null;
+  const msg = String(err.message || '');
+  if (err.code !== 'PGRST204' && !/schema cache/i.test(msg)) return null;
+  return OPTIONAL_LOAN_COLUMNS.find(col => msg.includes(`'${col}'`)) || null;
+};
+
+const runLoanWriteWithColumnFallback = async <T>(
+  row: Record<string, any>,
+  write: (row: Record<string, any>) => PromiseLike<{ data: T | null; error: any }>
+): Promise<{ data: T | null; error: any }> => {
+  let current = { ...row };
+  let result = await write(current);
+  for (let attempt = 0; attempt < OPTIONAL_LOAN_COLUMNS.length && result.error; attempt++) {
+    const col = missingOptionalLoanColumn(result.error);
+    if (!col || !(col in current)) break;
+    console.warn(`[finance_loans] Column "${col}" is missing in the database; saving the loan without it. Run the partner_id migration to store it.`);
+    const { [col]: _dropped, ...rest } = current;
+    current = rest;
+    result = await write(current);
+  }
+  return result;
+};
+
 class SupabaseFinance {
   // --- Partners ---
   async getPartners(): Promise<FinancePartner[]> {
@@ -2188,9 +2221,7 @@ class SupabaseFinance {
       delete (safeLoanData as any).surety_fingerprint_image_url;
       delete (safeLoanData as any).surety_fingerprint_added;
 
-      const { data: loan, error: loanError } = await supabase
-        .from('finance_loans')
-        .insert([{
+      const loanInsertRow: Record<string, any> = {
           ...safeLoanData,
           customer_id: customerId,
           status: 'Active',
@@ -2201,11 +2232,14 @@ class SupabaseFinance {
           fingerprint_added: loanData.fingerprint_added || customerData.fingerprint_added || false,
           father_husband_name: loanData.father_husband_name || customerData.father_husband_name || null,
           loan_category: loanData.loan_category || 'Regular'
-        }])
-        .select()
-        .single();
+        };
+      const { data: loan, error: loanError } = await runLoanWriteWithColumnFallback<any>(
+        loanInsertRow,
+        row => supabase.from('finance_loans').insert([row]).select().single()
+      );
 
       if (loanError) throw loanError;
+      if (!loan) throw new Error('Loan was not saved');
 
       // Create disbursement transaction
       const { error: txError } = await supabase
@@ -2458,12 +2492,10 @@ class SupabaseFinance {
         }
       }
 
-      const { data, error } = await supabase
-        .from('finance_loans')
-        .update({ ...loanPatch, updated_at: new Date().toISOString() })
-        .eq('id', id)
-        .select()
-        .single();
+      const { data, error } = await runLoanWriteWithColumnFallback<any>(
+        { ...loanPatch, updated_at: new Date().toISOString() },
+        row => supabase.from('finance_loans').update(row).eq('id', id).select().single()
+      );
       if (error) throw error;
 
       // Sync to finance_fingerprints
@@ -4493,11 +4525,15 @@ class SupabaseFinance {
     }
   }
 
-  async getActiveCDDuePositions(asOfDate: string): Promise<{ positions: any[], integrityErrors: any[] }> {
-    const { data: cdLoans, error: loansErr } = await supabase
+  async getActiveCDDuePositions(asOfDate: string, onlyLoanIds?: string[]): Promise<{ positions: any[], integrityErrors: any[] }> {
+    if (onlyLoanIds && onlyLoanIds.length === 0) return { positions: [], integrityErrors: [] };
+    let cdLoansQuery = supabase
       .from('finance_loans')
       .select('*')
       .like('loan_id', 'CD%');
+    // Optional: only these loans (same calculation, fewer rows)
+    if (onlyLoanIds) cdLoansQuery = cdLoansQuery.in('id', onlyLoanIds);
+    const { data: cdLoans, error: loansErr } = await cdLoansQuery;
       
     if (loansErr) throw loansErr;
     if (!cdLoans || cdLoans.length === 0) return { positions: [], integrityErrors: [] };
@@ -4665,6 +4701,23 @@ class SupabaseFinance {
           })
           .reduce((sum, e) => sum + Number(e.credit || 0), 0);
 
+        // Extra fields (used by Aadhaar Search; Dues List ignores them):
+        // - original loan amount from the disbursement row (loan.amount holds the current principal)
+        // - opening interest the CD Ledger shows on the "Loan Issue" row but which has no row in the
+        //   database (older loans). Same fallback as the CD Ledger: P x rate% x period days / 30.
+        //   When the opening row exists it is already inside interestPaid, so this stays 0.
+        const originalLoanAmount = disbEntry ? Number(disbEntry.debit || 0) || Number(loan.amount || 0) : Number(loan.amount || 0);
+        const hasOpeningCommissionRow = entries.some(e =>
+          e.entry_type === 'opening_commission' || e.entry_type === 'Commission' ||
+          ((e.account_name || '').toUpperCase() === 'CD COMMISSION A/C'
+            && (!e.receipt_no || e.receipt_no === '-')
+            && e.entry_type !== 'interest_payment' && e.entry_type !== 'penalty_payment')
+        );
+        const openingPeriodDays = (loan.period_days && Number(loan.period_days) > 0) ? Number(loan.period_days) : 30;
+        const openingInterest = hasOpeningCommissionRow
+          ? 0
+          : Number(((originalLoanAmount * ((Number(loan.interest_rate) || 3) / 100) * openingPeriodDays) / 30).toFixed(2));
+
         const cleanStatus = (loan.status || '').trim().toUpperCase();
         const isNpaClosed = cleanStatus === 'NPA_CLOSED' || cleanStatus === 'NPA CLOSED' || cleanStatus === 'NPA';
         const npaRec = npaRecordByLoanId.get(loan.loan_id) || npaRecordByLoanId.get(loan.id);
@@ -4707,7 +4760,9 @@ class SupabaseFinance {
             guarantor_2_id: loan.guarantor_2_id,
             closing_amount: closingAmt,
             total_paid: npaRec && npaRec.paid_amount ? Number(npaRec.paid_amount) : totCustomerPaid,
-            pending_penalty: pendPen
+            pending_penalty: pendPen,
+            original_loan_amount: originalLoanAmount,
+            opening_interest: openingInterest
           });
           return acc;
         }
@@ -4743,7 +4798,9 @@ class SupabaseFinance {
           guarantor_2_id: loan.guarantor_2_id,
           closing_amount: Math.round(pos.principalBalance + pos.accruedInterest + pos.accruedPenalty),
           total_paid: entries.filter(e => Number(e.credit || 0) > 0 && e.account_name !== 'CD Amount Paid').reduce((sum, e) => sum + Number(e.credit || 0), 0),
-          pending_penalty: pos.accruedPenalty
+          pending_penalty: pos.accruedPenalty,
+          original_loan_amount: originalLoanAmount,
+          opening_interest: openingInterest
         });
       } catch (err: any) {
         console.error(`Error calculating CD Account Position for loan ${loan.loan_id} (${loan.id}):`, err);
@@ -4767,18 +4824,22 @@ class SupabaseFinance {
     return results as any;
   }
 
-  async getDuesLedgerSummary(todayDate?: string): Promise<{ dues: any[], integrityErrors: any[] }> {
+  async getDuesLedgerSummary(todayDate?: string, onlyLoanIds?: string[]): Promise<{ dues: any[], integrityErrors: any[] }> {
     try {
       const targetDate = todayDate || getLocalBusinessDateISO();
+      if (onlyLoanIds && onlyLoanIds.length === 0) return { dues: [], integrityErrors: [] };
 
       // 1. Fetch all Active CD Due Positions
-      const cdPositions = await this.getActiveCDDuePositions(targetDate);
+      const cdPositions = await this.getActiveCDDuePositions(targetDate, onlyLoanIds);
 
       // 2. Fetch all Active Non-CD loans
-      const { data: nonCdLoans, error: loansErr } = await supabase
+      let nonCdQuery = supabase
         .from('finance_loans')
         .select('*')
         .not('loan_id', 'like', 'CD%');
+      // Optional: only these loans (same calculation, fewer rows)
+      if (onlyLoanIds) nonCdQuery = nonCdQuery.in('id', onlyLoanIds);
+      const { data: nonCdLoans, error: loansErr } = await nonCdQuery;
 
       if (loansErr) throw loansErr;
 

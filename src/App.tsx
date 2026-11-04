@@ -45,7 +45,6 @@ import FinanceDashboard from './pages/finance/FinanceDashboard';
 import LoanEntry from './pages/finance/LoanEntry';
 import EditLoanEntry from './pages/finance/EditLoanEntry';
 import Partners from './pages/finance/Partners';
-import SearchPage from './pages/finance/Search';
 import GeneralCalculator from './pages/finance/GeneralCalculator';
 import CapitalEntry from './pages/finance/CapitalEntry';
 import Camera from './pages/finance/Camera';
@@ -289,7 +288,7 @@ const AppContent: React.FC = () => {
           <Route path='finance/loan-entry' element={<OfflineGuard><LoanEntry /></OfflineGuard>} />
           <Route path='finance/edit-loan-entry' element={<OfflineGuard><EditLoanEntry /></OfflineGuard>} />
           <Route path='finance/partners' element={<OfflineGuard><Partners /></OfflineGuard>} />
-          <Route path='finance/search' element={<OfflineGuard><SearchPage /></OfflineGuard>} />
+          <Route path='finance/search' element={<OfflineGuard><AadhaarSearch /></OfflineGuard>} />
           <Route path='finance/calculator' element={<OfflineGuard><GeneralCalculator /></OfflineGuard>} />
           <Route path='finance/capital-entry' element={<OfflineGuard><CapitalEntry /></OfflineGuard>} />
           <Route path='finance/camera' element={<OfflineGuard><Camera /></OfflineGuard>} />

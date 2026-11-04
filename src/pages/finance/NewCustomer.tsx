@@ -12,6 +12,10 @@ import toast from 'react-hot-toast';
 import { BiometricScanner } from '../../components/finance/BiometricScanner';
 import { SignaturePad } from '../../components/finance/SignaturePad';
 import { compressToWebP } from '../../utils/imageCompressor';
+import { RELATIONSHIP_OPTIONS, parseRelationship, relationshipTypeForEdit } from '../../utils/relationship';
+
+// Passport photo shape (3.5 x 4.5 cm)
+const PHOTO_ASPECT = 35 / 45;
 
 const NewCustomer: React.FC = () => {
   const navigate = useNavigate();
@@ -28,10 +32,11 @@ const NewCustomer: React.FC = () => {
   // Form State
   const [aadhaar, setAadhaar] = useState('');
   const [name, setName] = useState('');
-  const [relationshipType, setRelationshipType] = useState<'Father' | 'Husband' | 'Wife'>('Father');
+  const [relationshipType, setRelationshipType] = useState<string>('S/O');
   const [relationshipName, setRelationshipName] = useState('');
   const [aadhaarAddress, setAadhaarAddress] = useState('');
   const [presentAddress, setPresentAddress] = useState('');
+  const [village, setVillage] = useState('');
   const [houseNo, setHouseNo] = useState('');
   const [mandal, setMandal] = useState('');
   const [district, setDistrict] = useState('');
@@ -83,16 +88,12 @@ const NewCustomer: React.FC = () => {
         setAadhaar(data.aadhaar || '');
         setName(data.name || '');
         const rawRel = data.father_name || data.father_husband_name || '';
-        if (rawRel.includes(':')) {
-          const parts = rawRel.split(':');
-          setRelationshipType(parts[0] as any);
-          setRelationshipName(parts[1] || '');
-        } else {
-          setRelationshipType('Father');
-          setRelationshipName(rawRel);
-        }
+        // Old "Father"/"Wife" records can't tell S/O vs D/O, so the user picks the relationship again
+        setRelationshipType(relationshipTypeForEdit(rawRel));
+        setRelationshipName(parseRelationship(rawRel).name);
         setAadhaarAddress(data.aadhaar_address || '');
         setPresentAddress(data.present_address || '');
+        setVillage(data.present_village || data.village || '');
         setHouseNo(data.address || '');
         setMandal(data.mandal || data.present_mandal || data.aadhaar_mandal || '');
         setDistrict(data.district || data.present_district || data.aadhaar_district || '');
@@ -179,17 +180,27 @@ const NewCustomer: React.FC = () => {
     const video = videoRef.current;
     if (!video) return;
 
-    const width = video.videoWidth || 640;
-    const height = video.videoHeight || 480;
+    const srcW = video.videoWidth || 640;
+    const srcH = video.videoHeight || 480;
+
+    // Take the centre of the camera frame in passport-photo shape (same part the live box shows)
+    let cropW = srcW;
+    let cropH = Math.round(srcW / PHOTO_ASPECT);
+    if (cropH > srcH) {
+      cropH = srcH;
+      cropW = Math.round(srcH * PHOTO_ASPECT);
+    }
+    const cropX = Math.round((srcW - cropW) / 2);
+    const cropY = Math.round((srcH - cropH) / 2);
 
     const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = cropW;
+    canvas.height = cropH;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     // Draw un-mirrored for captured image
-    ctx.drawImage(video, 0, 0, width, height);
+    ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
     // Freeze image immediately in preview box
@@ -437,10 +448,11 @@ const NewCustomer: React.FC = () => {
   const handleResetForm = () => {
     setAadhaar('');
     setName('');
-    setRelationshipType('Father');
+    setRelationshipType('S/O');
     setRelationshipName('');
     setAadhaarAddress('');
     setPresentAddress('');
+    setVillage('');
     setHouseNo('');
     setMandal('');
     setDistrict('');
@@ -461,7 +473,9 @@ const NewCustomer: React.FC = () => {
     const validationErrors: Record<string, boolean> = {};
 
     if (!name.trim()) validationErrors.name = true;
+    if (!relationshipType) validationErrors.relationshipType = true;
     if (!relationshipName.trim()) validationErrors.relationshipName = true;
+    if (!village.trim()) validationErrors.village = true;
     if (!phone1.trim()) validationErrors.phone1 = true;
     if (!aadhaar.trim()) validationErrors.aadhaar = true;
     if (!aadhaarAddress.trim()) validationErrors.aadhaarAddress = true;
@@ -513,8 +527,8 @@ const NewCustomer: React.FC = () => {
         father_name: `${relationshipType}:${relationshipName.trim()}`,
         aadhaar_address: aadhaarAddress.trim() || null,
         present_address: presentAddress.trim() || null,
-        village: presentAddress.trim() || null,
-        present_village: presentAddress.trim() || null,
+        village: village.trim() || null,
+        present_village: village.trim() || null,
         mandal: mandal.trim() || null,
         present_mandal: mandal.trim() || null,
         district: district.trim() || null,
@@ -676,13 +690,15 @@ const NewCustomer: React.FC = () => {
               </label>
               <select
                 value={relationshipType}
-                onChange={(e) => setRelationshipType(e.target.value as any)}
-                className="w-full bg-white border border-slate-250 rounded px-3 text-[16px] text-slate-800 focus:ring-1 focus:ring-slate-900 focus:outline-none h-[48px] font-bold"
+                onChange={(e) => { setRelationshipType(e.target.value); setErrors(p => ({...p, relationshipType: false})) }}
+                className={`w-full bg-white border rounded px-3 text-[16px] text-slate-800 focus:outline-none h-[48px] font-bold ${errors.relationshipType ? 'border-red-500 bg-red-50 ring-1 ring-red-500' : 'border-slate-250 focus:ring-1 focus:ring-slate-900'}`}
               >
-                <option value="Father">Father</option>
-                <option value="Husband">Husband</option>
-                <option value="Wife">Wife</option>
+                {!relationshipType && <option value="">Select</option>}
+                {RELATIONSHIP_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
+              {errors.relationshipType && <p className="text-xs text-red-500 font-bold mt-1">Select the relationship</p>}
             </div>
 
             <div className="col-span-8 md:col-span-4">
@@ -693,7 +709,7 @@ const NewCustomer: React.FC = () => {
                 type="text"
                 value={relationshipName}
                 onChange={(e) => { setRelationshipName(e.target.value); setErrors(p => ({...p, relationshipName: false})) }}
-                placeholder={`${relationshipType}'s Name`}
+                placeholder="Father / Husband / Son's Name"
                 className={`w-full bg-white border rounded px-3 text-[16px] text-slate-800 focus:outline-none h-[48px] font-bold uppercase ${errors.relationshipName ? 'border-red-500 bg-red-50 ring-1 ring-red-500' : 'border-slate-250 focus:ring-1 focus:ring-slate-900'}`}
               />
               {errors.relationshipName && <p className="text-xs text-red-500 font-bold mt-1">Relationship Name is required</p>}
@@ -745,7 +761,7 @@ const NewCustomer: React.FC = () => {
 
           {/* Row 3 Grid */}
           <div className="grid grid-cols-12 gap-3 border-t border-slate-100 pt-3">
-            <div className="col-span-12 md:col-span-4">
+            <div className="col-span-12 md:col-span-4 flex flex-col">
               <label className="block text-[15px] font-bold text-slate-700 uppercase mb-1">
                 Aadhaar Address <span className="text-red-500">*</span>
               </label>
@@ -755,12 +771,12 @@ const NewCustomer: React.FC = () => {
                 onChange={(e) => { setAadhaarAddress(e.target.value); setErrors(p => ({...p, aadhaarAddress: false})) }}
                 placeholder="Aadhaar Address (Door No, Street, Village, Mandal, District)"
                 rows={3}
-                className={`w-full bg-white border rounded p-2 text-[16px] text-slate-800 focus:outline-none resize-none font-bold ${errors.aadhaarAddress ? 'border-red-500 bg-red-50 ring-1 ring-red-500' : 'border-slate-250 focus:ring-1 focus:ring-slate-900'}`}
+                className={`w-full flex-1 bg-white border rounded p-2 text-[16px] text-slate-800 focus:outline-none resize-none font-bold ${errors.aadhaarAddress ? 'border-red-500 bg-red-50 ring-1 ring-red-500' : 'border-slate-250 focus:ring-1 focus:ring-slate-900'}`}
               />
               {errors.aadhaarAddress && <p className="text-xs text-red-500 font-bold mt-1">Aadhaar Address is required</p>}
             </div>
             
-            <div className="col-span-12 md:col-span-4">
+            <div className="col-span-12 md:col-span-4 flex flex-col">
               <label className="block text-[15px] font-bold text-slate-700 uppercase mb-1">
                 Present Address <span className="text-red-500">*</span>
               </label>
@@ -768,9 +784,9 @@ const NewCustomer: React.FC = () => {
                 ref={presentAddressRef}
                 value={presentAddress}
                 onChange={(e) => { setPresentAddress(e.target.value); setErrors(p => ({...p, presentAddress: false})) }}
-                placeholder="Street / Village / Area"
+                placeholder="Street / Area / Landmark"
                 rows={3}
-                className={`w-full bg-white border rounded p-2 text-[16px] text-slate-850 focus:outline-none resize-none font-bold ${errors.presentAddress ? 'border-red-500 bg-red-50 ring-1 ring-red-500' : 'border-slate-250 focus:ring-1 focus:ring-slate-900'}`}
+                className={`w-full flex-1 bg-white border rounded p-2 text-[16px] text-slate-850 focus:outline-none resize-none font-bold ${errors.presentAddress ? 'border-red-500 bg-red-50 ring-1 ring-red-500' : 'border-slate-250 focus:ring-1 focus:ring-slate-900'}`}
               />
               {errors.presentAddress && <p className="text-xs text-red-500 font-bold mt-1">Present Address is required</p>}
             </div>
@@ -791,6 +807,19 @@ const NewCustomer: React.FC = () => {
               </div>
               <div>
                 <label className="block text-[15px] font-bold text-slate-700 uppercase mb-1">
+                  Village <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={village}
+                  onChange={(e) => { setVillage(e.target.value); setErrors(p => ({...p, village: false})) }}
+                  placeholder="Village"
+                  className={`w-full bg-white border rounded px-3 text-[16px] text-slate-800 focus:outline-none h-[48px] font-bold uppercase ${errors.village ? 'border-red-500 bg-red-50 ring-1 ring-red-500' : 'border-slate-250 focus:ring-1 focus:ring-slate-900'}`}
+                />
+                {errors.village && <p className="text-xs text-red-500 font-bold mt-1">Village is required</p>}
+              </div>
+              <div>
+                <label className="block text-[15px] font-bold text-slate-700 uppercase mb-1">
                   Mandal <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -802,7 +831,7 @@ const NewCustomer: React.FC = () => {
                 />
                 {errors.mandal && <p className="text-xs text-red-500 font-bold mt-1">Mandal is required</p>}
               </div>
-              <div className="col-span-2">
+              <div>
                 <label className="block text-[15px] font-bold text-slate-700 uppercase mb-1">
                   District <span className="text-red-500">*</span>
                 </label>
@@ -833,19 +862,20 @@ const NewCustomer: React.FC = () => {
               )}
             </div>
 
-            <div className="w-full h-36 bg-slate-900 rounded-lg border border-slate-300 flex items-center justify-center overflow-hidden relative shadow-inner">
+            {/* Passport-photo shaped box; an uploaded photo is shown in full (never cropped) */}
+            <div className="h-44 aspect-[35/45] bg-slate-100 rounded border border-slate-300 flex items-center justify-center overflow-hidden relative shadow-inner">
               {cameraActive ? (
                 <video
                   ref={videoRef}
-                  className="w-full h-full object-cover transform -scale-x-100"
+                  className="w-full h-full object-cover transform -scale-x-100 bg-slate-900"
                   autoPlay
                   playsInline
                   muted
                 />
               ) : capturedImage ? (
-                <img src={capturedImage} alt="Captured Profile" className="w-full h-full object-cover" />
+                <img src={capturedImage} alt="Captured Profile" className="w-full h-full object-contain" />
               ) : cameraError ? (
-                <div className="text-center p-2 text-red-300 text-xs font-semibold">
+                <div className="text-center p-2 text-red-600 text-xs font-semibold">
                   <p>{cameraError}</p>
                 </div>
               ) : (

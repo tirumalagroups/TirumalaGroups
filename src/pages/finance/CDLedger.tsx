@@ -34,6 +34,7 @@ import { exportToExcel, exportToCSV } from '../../utils/excel';
 import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
 import CompoundInterestModal from '../../components/finance/CompoundInterestModal';
 import { getLocalBusinessDateISO } from '../../utils/dateUtils';
+import { formatRelationship } from '../../utils/relationship';
 import { cdCompoundInterestEngine, TOOLTIP_TEXT } from '../../services/cdCompoundInterestEngine';
 
 
@@ -936,7 +937,8 @@ const CDLedger: React.FC = () => {
       penaltyPaid: 0,
       docCharges: issueDoc,
       renewalAmount: 0,
-      totalPaid: 0,
+      // Interest (and document charges) collected when the loan is issued count as paid
+      totalPaid: issueInterest + issueDoc,
       outstandingPrincipal: issuePrincipal,
       presentDue: issuePrincipal + issueInterest + issueDoc,
       operator: disbEntry?.user_name || 'System',
@@ -2222,7 +2224,7 @@ const CDLedger: React.FC = () => {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="font-black text-[18px] text-slate-900 leading-tight truncate">{selectedLoan.customer?.name}</div>
-                          <div className="text-[13px] text-slate-500 leading-tight truncate">{selectedLoan.customer?.father_husband_name || '—'}</div>
+                          <div className="text-[13px] text-slate-500 leading-tight truncate">{formatRelationship(selectedLoan.customer?.father_husband_name) || '—'}</div>
                           <div className="text-[15px] font-bold text-slate-800 mt-0.5">☎ {selectedLoan.customer?.phone || 'N/A'}{selectedLoan.customer?.phone2 ? ` / ${selectedLoan.customer.phone2}` : ''}</div>
                           {selectedLoan.customer?.aadhaar && <div className="text-[13px] font-mono text-slate-600 mt-0.5">{selectedLoan.customer.aadhaar}</div>}
                           {selectedLoan.customer?.address && <div className="text-[13px] text-slate-500 truncate" title={selectedLoan.customer.address}>{selectedLoan.customer.address}</div>}
@@ -3324,7 +3326,7 @@ const CDLedger: React.FC = () => {
                   <div className="flex-1 space-y-1 text-[10px] font-sans">
                     <span className="text-[10px] font-black uppercase text-green-800 tracking-wider block border-b pb-0.5 mb-1.5">Borrower Details</span>
                     <div className="flex justify-between"><span className="text-gray-400">Name:</span> <span className="font-extrabold text-gray-900">{selectedLoan.customer?.name}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-400">S/o W/o:</span> <span className="font-bold text-gray-800">{selectedLoan.customer?.father_husband_name || 'N/A'}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-400">S/o W/o:</span> <span className="font-bold text-gray-800">{formatRelationship(selectedLoan.customer?.father_husband_name) || 'N/A'}</span></div>
                     <div className="flex justify-between"><span className="text-gray-400">Phone:</span> <span className="font-bold text-gray-800">{selectedLoan.customer?.phone || 'N/A'}</span></div>
                     {selectedLoan.customer?.phone2 && (
                       <div className="flex justify-between"><span className="text-gray-400">Phone 2:</span> <span className="font-bold text-gray-800">{selectedLoan.customer?.phone2}</span></div>

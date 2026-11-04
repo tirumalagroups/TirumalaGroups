@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { RefreshCw, Download, Play, Pause, AlertCircle, Mic, Square } from 'lucide-react';
+import { convertTextToTelugu, hasEnglishLetters } from '../../utils/telugu';
 
 interface VoiceRecorderProps {
   onTranscriptionCompleted: (text: string) => void;
@@ -167,19 +168,48 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCompleted,
 
     const filename = mimeType.includes('mp4') || mimeType.includes('m4a') ? 'recording.m4a' : 'recording.webm';
     
-    // Resolve Groq API key from environment
-    const groqKey = (import.meta.env.VITE_GROQ_API_KEY as string) || (process.env.GROQ_API_KEY as string);
-
     let transcribedText = '';
     let success = false;
     let failureReason = '';
 
-    // Strategy 1: Direct Groq Whisper API execution (Fastest & Most Reliable in Dev/Prod)
-    if (groqKey && groqKey.trim().length > 10) {
-      try {
-        setStatus('TRANSCRIBING');
-        setStatusText('Transcribing audio...');
+    // Strategy 1: Server route /api/transcribe (the Groq key stays on the server)
+    try {
+      setStatus('TRANSCRIBING');
+      setStatusText('Transcribing audio...');
 
+      const formData = new FormData();
+      formData.append('file', blob, filename);
+
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData
+      });
+
+      const isJson = response.headers.get('content-type')?.includes('application/json');
+
+      if (response.ok && isJson) {
+        const data = await response.json();
+        if (data.text && data.text.trim()) {
+          transcribedText = data.text.trim();
+          success = true;
+        } else {
+          failureReason = 'No speech detected in audio recording.';
+        }
+      } else if (isJson) {
+        const errData = await response.json();
+        failureReason = errData.error || `Server HTTP ${response.status}`;
+      } else {
+        failureReason = `Server route unavailable (HTTP ${response.status})`;
+      }
+    } catch (err: any) {
+      console.error('Server transcription route exception:', err);
+      failureReason = err.message || 'Server connection failed';
+    }
+
+    // Strategy 2 (local development only): direct Groq call with VITE_GROQ_API_KEY from .env.local
+    const devKey = ((import.meta.env.VITE_GROQ_API_KEY as string) || '').trim();
+    if (!success && devKey.length > 10 && failureReason !== 'No speech detected in audio recording.') {
+      try {
         const clientFormData = new FormData();
         clientFormData.append('model', 'whisper-large-v3');
         clientFormData.append('temperature', '0');
@@ -191,9 +221,7 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCompleted,
 
         const clientResp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${groqKey.trim()}`
-          },
+          headers: { 'Authorization': `Bearer ${devKey}` },
           body: clientFormData
         });
 
@@ -202,56 +230,22 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCompleted,
           if (clientData.text && clientData.text.trim()) {
             transcribedText = clientData.text.trim();
             success = true;
+            // Make sure any English letters left over become Telugu script
+            if (hasEnglishLetters(transcribedText)) {
+              try { transcribedText = await convertTextToTelugu(transcribedText); } catch { /* keep Whisper text */ }
+            }
           } else {
             failureReason = 'No speech detected in audio recording.';
           }
         } else {
-          const errText = await clientResp.text();
-          console.error('Transcription API error:', errText);
+          console.error('Transcription API error:', await clientResp.text());
           if (clientResp.status === 401) failureReason = 'Invalid API Key (HTTP 401)';
           else if (clientResp.status === 429) failureReason = 'API quota / rate limit exceeded (HTTP 429)';
           else failureReason = `Transcription Error (HTTP ${clientResp.status})`;
         }
       } catch (clientErr: any) {
-        console.warn('Strategy 1 direct Groq API exception, attempting server fallback:', clientErr);
+        console.warn('Direct Groq transcription failed:', clientErr);
         failureReason = clientErr.message || 'Direct API connection error';
-      }
-    }
-
-    // Strategy 2: Server API Route `/api/transcribe` Fallback
-    if (!success) {
-      try {
-        console.log('[DEBUG] Strategy 2: Attempting server route /api/transcribe...');
-        setStatus('TRANSCRIBING');
-        setStatusText('Transcribing audio via server API...');
-
-        const formData = new FormData();
-        formData.append('file', blob, filename);
-
-        const response = await fetch('/api/transcribe', {
-          method: 'POST',
-          body: formData
-        });
-
-        const isJson = response.headers.get('content-type')?.includes('application/json');
-
-        if (response.ok && isJson) {
-          const data = await response.json();
-          if (data.text && data.text.trim()) {
-            transcribedText = data.text.trim();
-            success = true;
-          } else {
-            failureReason = 'No speech detected in audio recording.';
-          }
-        } else if (isJson) {
-          const errData = await response.json();
-          failureReason = errData.error || `Server HTTP ${response.status}`;
-        } else {
-          failureReason = `Server proxy route unavailable (HTTP ${response.status})`;
-        }
-      } catch (err: any) {
-        console.error('Strategy 2 server route exception:', err);
-        if (!failureReason) failureReason = err.message || 'Server connection failed';
       }
     }
 

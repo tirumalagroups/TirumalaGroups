@@ -81,7 +81,7 @@ const FinanceSidebar: React.FC = () => {
         { icon: BookOpen, label: 'Day Book Entry', path: '/finance/cash-book', key: 'daybook' },
         { icon: DollarSign, label: 'Capital Entry', path: '/finance/capital-entry', key: 'capital_entry' },
         { icon: Calculator, label: 'Calculator', path: '/finance/calculator', key: 'calculator' },
-        { icon: Search, label: 'Search', path: '/finance/search', key: 'search' },
+        { icon: Search, label: 'Aadhaar Search', path: '/finance/search', key: 'search' },
       ],
     },
     {

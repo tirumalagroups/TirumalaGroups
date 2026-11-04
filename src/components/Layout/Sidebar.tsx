@@ -178,7 +178,7 @@ const Sidebar: React.FC = () => {
     { icon: Plus, label: 'Loan Entry', path: '/finance/loan-entry', key: 'loan_entry' },
     { icon: Edit, label: 'Edit Loan Entry', path: '/finance/edit-loan-entry', key: 'edit_loan_entry' },
     { icon: Users, label: 'Partners', path: '/finance/partners', key: 'partners' },
-    { icon: Search, label: 'Search', path: '/finance/search', key: 'search' },
+    { icon: Search, label: 'Aadhaar Search', path: '/finance/search', key: 'search' },
     { icon: Calculator, label: 'General Calculator', path: '/finance/calculator', key: 'calculator' },
     { icon: DollarSign, label: 'Capital Entry', path: '/finance/capital-entry', key: 'capital_entry' },
     { icon: Camera, label: 'Camera', path: '/finance/camera', key: 'camera' },
@@ -197,7 +197,6 @@ const Sidebar: React.FC = () => {
     { icon: FileText, label: 'Partner Performance', path: '/finance/partner-performance', key: 'partner_performance' },
     { icon: FileText, label: 'New Customers', path: '/finance/new-customers', key: 'new_customers' },
     { icon: Phone, label: 'Phone Number Editor', path: '/finance/phone-editor', key: 'phone_editor' },
-    { icon: Search, label: 'Aadhaar Search', path: '/finance/aadhaar-search', key: 'aadhaar_search' },
     { icon: FileEdit, label: 'Edited / Deleted Logs', path: '/finance/logs', key: 'logs' },
     {
       icon: Shield,

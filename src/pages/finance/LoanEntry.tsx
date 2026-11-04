@@ -26,14 +26,8 @@ import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
 import { cdLedgerRebuildService } from '../../services/cdLedgerRebuildService';
 
 
-export const getRelationshipDisplay = (rawRel: string | null | undefined): { label: string; name: string } => {
-  if (!rawRel) return { label: 'Father/Husband/Wife', name: 'N/A' };
-  if (rawRel.includes(':')) {
-    const parts = rawRel.split(':');
-    return { label: parts[0], name: parts[1] || '' };
-  }
-  return { label: 'Father/Husband', name: rawRel };
-};
+import { getRelationshipDisplay } from "../../utils/relationship";
+export { getRelationshipDisplay };
 
 // Module-level variable used to defer partner-name matching after partners list
 // loads. Set by loadLoanForEdit, consumed by the partners useEffect.
@@ -1641,7 +1635,7 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
                     <Input 
                       label={`${rel.label} Name`} 
                       value={rel.name} 
-                      onChange={editLoanId ? setCustFatherName : undefined} 
+                      onChange={editLoanId ? (v: string) => setCustFatherName(rel.type ? `${rel.type}:${v}` : v) : undefined}
                       readOnly={!editLoanId} 
                       placeholder="Father/Husband/Wife's Name" 
                     />

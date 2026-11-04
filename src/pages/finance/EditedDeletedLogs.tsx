@@ -523,6 +523,28 @@ const EditedDeletedLogs: React.FC = () => {
     return result.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [editedLogs, loans, customers, customerMap, loanMap, guarantorLoanMap]);
 
+  // Default date range = earliest to latest log date of the logs shown (Edited or Deleted).
+  // It stays the default until the user picks a date; "Clear" goes back to the default.
+  const [datesTouched, setDatesTouched] = useState(false);
+  const defaultDateRange = useMemo(() => {
+    const stamps = logType === 'edited'
+      ? groupedEditEvents.map(e => e.timestamp)
+      : deletedLogs.map(l => l.deleted_at);
+    const times = stamps.map(t => new Date(t).getTime()).filter(t => Number.isFinite(t));
+    if (times.length === 0) return { start: '', end: '' };
+    const toIsoDate = (ms: number) => {
+      const d = new Date(ms);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    return { start: toIsoDate(Math.min(...times)), end: toIsoDate(Math.max(...times)) };
+  }, [logType, groupedEditEvents, deletedLogs]);
+
+  useEffect(() => {
+    if (datesTouched) return;
+    setFilterStartDate(defaultDateRange.start);
+    setFilterEndDate(defaultDateRange.end);
+  }, [defaultDateRange, datesTouched]);
+
   // Unique operators list
   const uniqueOperators = useMemo(() => {
     const ops = new Set<string>();
@@ -767,7 +789,7 @@ const EditedDeletedLogs: React.FC = () => {
                 <div className="min-w-[160px] w-[160px]">
                   <FinanceSmartCalendar
                     value={filterStartDate}
-                    onChange={setFilterStartDate}
+                    onChange={(v: string) => { setDatesTouched(true); setFilterStartDate(v); }}
                     module="EDIT_DELETE_LOGS"
                     placeholder="START DATE"
                     allowClear
@@ -780,21 +802,20 @@ const EditedDeletedLogs: React.FC = () => {
                 <div className="min-w-[160px] w-[160px]">
                   <FinanceSmartCalendar
                     value={filterEndDate}
-                    onChange={setFilterEndDate}
+                    onChange={(v: string) => { setDatesTouched(true); setFilterEndDate(v); }}
                     module="EDIT_DELETE_LOGS"
                     placeholder="END DATE"
                     allowClear
                   />
                 </div>
 
-                {(searchQuery || filterTableType !== 'all' || filterOperator !== 'all' || filterStartDate || filterEndDate) && (
+                {(searchQuery || filterTableType !== 'all' || filterOperator !== 'all' || datesTouched) && (
                   <button
                     onClick={() => {
                       setSearchQuery('');
                       setFilterTableType('all');
                       setFilterOperator('all');
-                      setFilterStartDate('');
-                      setFilterEndDate('');
+                      setDatesTouched(false);
                     }}
                     className="text-xs font-bold text-rose-600 hover:text-rose-800 transition-colors uppercase tracking-wider whitespace-nowrap shrink-0"
                   >

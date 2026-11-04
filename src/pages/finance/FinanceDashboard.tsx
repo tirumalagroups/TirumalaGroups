@@ -106,7 +106,7 @@ const FinanceDashboard: React.FC = () => {
     { label: 'New Guarantor', path: '/finance/new-guarantor', icon: Shield },
     { label: 'Cash Book', path: '/finance/daybook', icon: BookOpen },
     { label: 'Capital', path: '/finance/capital-entry', icon: DollarSign },
-    { label: 'Search', path: '/finance/search', icon: Search },
+    { label: 'Aadhaar Search', path: '/finance/search', icon: Search },
     { label: 'Calculator', path: '/finance/calculator', icon: Calculator },
     { label: 'CD Ledger', path: '/finance/cd-ledger', icon: Book },
     { label: 'HP Ledger', path: '/finance/hp-ledger', icon: Book },

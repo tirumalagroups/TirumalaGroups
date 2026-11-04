@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
 import { useAuth } from '../../contexts/AuthContext';
 import VoiceRecorder from '../../components/finance/VoiceRecorder';
+import { convertTextToTelugu, hasEnglishLetters } from '../../utils/telugu';
 
 interface ActiveDueLoan {
   id: string;
@@ -135,6 +136,25 @@ const PaymentFollowUp: React.FC = () => {
     | 'DUPLICATE_ENTRY'
   >('ANSWERED');
   const [narration, setNarration] = useState('');
+  const [convertingTelugu, setConvertingTelugu] = useState(false);
+
+  // Typed remarks (English or Telugu in English letters) -> Telugu script
+  const handleConvertRemarksToTelugu = async () => {
+    if (!narration.trim() || convertingTelugu) return;
+    if (!hasEnglishLetters(narration)) {
+      toast('Remarks are already in Telugu');
+      return;
+    }
+    setConvertingTelugu(true);
+    try {
+      const telugu = await convertTextToTelugu(narration);
+      setNarration(telugu);
+    } catch (err: any) {
+      toast.error(`Telugu conversion failed: ${err?.message || 'try again'}`);
+    } finally {
+      setConvertingTelugu(false);
+    }
+  };
   const [nextFollowUpDate, setNextFollowUpDate] = useState('');
   const [promisedAmount, setPromisedAmount] = useState('');
 
@@ -508,13 +528,24 @@ const PaymentFollowUp: React.FC = () => {
     setSubmitting(true);
     const staffName = user?.username || 'Staff';
 
+    // Remarks are kept in Telugu: convert anything still typed in English letters
+    let finalNarration = narration.trim();
+    if (hasEnglishLetters(finalNarration)) {
+      try {
+        finalNarration = (await convertTextToTelugu(finalNarration)).trim() || finalNarration;
+        setNarration(finalNarration);
+      } catch {
+        toast('Could not convert remarks to Telugu; saved as typed');
+      }
+    }
+
     const payload = {
       loan_id: selectedLoan.id,
       follow_up_date: todayDateStr,
       followed_up_by: staffName,
       contacted_person: contactedPerson,
       result: result,
-      narration: narration.trim(),
+      narration: finalNarration,
       next_follow_up_date: !TERMINAL_OUTCOMES.includes(result) ? nextFollowUpDate || null : null,
       promised_amount: result === 'PROMISED TO PAY' && promisedAmount ? Number(promisedAmount) : null
     };
@@ -1261,15 +1292,32 @@ const PaymentFollowUp: React.FC = () => {
                         <div className="flex-1 flex flex-col min-h-0">
                           <div className="flex justify-between items-center mb-1">
                             <label className="text-[13px] font-black uppercase text-slate-500 block">Remarks</label>
-                            <VoiceRecorder onTranscriptionCompleted={(text) => {
-                              console.log('[DEBUG] 6. Final text written into Remarks:', text);
-                              setNarration(prev => prev ? prev + ' ' + text : text);
-                            }} disabled={submitting} />
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={handleConvertRemarksToTelugu}
+                                disabled={submitting || convertingTelugu || !narration.trim()}
+                                title="Convert typed English / Telugu-English remarks to Telugu (Ctrl+Enter)"
+                                className="h-[30px] px-2.5 rounded border border-indigo-300 bg-indigo-50 text-indigo-800 text-[13px] font-bold hover:bg-indigo-100 disabled:opacity-50 whitespace-nowrap"
+                              >
+                                {convertingTelugu ? 'Converting…' : 'అ → తెలుగు'}
+                              </button>
+                              <VoiceRecorder onTranscriptionCompleted={(text) => {
+                                console.log('[DEBUG] 6. Final text written into Remarks:', text);
+                                setNarration(prev => prev ? prev + ' ' + text : text);
+                              }} disabled={submitting} />
+                            </div>
                           </div>
                           <textarea
-                            placeholder="ENTER CALL REMARKS..."
+                            placeholder="TYPE REMARKS (ENGLISH OR TELUGU-ENGLISH), THEN PRESS అ → తెలుగు"
                             value={narration}
                             onChange={(e) => setNarration(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                e.preventDefault();
+                                handleConvertRemarksToTelugu();
+                              }
+                            }}
                             className="flex-1 min-h-[60px] w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] text-slate-900 focus:outline-none focus:border-slate-700 leading-relaxed font-semibold uppercase placeholder-slate-400 resize-none"
                             required
                           />
