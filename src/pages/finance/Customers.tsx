@@ -346,7 +346,7 @@ const Customers: React.FC = () => {
         <head>
           <title>Customer Profile Sheet - #${cust.customer_id}</title>
           <style>
-            body { font-family: 'Times New Roman', Times, serif; padding: 25px; color: #000; line-height: 1.35; font-size: 13px; }
+            body { font-family: 'Times New Roman', Times, serif; padding: 25px; color: #000; line-height: 1.35; font-size: 13px; text-transform: uppercase; }
             .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px; }
             .header h2 { margin: 0; font-size: 24px; font-weight: bold; text-transform: uppercase; }
             .header h3 { margin: 3px 0 0 0; font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }

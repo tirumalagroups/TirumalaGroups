@@ -399,7 +399,7 @@ const EditedRecords = () => {
           </div>
         ) : (
           <div className='overflow-x-auto'>
-            <table className='w-full text-xs border border-gray-200'>
+            <table className='fit-table fit-dense border border-gray-200'>
               <thead className='sticky top-0 bg-gray-50 z-10'>
                 <tr className='border-b border-gray-200'>
                   <th className='px-1.5 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap'>S.No</th>
@@ -424,7 +424,7 @@ const EditedRecords = () => {
                   const editedAt = formatEditedAt(log.edited_at);
                   const cellClass = (key: FieldKey) =>
                     `px-1.5 py-1 text-sm font-bold align-top ${
-                      NOWRAP_FIELDS.has(key) ? 'whitespace-nowrap' : 'break-words'
+                      NOWRAP_FIELDS.has(key) ? 'fit-nowrap' : key === 'particulars' ? 'fit-particulars' : ''
                     } ${key === 'credit' || key === 'debit' ? 'text-right' : ''}`;
                   return (
                     <React.Fragment key={log.id}>

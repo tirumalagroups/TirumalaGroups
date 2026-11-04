@@ -1772,7 +1772,7 @@ const ApproveRecords: React.FC = () => {
           subtitle={`Showing ${getCurrentPageEntries().length} of ${filteredEntries.length} records`}
         >
           <div className='overflow-x-auto'>
-            <table className='w-full text-sm'>
+            <table className='fit-table'>
               <thead className='bg-gray-50 border-b border-gray-200'>
                 <tr>
                   <th className='px-3 py-2 text-left font-medium text-gray-700'>
@@ -1874,7 +1874,7 @@ const ApproveRecords: React.FC = () => {
                         />
                       </td>
                       <td className='px-3 py-2 font-medium'>{index + 1 + (currentPage - 1) * recordsPerPage}</td>
-                      <td className='px-3 py-2'>
+                      <td className='px-3 py-2 fit-nowrap'>
                         {format(new Date(entry.c_date), 'dd/MM/yyyy')}
                       </td>
                       <td className='px-3 py-2 font-medium text-blue-600'>
@@ -1883,17 +1883,17 @@ const ApproveRecords: React.FC = () => {
                       <td className='px-3 py-2'>{entry.acc_name}</td>
                       <td className='px-3 py-2'>{entry.sub_acc_name || '-'}</td>
                       <td
-                        className='px-3 py-2 max-w-xs truncate'
+                        className='px-3 py-2 fit-particulars'
                         title={entry.particulars}
                       >
                         {entry.particulars}
                       </td>
-                      <td className='px-3 py-2 text-right font-medium text-green-600'>
+                      <td className='px-3 py-2 text-right font-medium text-green-600 fit-nowrap'>
                         {entry.credit > 0
                           ? `${entry.credit.toLocaleString()}`
                           : '-'}
                       </td>
-                      <td className='px-3 py-2 text-right font-medium text-red-600'>
+                      <td className='px-3 py-2 text-right font-medium text-red-600 fit-nowrap'>
                         {entry.debit > 0
                           ? `${entry.debit.toLocaleString()}`
                           : '-'}
@@ -1901,7 +1901,8 @@ const ApproveRecords: React.FC = () => {
                       <td className='px-3 py-2'>{entry.staff}</td>
                       <td className='px-3 py-2'>{entry.users}</td>
                       <td className='px-3 py-2'>
-                        {`${format(new Date(entry.c_date), 'dd/MM/yyyy')} ${format(new Date(entry.entry_time), 'hh:mm:ss a')}`}
+                        <span className='fit-nowrap'>{format(new Date(entry.c_date), 'dd/MM/yyyy')}</span>{' '}
+                        <span className='fit-nowrap'>{format(new Date(entry.entry_time), 'hh:mm:ss a')}</span>
                       </td>
                       <td className='px-3 py-2'>
                         {entry.edited === true || entry.edited === 'true' ? (
@@ -2029,10 +2030,10 @@ const ApproveRecords: React.FC = () => {
           subtitle={`Showing ${getApprovedPageEntries().length} of ${filteredApprovedEntries.length} records`}
         >
           <div className='overflow-x-auto'>
-            <table className='w-full text-sm'>
+            <table className='fit-table'>
               <thead className='bg-gray-50 border-b border-gray-200'>
                 <tr>
-                  <th className='px-3 py-2 text-left font-medium text-gray-700 w-12'>
+                  <th className='px-3 py-2 text-left font-medium text-gray-700'>
                     S.No
                   </th>
                   <th className='px-3 py-2 text-left font-medium text-gray-700'>
@@ -2096,7 +2097,7 @@ const ApproveRecords: React.FC = () => {
                       title="Double click to view details"
                     >
                       <td className='px-3 py-2 font-medium'>{index + 1 + (approvedPage - 1) * recordsPerPage}</td>
-                      <td className='px-3 py-2'>
+                      <td className='px-3 py-2 fit-nowrap'>
                         {format(new Date(entry.c_date), 'dd/MM/yyyy')}
                       </td>
                       <td className='px-3 py-2 font-medium text-blue-600'>
@@ -2105,17 +2106,17 @@ const ApproveRecords: React.FC = () => {
                       <td className='px-3 py-2'>{entry.acc_name}</td>
                       <td className='px-3 py-2'>{entry.sub_acc_name || '-'}</td>
                       <td
-                        className='px-3 py-2 max-w-xs truncate'
+                        className='px-3 py-2 fit-particulars'
                         title={entry.particulars}
                       >
                         {entry.particulars}
                       </td>
-                      <td className='px-3 py-2 text-right font-medium text-green-600'>
+                      <td className='px-3 py-2 text-right font-medium text-green-600 fit-nowrap'>
                         {entry.credit > 0
                           ? `${entry.credit.toLocaleString()}`
                           : '-'}
                       </td>
-                      <td className='px-3 py-2 text-right font-medium text-red-600'>
+                      <td className='px-3 py-2 text-right font-medium text-red-600 fit-nowrap'>
                         {entry.debit > 0
                           ? `${entry.debit.toLocaleString()}`
                           : '-'}
@@ -2123,7 +2124,8 @@ const ApproveRecords: React.FC = () => {
                       <td className='px-3 py-2'>{entry.staff}</td>
                       <td className='px-3 py-2'>{entry.users}</td>
                       <td className='px-3 py-2'>
-                        {`${format(new Date(entry.c_date), 'dd/MM/yyyy')} ${format(new Date(entry.entry_time), 'hh:mm:ss a')}`}
+                        <span className='fit-nowrap'>{format(new Date(entry.c_date), 'dd/MM/yyyy')}</span>{' '}
+                        <span className='fit-nowrap'>{format(new Date(entry.entry_time), 'hh:mm:ss a')}</span>
                       </td>
                       <td className='px-3 py-2'>
                         <span className='inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 border border-green-200'>
@@ -2272,46 +2274,46 @@ const ApproveRecords: React.FC = () => {
             </Button>
           </div>
           <div className='overflow-x-auto'>
-            <table className='w-full text-xs table-fixed'>
+            <table className='fit-table'>
               <thead className='sticky top-0 bg-gray-50 z-10'>
                 <tr className='border-b border-gray-200'>
-                  <th className='w-12 px-1 py-1 text-left font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-left font-medium text-gray-700'>
                     S.No
                   </th>
-                  <th className='w-16 px-1 py-1 text-left font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-left font-medium text-gray-700'>
                     Date
                   </th>
-                  <th className='w-20 px-1 py-1 text-left font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-left font-medium text-gray-700'>
                     Company
                   </th>
-                  <th className='w-20 px-1 py-1 text-left font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-left font-medium text-gray-700'>
                     Account
                   </th>
-                  <th className='w-20 px-1 py-1 text-left font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-left font-medium text-gray-700'>
                     Sub Account
                   </th>
-                  <th className='w-32 px-1 py-1 text-left font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-left font-medium text-gray-700'>
                     Particulars
                   </th>
-                  <th className='w-16 px-1 py-1 text-right font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-right font-medium text-gray-700'>
                     Credit
                   </th>
-                  <th className='w-16 px-1 py-1 text-right font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-right font-medium text-gray-700'>
                     Debit
                   </th>
-                  <th className='w-16 px-1 py-1 text-left font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-left font-medium text-gray-700'>
                     Staff
                   </th>
-                  <th className='w-16 px-1 py-1 text-left font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-left font-medium text-gray-700'>
                     User
                   </th>
-                  <th className='w-20 px-1 py-1 text-left font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-left font-medium text-gray-700'>
                     Deleted At
                   </th>
-                  <th className='w-20 px-1 py-1 text-center font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-center font-medium text-gray-700'>
                     Status
                   </th>
-                  <th className='w-24 px-1 py-1 text-center font-medium text-gray-700'>
+                  <th className='px-1 py-1 text-center font-medium text-gray-700'>
                     Actions
                   </th>
                 </tr>
@@ -2323,38 +2325,38 @@ const ApproveRecords: React.FC = () => {
                       ? 'bg-red-50 hover:bg-red-100' 
                       : 'hover:bg-gray-50'
                   }`}>
-                    <td className='w-12 px-1 py-1 font-medium text-xs'>{index + 1}</td>
-                    <td className='w-16 px-1 py-1 text-xs'>
+                    <td className='px-1 py-1 font-medium text-xs'>{index + 1}</td>
+                    <td className='px-1 py-1 text-xs fit-nowrap'>
                       {format(new Date(d.c_date), 'dd/MM/yyyy')}
                     </td>
-                    <td className='w-20 px-1 py-1 font-medium text-blue-600 text-xs truncate' title={d.company_name}>
+                    <td className='px-1 py-1 font-medium text-blue-600 text-xs' title={d.company_name}>
                       {d.company_name}
                     </td>
-                    <td className='w-20 px-1 py-1 text-xs truncate' title={d.acc_name?.replace(/\[DELETED\]\s*/g, '')}>
+                    <td className='px-1 py-1 text-xs' title={d.acc_name?.replace(/\[DELETED\]\s*/g, '')}>
                       {d.acc_name?.replace(/\[DELETED\]\s*/g, '') || '-'}
                     </td>
-                    <td className='w-20 px-1 py-1 text-xs truncate' title={d.sub_acc_name?.replace(/\[DELETED\]\s*/g, '')}>
+                    <td className='px-1 py-1 text-xs' title={d.sub_acc_name?.replace(/\[DELETED\]\s*/g, '')}>
                       {d.sub_acc_name?.replace(/\[DELETED\]\s*/g, '') || '-'}
                     </td>
-                    <td className='w-32 px-1 py-1 text-xs truncate' title={d.particulars?.replace(/\[DELETED\]\s*/g, '')}>
+                    <td className='px-1 py-1 text-xs fit-particulars' title={d.particulars?.replace(/\[DELETED\]\s*/g, '')}>
                       {d.particulars?.replace(/\[DELETED\]\s*/g, '') || '-'}
                     </td>
-                    <td className='w-16 px-1 py-1 text-right font-medium text-green-600 text-xs'>
+                    <td className='px-1 py-1 text-right font-medium text-green-600 text-xs fit-nowrap'>
                       {d.credit ? `${Number(d.credit).toLocaleString()}` : '-'}
                     </td>
-                    <td className='w-16 px-1 py-1 text-right font-medium text-red-600 text-xs'>
+                    <td className='px-1 py-1 text-right font-medium text-red-600 text-xs fit-nowrap'>
                       {d.debit ? `${Number(d.debit).toLocaleString()}` : '-'}
                     </td>
-                    <td className='w-16 px-1 py-1 text-xs truncate' title={d.staff}>
+                    <td className='px-1 py-1 text-xs' title={d.staff}>
                       {d.staff}
                     </td>
-                    <td className='w-16 px-1 py-1 text-xs truncate' title={d.users}>
+                    <td className='px-1 py-1 text-xs' title={d.users}>
                       {d.users}
                     </td>
-                    <td className='w-20 px-1 py-1 text-xs'>
+                    <td className='px-1 py-1 text-xs fit-nowrap'>
                       {format(new Date(d.deleted_at), 'hh:mm:ss a')}
                     </td>
-                    <td className='w-20 px-1 py-1 text-center'>
+                    <td className='px-1 py-1 text-center'>
                       {isApprovedStatus(d.approved) ? (
                         <span className='inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 border border-green-200'>
                           ✅ Approved
@@ -2369,7 +2371,7 @@ const ApproveRecords: React.FC = () => {
                         </span>
                       )}
                     </td>
-                    <td className='w-24 px-1 py-1 text-center'>
+                    <td className='px-1 py-1 text-center'>
                       <div className='flex flex-row gap-1'>
                         <Button
                           variant='secondary'

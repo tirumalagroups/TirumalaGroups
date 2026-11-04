@@ -725,7 +725,7 @@ const Vehicles: React.FC = () => {
           </div>
         ) : (
           <div className='overflow-x-auto'>
-            <table className='w-full text-sm'>
+            <table className='fit-table fit-lg'>
               <thead className='bg-gray-50 border-b border-gray-200'>
                 <tr>
                   <th className='px-3 py-2 text-left font-bold text-blue-700'>

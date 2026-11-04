@@ -33,8 +33,6 @@ const BookManagement: React.FC = () => {
   const [editingBook, setEditingBook] = useState<Book | null>(null);
   const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
-  const [editStart, setEditStart] = useState('');
-  const [editEnd, setEditEnd] = useState('');
   const [editColor, setEditColor] = useState('#3b82f6');
   const [updating, setUpdating] = useState(false);
 
@@ -67,8 +65,6 @@ const BookManagement: React.FC = () => {
     setEditingBook(book);
     setEditName(book.name);
     setEditDesc(book.description || '');
-    setEditStart(book.start_date || '');
-    setEditEnd(book.end_date || '');
     setEditColor(book.color || '#3b82f6');
   };
 
@@ -91,8 +87,7 @@ const BookManagement: React.FC = () => {
           .update({
             name: editName.trim(),
             description: editDesc.trim(),
-            start_date: editStart || null,
-            end_date: editEnd || null,
+            // Start date stays the day the book was created; books have no end date.
             color: editColor,
             updated_at: new Date().toISOString()
           })
@@ -178,7 +173,7 @@ const BookManagement: React.FC = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="fit-table fit-lg text-left border-collapse">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50 text-gray-500 font-semibold text-xs uppercase tracking-wider">
                   <th className="px-6 py-4">Book Code / Name</th>
@@ -366,31 +361,6 @@ const BookManagement: React.FC = () => {
                   rows={2}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">
-                    Start Date
-                  </label>
-                  <input
-                    type="date"
-                    value={editStart}
-                    onChange={(e) => setEditStart(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">
-                    End Date
-                  </label>
-                  <input
-                    type="date"
-                    value={editEnd}
-                    onChange={(e) => setEditEnd(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
               </div>
 
               <div>

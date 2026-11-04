@@ -430,9 +430,7 @@ const BalanceSheet: React.FC = () => {
       .header .generated { margin-top: 2px; font-size: 7.5pt; color: #555; }
       .section { margin-bottom: 10px; }
       .section-title { font-size: 10pt; font-weight: bold; margin: 4px 0; }
-      /* Same amount-column widths in every table so the sections line up */
-      table th.col-credit, table th.col-debit, table th.col-balance { width: 17% !important; }
-      table th.col-status { width: 8% !important; }
+      /* No fixed column widths: each column grows or shrinks with its content */
       .text-green { color: #047857; }
       .text-red { color: #b91c1c; }
       .footer { margin-top: 10px; text-align: center; font-size: 7.5pt; color: #555; border-top: 1px solid #d1d5db; padding-top: 4px; }

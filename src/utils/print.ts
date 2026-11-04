@@ -68,6 +68,7 @@ export const getSharedPrintStyles = (options?: SharedPrintStyleOptions) => {
       padding: ${isLandscape ? '12px' : '6px'};
       background-color: #fff;
       color: #111;
+      text-transform: uppercase;
     }
 
     /*
@@ -251,6 +252,7 @@ export const printTable = (
       line-height: 1.4;
       margin: 0;
       padding: 0;
+      text-transform: uppercase;
     }
     
     .print-header {
@@ -396,7 +398,8 @@ export const printTable = (
     .join('');
 
   const tableHeaders = columns
-    .map(col => `<th class="${getColClass(col.key)}" style="width: ${col.width || 'auto'}">${col.label}</th>`)
+    // No fixed widths: every column sizes itself to its content
+    .map(col => `<th class="${getColClass(col.key)}">${col.label}</th>`)
     .join('');
 
   let summaryHTML = '';
@@ -773,10 +776,7 @@ export const buildDailyReportHtml = (data: any[], options: DailyReportHtmlOption
     .print-header .brand-sub { font-size: 8pt; color: #555; text-align: center; }
     .print-header .meta { font-size: 9pt; text-align: right; }
     .print-header .meta-sub { font-size: 7.5pt; color: #555; text-align: right; }
-    /* Share the width fairly between the text columns so names wrap as little as possible */
-    table.main-table th.col-company { width: 20% !important; }
-    table.main-table th.col-account { width: 17% !important; }
-    table.main-table th.col-sub-account { width: 14% !important; }
+    /* No fixed column widths: each column grows or shrinks with its content */
     tr.first-summary td { border-top: 1.5px solid #111; }
     tr.grand-total td { border-bottom: 1.5px solid #111; }
     .text-green { color: #047857; }

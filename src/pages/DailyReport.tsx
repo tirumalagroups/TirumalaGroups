@@ -811,7 +811,7 @@ const DailyReport: React.FC = () => {
               </div>
 
               {/* Online/Offline breakdown removed */}
-              <table className='w-full text-sm'>
+              <table className='fit-table fit-lg'>
                 <thead className='bg-blue-100'>
                   <tr>
                     <th className='px-3 py-2 text-left'>S.No</th>
@@ -833,24 +833,24 @@ const DailyReport: React.FC = () => {
                       className={idx % 2 === 0 ? 'bg-white' : 'bg-blue-50'}
                     >
                       <td className='px-3 py-2 font-bold text-base'>{idx + 1}</td>
-                      <td className='px-3 py-2 font-bold text-base'>
+                      <td className='px-3 py-2 font-bold text-base fit-nowrap'>
                         {entry.c_date ? format(new Date(entry.c_date), 'dd/MM/yyyy') : ''}
                       </td>
                       <td className='px-3 py-2 font-bold text-base'>{entry.company_name}</td>
                       <td className='px-3 py-2 font-bold text-base'>{entry.acc_name}</td>
                       <td className='px-3 py-2 font-bold text-base'>{entry.sub_acc_name || '-'}</td>
                       <td
-                        className='px-3 py-2 max-w-xs truncate font-bold text-base'
+                        className='px-3 py-2 font-bold text-base fit-particulars'
                         title={entry.particulars}
                       >
                         {entry.particulars}
                       </td>
-                      <td className='px-3 py-2 text-right text-green-700 font-bold text-base'>
+                      <td className='px-3 py-2 text-right text-green-700 font-bold text-base fit-nowrap'>
                         {entry.credit > 0
                           ? `${entry.credit.toLocaleString()}`
                           : '-'}
                       </td>
-                      <td className='px-3 py-2 text-right text-red-700 font-bold text-base'>
+                      <td className='px-3 py-2 text-right text-red-700 font-bold text-base fit-nowrap'>
                         {entry.debit > 0
                           ? `${entry.debit.toLocaleString()}`
                           : '-'}
@@ -878,10 +878,10 @@ const DailyReport: React.FC = () => {
                     <td colSpan={6} className='px-3 py-3 font-bold text-base text-right'>
                       Total
                     </td>
-                    <td className='px-3 py-3 text-right text-green-700 font-bold text-base'>
+                    <td className='px-3 py-3 text-right text-green-700 font-bold text-base fit-nowrap'>
                       {reportData.totalCredit.toLocaleString()}
                     </td>
-                    <td className='px-3 py-3 text-right text-red-700 font-bold text-base'>
+                    <td className='px-3 py-3 text-right text-red-700 font-bold text-base fit-nowrap'>
                       {reportData.totalDebit.toLocaleString()}
                     </td>
                     <td colSpan={2} className='px-3 py-3'></td>
@@ -890,7 +890,7 @@ const DailyReport: React.FC = () => {
                     <td colSpan={6} className='px-3 py-3 font-bold text-base text-right'>
                       Opening Balance
                     </td>
-                    <td className='px-3 py-3 text-right text-green-700 font-bold text-base'>
+                    <td className='px-3 py-3 text-right text-green-700 font-bold text-base fit-nowrap'>
                       {reportData.openingBalance.toLocaleString()}
                     </td>
                     <td className='px-3 py-3 text-right font-bold text-base'></td>
@@ -910,10 +910,10 @@ const DailyReport: React.FC = () => {
                     <td colSpan={6} className='px-3 py-3 font-bold text-base text-right'>
                       Grand Total
                     </td>
-                    <td className='px-3 py-3 text-right text-green-700 font-bold text-base'>
+                    <td className='px-3 py-3 text-right text-green-700 font-bold text-base fit-nowrap'>
                       {(reportData.totalCredit + reportData.openingBalance).toLocaleString()}
                     </td>
-                    <td className='px-3 py-3 text-right text-red-700 font-bold text-base'>
+                    <td className='px-3 py-3 text-right text-red-700 font-bold text-base fit-nowrap'>
                       {(reportData.totalDebit + reportData.closingBalance).toLocaleString()}
                     </td>
                     <td colSpan={2} className='px-3 py-3'></td>

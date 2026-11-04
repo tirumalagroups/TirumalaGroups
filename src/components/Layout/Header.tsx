@@ -11,7 +11,7 @@ import { toast } from 'react-hot-toast';
 const Header: React.FC = () => {
   const today = new Date();
   const { user } = useAuth();
-  const { mode, setMode, isFinanceMode, isITRMode } = useTableMode();
+  const { isFinanceMode, isITRMode } = useTableMode();
   const { currentBook, books, selectBook, createBook } = useBook();
   const { connectionStatus, isSyncing, pendingCount, lastSyncAt, offlineSince } = useOffline();
   
@@ -25,8 +25,6 @@ const Header: React.FC = () => {
   const [bookCode, setBookCode] = useState('');
   const [bookName, setBookName] = useState('');
   const [description, setDescription] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
   const [color, setColor] = useState('#3b82f6');
   const [submitting, setSubmitting] = useState(false);
 
@@ -54,8 +52,8 @@ const Header: React.FC = () => {
         book_code: bookCode.trim().toUpperCase(),
         name: bookName.trim(),
         description: description.trim(),
-        start_date: startDate || undefined,
-        end_date: endDate || undefined,
+        // A book starts on the day it is created and has no end date.
+        start_date: format(new Date(), 'yyyy-MM-dd'),
         color
       });
 
@@ -65,8 +63,6 @@ const Header: React.FC = () => {
         setBookCode('');
         setBookName('');
         setDescription('');
-        setStartDate('');
-        setEndDate('');
         setColor('#3b82f6');
       }
     } catch (err) {
@@ -90,81 +86,102 @@ const Header: React.FC = () => {
             <h2 className="text-gray-900 finance-h1">
               Dashboard
             </h2>
-            <div className="flex items-center gap-2 text-gray-500 finance-input">
+            <div className="flex items-center gap-2 text-gray-500 finance-input whitespace-nowrap">
               <Calendar className='w-4 h-4' />
               {format(today, 'EEEE, MMMM do, yyyy')}
             </div>
           </div>
 
           <div className='flex items-center gap-4'>
-            {/* Global Book & Report Selector */}
+            {/* Global Book Selector */}
             {user && (
-              <div className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all shadow-sm ${
-                currentBook?.is_locked 
-                  ? 'bg-red-50 text-red-700 border-red-200'
-                  : isFinanceMode
-                    ? 'bg-green-50 text-green-700 border-green-200'
-                    : 'bg-blue-50 text-blue-700 border-blue-200'
-              }`}>
-                {/* Mode Select */}
-                <div className="flex items-center gap-1">
-                  <select
-                    value={mode || 'regular'}
-                    onChange={async (e) => {
-                      await setMode(e.target.value as any);
-                    }}
-                    className={`bg-transparent font-semibold focus:outline-none cursor-pointer pr-1 ${
-                      currentBook?.is_locked 
-                        ? 'text-red-700'
-                        : isFinanceMode
-                          ? 'text-green-700'
-                          : 'text-blue-700'
-                    }`}
-                  >
-                    <option value="regular">Regular Mode</option>
-                    <option value="itr">ITR Mode</option>
-                    <option value="finance">Finance Mode</option>
-                  </select>
-                </div>
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setIsOpen(!isOpen)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium whitespace-nowrap transition-all shadow-sm ${
+                    currentBook?.is_locked 
+                      ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                      : isFinanceMode
+                        ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                        : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                  }`}
+                >
+                  <span className="font-semibold">{modeText}</span>
+                  <span className="text-gray-400">|</span>
+                  <span className="flex items-center gap-1.5">
+                    Book: <span className="font-bold">{currentBook?.book_code || 'None'}</span>
+                    {currentBook?.is_locked && <Lock className="w-3.5 h-3.5" />}
+                  </span>
+                  <ChevronDown className="w-4 h-4 ml-1 opacity-70" />
+                </button>
 
-                <span className="text-gray-300">|</span>
+                {isOpen && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-30 py-1 divide-y divide-gray-100">
+                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Available Books ({books.length})
+                    </div>
+                    
+                    <div className="max-h-60 overflow-y-auto py-1">
+                      {books.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-gray-500 italic">
+                          No books found.
+                        </div>
+                      ) : (
+                        books.map((book) => (
+                          <button
+                            key={book.id}
+                            onClick={() => {
+                              selectBook(book.id);
+                              setIsOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-4 py-2.5 text-left text-sm transition-colors hover:bg-gray-50 ${
+                              currentBook?.id === book.id 
+                                ? 'bg-gray-50 text-gray-900 font-semibold' 
+                                : 'text-gray-700'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span 
+                                className="w-2.5 h-2.5 rounded-full" 
+                                style={{ backgroundColor: book.color || '#9ca3af' }}
+                              />
+                              <div className="flex flex-col">
+                                <span>{book.name}</span>
+                                <span className="text-xs text-gray-400 font-mono">{book.book_code}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {book.is_locked && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 uppercase flex items-center gap-0.5">
+                                  <Lock className="w-2.5 h-2.5" /> Lock
+                                </span>
+                              )}
+                              {book.is_default && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600 uppercase">
+                                  Default
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
 
-                {/* Book Select */}
-                <div className="flex items-center gap-1">
-                  <span className="text-gray-500 font-semibold">Book:</span>
-                  <select
-                    value={currentBook?.id || ''}
-                    onChange={(e) => selectBook(e.target.value)}
-                    className={`bg-transparent font-bold focus:outline-none cursor-pointer pr-1 ${
-                      currentBook?.is_locked 
-                        ? 'text-red-700'
-                        : isFinanceMode
-                          ? 'text-green-700'
-                          : 'text-blue-700'
-                    }`}
-                  >
-                    {books.length === 0 ? (
-                      <option value="">None</option>
-                    ) : (
-                      books.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.book_code}
-                        </option>
-                      ))
+                    {user.is_admin && (
+                      <div className="p-1.5">
+                        <button
+                          onClick={() => {
+                            setShowModal(true);
+                            setIsOpen(false);
+                          }}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
+                        >
+                          <Plus className="w-4 h-4" /> Create New Book
+                        </button>
+                      </div>
                     )}
-                  </select>
-                  {user.is_admin && (
-                    <button
-                      onClick={() => setShowModal(true)}
-                      className={`p-0.5 rounded transition-colors ${
-                        isFinanceMode ? 'hover:bg-green-100' : 'hover:bg-blue-100'
-                      }`}
-                      title="Create New Book"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -290,31 +307,6 @@ const Header: React.FC = () => {
                   rows={2}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">
-                    Start Date
-                  </label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">
-                    End Date
-                  </label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
               </div>
 
               <div>

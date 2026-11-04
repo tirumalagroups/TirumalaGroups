@@ -789,11 +789,7 @@ const DetailedLedger: React.FC = () => {
     <style>
       ${getSharedPrintStyles({ isLandscape: false, fontSizePt: 7.5 })}
       th, td { padding: 2px 4px; }
-      /* Share the width fairly between the text columns so names wrap as little as possible */
-      table th.col-company { width: 15% !important; }
-      table th.col-account { width: 13% !important; }
-      table th.col-sub-account { width: 10% !important; }
-      table th.col-particulars { width: 26% !important; }
+      /* No fixed column widths: each column grows or shrinks with its content */
       body { background: #f3f4f6; padding: 16px; }
       .page { background: #fff; max-width: 210mm; margin: 0 auto; padding: 10mm 8mm; border: 1px solid #d1d5db; box-sizing: border-box; }
       .header { text-align: center; border-bottom: 1.5px solid #111; padding-bottom: 5px; margin-bottom: 6px; }
@@ -1329,50 +1325,50 @@ const DetailedLedger: React.FC = () => {
           </div>
         ) : (
           <>
-            <div className='w-full overflow-x-auto'>
-              <table className='min-w-[1300px] w-full text-[11px] table-fixed border-collapse'>
+            <div className='w-full'>
+              <table className='fit-table border-collapse'>
               <thead className='sticky top-0 bg-gray-50 z-10'>
                 <tr className='border-b border-gray-200'>
-                  <th className='px-0.5 py-1 text-left font-medium text-gray-700 w-[3%]'>
+                  <th className='px-0.5 py-1 text-left font-medium text-gray-700'>
                     S.No
                   </th>
-                  <th className='px-0.5 py-1 text-left font-medium text-gray-700 w-[6%]'>
+                  <th className='px-0.5 py-1 text-left font-medium text-gray-700'>
                     Date
                   </th>
-                  <th className='px-0.5 py-1 text-left font-medium text-gray-700 w-[11%]'>
+                  <th className='px-0.5 py-1 text-left font-medium text-gray-700'>
                     Company
                   </th>
-                  <th className='px-0.5 py-1 text-left font-medium text-gray-700 w-[9%]'>
+                  <th className='px-0.5 py-1 text-left font-medium text-gray-700'>
                     Account
                   </th>
-                  <th className='px-0.5 py-1 text-left font-medium text-gray-700 w-[10%]'>
+                  <th className='px-0.5 py-1 text-left font-medium text-gray-700'>
                     Sub Account
                   </th>
-                  <th className='px-0.5 py-1 text-left font-medium text-gray-700 w-[8%]'>
+                  <th className='px-0.5 py-1 text-left font-medium text-gray-700'>
                     Particulars
                   </th>
-                  <th className='px-0.5 py-1 text-right font-medium text-gray-700 w-[6%]'>
+                  <th className='px-0.5 py-1 text-right font-medium text-gray-700'>
                     Credit
                   </th>
-                  <th className='px-0.5 py-1 text-right font-medium text-gray-700 w-[6%]'>
+                  <th className='px-0.5 py-1 text-right font-medium text-gray-700'>
                     Debit
                   </th>
-                  <th className='px-0.5 py-1 text-center font-medium text-gray-700 w-[6%]'>
+                  <th className='px-0.5 py-1 text-center font-medium text-gray-700'>
                     Purchase Qty
                   </th>
-                  <th className='px-0.5 py-1 text-center font-medium text-gray-700 w-[5%]'>
+                  <th className='px-0.5 py-1 text-center font-medium text-gray-700'>
                     Sale Qty
                   </th>
-                  <th className='px-0.5 py-1 text-left font-medium text-gray-700 w-[9%]'>
+                  <th className='px-0.5 py-1 text-left font-medium text-gray-700'>
                     Staff
                   </th>
-                  <th className='px-0.5 py-1 text-left font-medium text-gray-700 w-[7%]'>
+                  <th className='px-0.5 py-1 text-left font-medium text-gray-700'>
                     Payment Mode
                   </th>
-                  <th className='px-0.5 py-1 text-left font-medium text-gray-700 w-[7%]'>
+                  <th className='px-0.5 py-1 text-left font-medium text-gray-700'>
                     User
                   </th>
-                  <th className='px-0.5 py-1 text-left font-medium text-gray-700 w-[8%]'>
+                  <th className='px-0.5 py-1 text-left font-medium text-gray-700'>
                     Entry Time
                   </th>
                 </tr>
@@ -1385,28 +1381,28 @@ const DetailedLedger: React.FC = () => {
                       index % 2 === 0 ? 'bg-white' : 'bg-gray-25'
                     }`}
                   >
-                    <td className='px-0.5 py-1 font-medium text-gray-500'>{index + 1}</td>
-                    <td className='px-0.5 py-1 text-gray-900 font-medium'>
+                    <td className='px-0.5 py-1 font-medium text-gray-500 fit-nowrap'>{index + 1}</td>
+                    <td className='px-0.5 py-1 text-gray-900 font-medium fit-nowrap'>
                       {format(new Date(entry.date), 'dd/MM/yyyy')}
                     </td>
-                    <td className='px-0.5 py-1 text-blue-600 truncate font-semibold' title={entry.companyName}>
+                    <td className='px-0.5 py-1 text-blue-600 font-semibold' title={entry.companyName}>
                       {entry.companyName}
                     </td>
-                    <td className='px-0.5 py-1 text-gray-900 truncate font-medium' title={entry.accountName}>
+                    <td className='px-0.5 py-1 text-gray-900 font-medium' title={entry.accountName}>
                       {entry.accountName}
                     </td>
-                    <td className='px-0.5 py-1 text-gray-500 truncate' title={entry.subAccount}>
+                    <td className='px-0.5 py-1 text-gray-500' title={entry.subAccount}>
                       {entry.subAccount || '-'}
                     </td>
-                    <td className='px-0.5 py-1 text-gray-900 truncate' title={entry.particulars}>
+                    <td className='px-0.5 py-1 text-gray-900 fit-particulars' title={entry.particulars}>
                       {entry.particulars}
                     </td>
-                    <td className='px-0.5 py-1 text-right font-semibold text-green-600'>
+                    <td className='px-0.5 py-1 text-right font-semibold text-green-600 fit-nowrap'>
                       {entry.credit > 0
                         ? `${entry.credit.toLocaleString()}`
                         : '-'}
                     </td>
-                    <td className='px-0.5 py-1 text-right font-semibold text-red-600'>
+                    <td className='px-0.5 py-1 text-right font-semibold text-red-600 fit-nowrap'>
                       {entry.debit > 0
                         ? `${entry.debit.toLocaleString()}`
                         : '-'}
@@ -1417,17 +1413,18 @@ const DetailedLedger: React.FC = () => {
                     <td className='px-0.5 py-1 text-center text-gray-900 font-medium'>
                       {entry.saleQuantity > 0 ? entry.saleQuantity.toLocaleString() : '-'}
                     </td>
-                    <td className='px-0.5 py-1 text-gray-900 truncate' title={entry.staff}>
+                    <td className='px-0.5 py-1 text-gray-900' title={entry.staff}>
                       {entry.staff}
                     </td>
-                    <td className='px-0.5 py-1 text-gray-900 truncate' title={entry.payment_mode || 'No payment mode'}>
+                    <td className='px-0.5 py-1 text-gray-900' title={entry.payment_mode || 'No payment mode'}>
                       {entry.payment_mode && String(entry.payment_mode).trim() ? (entry.payment_mode === 'Online' ? 'Double' : entry.payment_mode === 'Bank Transfer' ? 'Bank' : String(entry.payment_mode).trim()) : '-'}
                     </td>
-                    <td className='px-0.5 py-1 text-gray-900 truncate' title={entry.user}>
+                    <td className='px-0.5 py-1 text-gray-900' title={entry.user}>
                       {entry.user}
                     </td>
                     <td className='px-0.5 py-1 text-gray-500 font-medium'>
-                      {format(new Date(entry.entryTime), 'dd/MM/yyyy hh:mm:ss aa')}
+                      <span className='fit-nowrap'>{format(new Date(entry.entryTime), 'dd/MM/yyyy')}</span>{' '}
+                      <span className='fit-nowrap'>{format(new Date(entry.entryTime), 'hh:mm:ss aa')}</span>
                     </td>
                   </tr>
                 ))}

@@ -1298,6 +1298,7 @@ const EditEntry: React.FC = () => {
           <style>
             body { 
               font-family: Arial, sans-serif; 
+              text-transform: uppercase;
               margin: 40px; 
               line-height: 1.6;
             }
@@ -1749,7 +1750,7 @@ const EditEntry: React.FC = () => {
       <Card
         title='Cash Book Entries'
         subtitle={`Manage and edit your transaction records`}
-        className='p-6 mb-6 w-full'
+        className='mb-6 w-full'
       >
         <div className='space-y-4 w-full'>
           {loading ? (
@@ -1779,53 +1780,53 @@ const EditEntry: React.FC = () => {
             </div>
           ) : (
             <div className='w-full'>
-              <table className='w-full text-xs table-fixed'>
+              <table className='fit-table fit-dense'>
                 <thead className='bg-gray-50 border-b border-gray-200'>
                   <tr>
-                    <th className='w-12 px-1 py-0 text-left font-medium text-gray-700'>
+                    <th className='px-1 py-0 text-left font-medium text-gray-700'>
                       S.No
                     </th>
-                    <th className='w-24 min-w-[96px] px-1 py-0 text-left font-medium text-gray-700 whitespace-nowrap'>
+                    <th className='px-1 py-0 text-left font-medium text-gray-700 whitespace-nowrap'>
                       Date
                     </th>
-                    <th className='w-20 px-1 py-1 text-left font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-left font-medium text-gray-700'>
                       Company
                     </th>
                     
-                    <th className='w-20 px-1 py-1 text-left font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-left font-medium text-gray-700'>
                       Account
                     </th>
-                    <th className='w-20 px-1 py-1 text-left font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-left font-medium text-gray-700'>
                       Sub Account
                     </th>
-                    <th className='w-32 px-1 py-1 text-left font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-left font-medium text-gray-700'>
                       Particulars
                     </th>
-                    <th className='w-16 px-1 py-1 text-right font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-right font-medium text-gray-700'>
                       Purchase Qty
                     </th>
-                    <th className='w-16 px-1 py-1 text-right font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-right font-medium text-gray-700'>
                       Sale Qty
                     </th>
-                    <th className='w-16 px-1 py-1 text-right font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-right font-medium text-gray-700'>
                       Credit
                     </th>
-                    <th className='w-16 px-1 py-1 text-right font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-right font-medium text-gray-700'>
                       Debit
                     </th>
-                    <th className='w-16 px-1 py-1 text-left font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-left font-medium text-gray-700'>
                       Payment Mode
                     </th>
-                    <th className='w-16 px-1 py-1 text-left font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-left font-medium text-gray-700'>
                       Staff
                     </th>
-                    <th className='w-16 px-1 py-1 text-left font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-left font-medium text-gray-700'>
                       User
                     </th>
-                    <th className='w-24 px-1 py-1 text-left font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-left font-medium text-gray-700'>
                       Entry Date and Time
                     </th>
-                    <th className='w-52 min-w-[208px] px-1 py-1 text-center font-medium text-gray-700'>
+                    <th className='px-1 py-1 text-center font-medium text-gray-700'>
                       Actions
                     </th>
                   </tr>
@@ -1841,50 +1842,50 @@ const EditEntry: React.FC = () => {
                       }`}
                       onClick={() => setSelectedEntry(entry)}
                     >
-                      <td className='w-12 px-1 py-0 font-medium text-sm font-bold'>{index + 1}</td>
-                      <td className='w-24 min-w-[96px] px-1 py-0 text-sm font-bold whitespace-nowrap'>
+                      <td className='px-1 py-0 font-medium text-sm font-bold'>{index + 1}</td>
+                      <td className='px-1 py-0 text-sm font-bold fit-nowrap'>
                         {format(new Date(entry.c_date), 'dd/MM/yyyy')}
                       </td>
-                      <td className='w-20 px-1 py-1 font-medium text-blue-600 text-sm truncate font-bold' title={entry.company_name}>
+                      <td className='px-1 py-1 font-medium text-blue-600 text-sm font-bold' title={entry.company_name}>
                         {entry.company_name}
                       </td>
                       
-                      <td className='w-20 px-1 py-1 text-sm truncate font-bold' title={entry.acc_name}>{entry.acc_name}</td>
-                      <td className='w-20 px-1 py-1 text-sm truncate font-bold' title={entry.sub_acc_name}>{entry.sub_acc_name || '-'}</td>
+                      <td className='px-1 py-1 text-sm font-bold' title={entry.acc_name}>{entry.acc_name}</td>
+                      <td className='px-1 py-1 text-sm font-bold' title={entry.sub_acc_name}>{entry.sub_acc_name || '-'}</td>
                       <td
-                        className='w-32 px-1 py-1 text-sm truncate font-bold'
+                        className='px-1 py-1 text-sm font-bold fit-particulars'
                         title={entry.particulars}
                       >
                         {entry.particulars}
                       </td>
-                      <td className='w-16 px-1 py-1 text-right text-sm font-bold'>
+                      <td className='px-1 py-1 text-right text-sm font-bold fit-nowrap'>
                         {entry.sale_qty !== null && entry.sale_qty !== undefined && entry.sale_qty !== ''
                           ? `${Number(entry.sale_qty).toLocaleString()}`
                           : '-'}
                       </td>
-                      <td className='w-16 px-1 py-1 text-right text-sm font-bold'>
+                      <td className='px-1 py-1 text-right text-sm font-bold fit-nowrap'>
                         {entry.purchase_qty !== null && entry.purchase_qty !== undefined && entry.purchase_qty !== ''
                           ? `${Number(entry.purchase_qty).toLocaleString()}`
                           : '-'}
                       </td>
-                      <td className='w-16 px-1 py-1 text-right font-medium text-green-600 text-sm font-bold'>
+                      <td className='px-1 py-1 text-right font-medium text-green-600 text-sm font-bold fit-nowrap'>
                         {entry.credit > 0
                           ? `${entry.credit.toLocaleString()}`
                           : '-'}
                       </td>
-                      <td className='w-16 px-1 py-1 text-right font-medium text-red-600 text-sm font-bold'>
+                      <td className='px-1 py-1 text-right font-medium text-red-600 text-sm font-bold fit-nowrap'>
                         {entry.debit > 0
                           ? `${entry.debit.toLocaleString()}`
                           : '-'}
                       </td>
-                      <td className='w-16 px-1 py-1 text-sm truncate font-bold' title={entry.payment_mode || 'No payment mode'}>
+                      <td className='px-1 py-1 text-sm font-bold' title={entry.payment_mode || 'No payment mode'}>
                         {entry.payment_mode && String(entry.payment_mode).trim() ? (entry.payment_mode === 'Online' ? 'Double' : entry.payment_mode === 'Bank Transfer' ? 'Bank' : String(entry.payment_mode).trim()) : '-'}
                       </td>
-                      <td className='w-16 px-1 py-1 text-sm truncate font-bold' title={entry.staff}>{entry.staff}</td>
-                      <td className='w-16 px-1 py-1 text-sm truncate font-bold' title={entry.users || 'No user'}>
+                      <td className='px-1 py-1 text-sm font-bold' title={entry.staff}>{entry.staff}</td>
+                      <td className='px-1 py-1 text-sm font-bold' title={entry.users || 'No user'}>
                         {entry.users || '-'}
                       </td>
-                      <td className='w-24 px-1 py-1 text-left'>
+                      <td className='px-1 py-1 text-left'>
                         <div className='text-sm font-bold'>
                           {format(new Date(entry.c_date), 'dd/MM/yyyy')}
                         </div>
@@ -1892,7 +1893,7 @@ const EditEntry: React.FC = () => {
                           {entry.entry_time ? format(new Date(entry.entry_time), 'hh:mm:ss a') : 'N/A'}
                         </div>
                       </td>
-                      <td className='w-52 min-w-[208px] px-1 py-1 text-center'>
+                      <td className='px-1 py-1 text-center'>
                         <div className='flex gap-2 justify-center items-center' onClick={(e) => e.stopPropagation()}>
                           <Button
                             variant='secondary'
