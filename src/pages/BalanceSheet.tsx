@@ -9,7 +9,7 @@ import ModeLabel from '../components/UI/ModeLabel';
 import { format, parseISO } from 'date-fns';
 import CustomCalendar from '../components/UI/CustomCalendar';
 import { Calendar, AlertTriangle } from 'lucide-react';
-import { getSharedPrintStyles, toDisplayCase } from '../utils/print';
+import { getSharedPrintStyles, toDisplayCase, PREVIEW_FIT_HEAD } from '../utils/print';
 import { useBook } from '../contexts/BookContext';
 
 interface BalanceSheetFilters {
@@ -348,7 +348,19 @@ const BalanceSheet: React.FC = () => {
       plYesNo: '',
       bothYesNo: '',
     });
-    toast.success('Filters reset');
+    // Reset also removes every custom row that was added by hand, and clears the add-row form
+    const removed = customRows.length;
+    setCustomRows([]);
+    setNewRowData({
+      accountName: '',
+      credit: '',
+      debit: '',
+      balance: '',
+      result: 'CREDIT',
+      plYesNo: 'NO',
+      bothYesNo: 'NO',
+    });
+    toast.success(removed > 0 ? `Filters reset and ${removed} custom row${removed === 1 ? '' : 's'} removed` : 'Filters reset');
   };
 
   const printReport = () => {
@@ -442,6 +454,7 @@ const BalanceSheet: React.FC = () => {
         .toolbar { display: none !important; }
       }
     </style>
+    ${PREVIEW_FIT_HEAD}
   </head>
   <body>
     <div class="toolbar no-print">

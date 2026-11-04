@@ -416,17 +416,17 @@ const GeneralLedger: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="overflow-x-auto border border-slate-200 rounded-2xl max-h-[550px] overflow-y-auto scrollbar-thin">
-                <table className="w-full text-xs text-left min-w-[950px] border-collapse">
-                  <thead className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur-[2px] text-slate-700 uppercase tracking-wider text-[11px] font-bold border-b border-slate-250">
-                    <tr>
-                      <th className="w-8 px-3 py-3.5 text-center"></th>
-                      <th className="px-4 py-3.5 whitespace-nowrap">Head of Account</th>
-                      <th className="px-4 py-3.5 text-right text-slate-600 whitespace-nowrap">Opening Bal</th>
-                      <th className="px-4 py-3.5 text-right text-emerald-800 whitespace-nowrap">Credit (Cr)</th>
-                      <th className="px-4 py-3.5 text-right text-rose-800 whitespace-nowrap">Debit (Dr)</th>
-                      <th className="px-4 py-3.5 text-right text-slate-800 whitespace-nowrap">Net Movement</th>
-                      <th className="px-4 py-3.5 text-right text-slate-900 whitespace-nowrap">Closing Bal</th>
+              <div className="overflow-x-hidden border border-slate-200 rounded-2xl max-h-[600px] overflow-y-auto scrollbar-thin">
+                <table className="fit-table w-full text-left border-collapse tabular-nums">
+                  <thead className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur-[2px] text-slate-700 uppercase font-bold border-b border-slate-250">
+                    <tr className="text-[12px] min-[1400px]:text-[13px] min-[1600px]:text-[14px]">
+                      <th className="w-8 px-3 py-3 text-center"></th>
+                      <th className="px-4 py-3">Head of Account</th>
+                      <th className="px-4 py-3.5 text-right text-slate-600">Opening Bal</th>
+                      <th className="px-4 py-3.5 text-right text-emerald-800">Credit (Cr)</th>
+                      <th className="px-4 py-3.5 text-right text-rose-800">Debit (Dr)</th>
+                      <th className="px-4 py-3.5 text-right text-slate-800">Net Movement</th>
+                      <th className="px-4 py-3.5 text-right text-slate-900">Closing Bal</th>
                       <th className="px-4 py-3.5 text-center whitespace-nowrap">Count</th>
                       <th className="px-4 py-3.5 text-center whitespace-nowrap">Action</th>
                     </tr>
@@ -443,7 +443,7 @@ const GeneralLedger: React.FC = () => {
                         const isExpanded = expandedHeadNames.has(s.head);
                         return (
                           <React.Fragment key={s.head}>
-                            <tr className="odd:bg-white even:bg-slate-50/40 hover:bg-blue-50/40 transition-colors">
+                            <tr className="odd:bg-white even:bg-slate-50/40 hover:bg-blue-50/40 transition-colors text-[12px] min-[1400px]:text-[13px] min-[1600px]:text-[14px]">
                               <td className="px-2.5 py-3 text-center">
                                 <button
                                   type="button"
@@ -454,28 +454,28 @@ const GeneralLedger: React.FC = () => {
                                   {isExpanded ? <ChevronDown className="w-4 h-4 text-blue-600" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
                                 </button>
                               </td>
-                              <td className="px-4 py-3 font-bold text-slate-900 uppercase whitespace-nowrap">{s.head}</td>
-                              <td className={`px-4 py-3 text-right font-mono font-bold whitespace-nowrap ${s.opening >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                              <td className="fit-name px-4 py-3 font-bold text-slate-900 uppercase">{s.head}</td>
+                              <td className={`fit-nowrap px-4 py-3 text-right font-mono font-bold whitespace-nowrap ${s.opening >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                                 {Math.abs(s.opening).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {s.opening >= 0 ? 'Cr' : 'Dr'}
                               </td>
-                              <td className="px-4 py-3 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">
+                              <td className="fit-nowrap px-4 py-3 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">
                                 {s.credit > 0 ? s.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
                               </td>
-                              <td className="px-4 py-3 text-right font-mono font-bold text-rose-700 whitespace-nowrap">
+                              <td className="fit-nowrap px-4 py-3 text-right font-mono font-bold text-rose-700 whitespace-nowrap">
                                 {s.debit > 0 ? s.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
                               </td>
-                              <td className={`px-4 py-3 text-right font-mono font-bold whitespace-nowrap ${s.balance >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
+                              <td className={`fit-nowrap px-4 py-3 text-right font-mono font-bold whitespace-nowrap ${s.balance >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
                                 {Math.abs(s.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {s.balance >= 0 ? 'Cr' : 'Dr'}
                               </td>
-                              <td className={`px-4 py-3 text-right font-mono font-black whitespace-nowrap ${s.closing >= 0 ? 'text-emerald-900' : 'text-rose-900'}`}>
+                              <td className={`fit-nowrap px-4 py-3 text-right font-mono font-black whitespace-nowrap ${s.closing >= 0 ? 'text-emerald-900' : 'text-rose-900'}`}>
                                 {Math.abs(s.closing).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {s.closing >= 0 ? 'Cr' : 'Dr'}
                               </td>
-                              <td className="px-4 py-3 text-center font-mono font-black text-slate-800 whitespace-nowrap">{s.count}</td>
+                              <td className="fit-nowrap px-4 py-3 text-center font-mono font-black text-slate-800">{s.count}</td>
                               <td className="px-4 py-3 text-center whitespace-nowrap">
                                 <button
                                   type="button"
                                   onClick={() => setSelectedHead(s.head)}
-                                  className="text-indigo-700 hover:text-indigo-900 text-[11px] font-bold hover:underline"
+                                  className="text-indigo-700 hover:text-indigo-900 text-[13px] font-bold hover:underline"
                                 >
                                   View Details
                                 </button>
@@ -487,22 +487,22 @@ const GeneralLedger: React.FC = () => {
                               <tr className="bg-slate-50/90">
                                 <td colSpan={9} className="px-4 py-3 border-y border-slate-250">
                                   <div className="bg-white rounded-xl border border-slate-200 p-3 space-y-2 shadow-sm">
-                                    <div className="flex items-center justify-between text-[11px] font-mono font-bold text-slate-700 border-b pb-1.5">
+                                    <div className="flex items-center justify-between text-[13px] font-mono font-bold text-slate-700 border-b pb-1.5">
                                       <span className="flex items-center gap-1.5 text-blue-900">
                                         <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                                         TRANSACTION BREAKDOWN
                                       </span>
                                       <span className="text-slate-500 font-normal">Head: <span className="font-bold text-slate-800">{s.head}</span></span>
                                     </div>
-                                    <div className="overflow-x-auto max-h-[300px] overflow-y-auto scrollbar-thin">
-                                      <table className="w-full text-[11px] text-left border-collapse">
+                                    <div className="overflow-x-hidden max-h-[340px] overflow-y-auto scrollbar-thin">
+                                      <table className="fit-table fit-dense w-full text-left border-collapse tabular-nums">
                                         <thead className="sticky top-0 bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-200">
-                                          <tr>
+                                          <tr className="text-[12px] min-[1400px]:text-[13px] min-[1600px]:text-[14px]">
                                             <th className="p-1.5 whitespace-nowrap">Date</th>
                                             <th className="p-1.5 whitespace-nowrap">Module</th>
-                                            <th className="p-1.5 whitespace-nowrap">Receipt/Voucher</th>
-                                            <th className="p-1.5 whitespace-nowrap">Loan/Acc No</th>
-                                            <th className="p-1.5 whitespace-nowrap">Party/Customer</th>
+                                            <th className="p-1.5">Receipt/Voucher</th>
+                                            <th className="p-1.5">Loan/Acc No</th>
+                                            <th className="p-1.5">Party/Customer</th>
                                             <th className="p-1.5 whitespace-nowrap">Particulars</th>
                                             <th className="p-1.5 text-right text-emerald-800 whitespace-nowrap">Credit (Cr)</th>
                                             <th className="p-1.5 text-right text-rose-800 whitespace-nowrap">Debit (Dr)</th>
@@ -516,15 +516,15 @@ const GeneralLedger: React.FC = () => {
                                               : entry.sourceType === 'CAPITAL_ENTRY' ? 'Capital Account'
                                               : 'Daybook';
                                             return (
-                                              <tr key={entry.id} className="hover:bg-slate-50">
-                                                <td className="p-1.5 font-bold whitespace-nowrap">{formatDateOld(entry.transactionDate)}</td>
-                                                <td className="p-1.5 text-slate-600 font-sans font-medium whitespace-nowrap">{moduleName}</td>
-                                                <td className="p-1.5 font-black whitespace-nowrap">{entry.receiptOrVoucherNo || '—'}</td>
-                                                <td className="p-1.5 font-bold text-blue-900 whitespace-nowrap">{entry.accountOrLoanNo || '—'}</td>
-                                                <td className="p-1.5 font-sans font-medium whitespace-nowrap">{entry.customerName || entry.partnerName || '—'}</td>
-                                                <td className="p-1.5 font-sans text-slate-700 truncate max-w-[200px]" title={entry.particulars}>{entry.particulars || '—'}</td>
-                                                <td className="p-1.5 text-right text-emerald-700 font-bold whitespace-nowrap">{entry.credit > 0 ? entry.credit.toLocaleString('en-IN') : '—'}</td>
-                                                <td className="p-1.5 text-right text-rose-700 font-bold whitespace-nowrap">{entry.debit > 0 ? entry.debit.toLocaleString('en-IN') : '—'}</td>
+                                              <tr key={entry.id} className="hover:bg-slate-50 text-[12px] min-[1400px]:text-[13px] min-[1600px]:text-[14px]">
+                                                <td className="fit-nowrap p-1.5 font-bold">{formatDateOld(entry.transactionDate)}</td>
+                                                <td className="p-1.5 text-slate-600 font-sans font-medium">{moduleName}</td>
+                                                <td className="fit-nowrap p-1.5 font-black">{entry.receiptOrVoucherNo || '—'}</td>
+                                                <td className={`p-1.5 font-bold text-blue-900 ${(entry.accountOrLoanNo || '').length > 14 ? 'break-all' : 'fit-nowrap'}`}>{entry.accountOrLoanNo || '—'}</td>
+                                                <td className="fit-name p-1.5 font-sans font-medium">{entry.customerName || entry.partnerName || '—'}</td>
+                                                <td className="fit-particulars min-[1600px]:!min-w-[14rem] p-1.5 font-sans text-slate-700" title={entry.particulars}>{entry.particulars || '—'}</td>
+                                                <td className="fit-nowrap p-1.5 text-right text-emerald-700 font-bold">{entry.credit > 0 ? entry.credit.toLocaleString('en-IN') : '—'}</td>
+                                                <td className="fit-nowrap p-1.5 text-right text-rose-700 font-bold">{entry.debit > 0 ? entry.debit.toLocaleString('en-IN') : '—'}</td>
                                                 <td className="p-1.5 font-sans text-slate-600 whitespace-nowrap">{entry.userName || 'Staff'}</td>
                                               </tr>
                                             );
@@ -548,22 +548,22 @@ const GeneralLedger: React.FC = () => {
                   </tbody>
                   {/* Overall Totals */}
                   {summaryData.length > 0 && (
-                    <tfoot className="sticky bottom-0 z-10 bg-slate-100/95 backdrop-blur-[2px] text-slate-900 font-mono font-black text-xs border-t-2 border-slate-300">
-                      <tr>
+                    <tfoot className="sticky bottom-0 z-10 bg-slate-100/95 backdrop-blur-[2px] text-slate-900 font-mono font-black border-t-2 border-slate-300">
+                      <tr className="text-[12px] min-[1400px]:text-[13px] min-[1600px]:text-[14px]">
                         <td colSpan={2} className="px-4 py-3.5 uppercase text-right font-sans font-bold text-slate-700">GRAND TOTALS:</td>
-                        <td className={`px-4 py-3.5 text-right font-black ${overallTotals.opening >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
+                        <td className={`fit-nowrap px-4 py-3.5 text-right font-black ${overallTotals.opening >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
                           {Math.abs(overallTotals.opening).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {overallTotals.opening >= 0 ? 'Cr' : 'Dr'}
                         </td>
-                        <td className="px-4 py-3.5 text-right text-emerald-800 font-black">
+                        <td className="fit-nowrap px-4 py-3.5 text-right text-emerald-800 font-black">
                           {overallTotals.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-4 py-3.5 text-right text-rose-800 font-black">
+                        <td className="fit-nowrap px-4 py-3.5 text-right text-rose-800 font-black">
                           {overallTotals.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className={`px-4 py-3.5 text-right font-black ${overallTotals.balance >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
+                        <td className={`fit-nowrap px-4 py-3.5 text-right font-black ${overallTotals.balance >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
                           {Math.abs(overallTotals.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {overallTotals.balance >= 0 ? 'Cr' : 'Dr'}
                         </td>
-                        <td className={`px-4 py-3.5 text-right font-black ${overallTotals.closing >= 0 ? 'text-emerald-900' : 'text-rose-900'}`}>
+                        <td className={`fit-nowrap px-4 py-3.5 text-right font-black ${overallTotals.closing >= 0 ? 'text-emerald-900' : 'text-rose-900'}`}>
                           {Math.abs(overallTotals.closing).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {overallTotals.closing >= 0 ? 'Cr' : 'Dr'}
                         </td>
                         <td className="px-4 py-3.5 text-center text-slate-900 font-black">{overallTotals.totalCount.toLocaleString('en-IN')}</td>
@@ -622,7 +622,7 @@ const GeneralLedger: React.FC = () => {
 
             {/* Modal Body & Table */}
             <div className="flex-1 p-4 overflow-y-auto scrollbar-thin space-y-3">
-              <div className="flex gap-4 p-3 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold uppercase items-center justify-between font-mono">
+              <div className="flex flex-wrap gap-4 p-3 bg-slate-100 border border-slate-200 rounded-xl text-[14px] font-bold uppercase items-center justify-between font-mono">
                 <div>Total Cr: <span className="text-emerald-700 font-black">{drillTotals.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
                 <div className="w-px h-4 bg-slate-300"></div>
                 <div>Total Dr: <span className="text-rose-700 font-black">{drillTotals.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
@@ -631,9 +631,9 @@ const GeneralLedger: React.FC = () => {
               </div>
 
               <div className="border border-slate-200 rounded-xl overflow-hidden">
-                <table className="w-full text-xs divide-y divide-slate-200 border-collapse">
-                  <thead className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
-                    <tr>
+                <table className="fit-table w-full divide-y divide-slate-200 border-collapse tabular-nums">
+                  <thead className="bg-slate-100 text-slate-700 font-bold uppercase">
+                    <tr className="text-[12px] min-[1400px]:text-[13px] min-[1600px]:text-[14px]">
                       <th className="px-3.5 py-3 text-left whitespace-nowrap">Date</th>
                       <th className="px-3.5 py-3 text-left whitespace-nowrap">Account/Loan</th>
                       <th className="px-3.5 py-3 text-left whitespace-nowrap">Party/Customer</th>
@@ -651,13 +651,13 @@ const GeneralLedger: React.FC = () => {
                       </tr>
                     ) : (
                       drillDownEntries.map(e => (
-                        <tr key={e.id} className="hover:bg-blue-50/40 transition-colors">
-                          <td className="px-3.5 py-2.5 font-bold whitespace-nowrap">{formatDateOld(e.transactionDate)}</td>
-                          <td className="px-3.5 py-2.5 font-bold text-blue-900 uppercase whitespace-nowrap">{e.accountOrLoanNo || '—'}</td>
-                          <td className="px-3.5 py-2.5 font-sans font-medium whitespace-nowrap">{e.customerName || e.partnerName || '—'}</td>
-                          <td className="px-3.5 py-2.5 font-sans text-slate-700 truncate max-w-[220px]" title={e.particulars}>{e.particulars || '—'}</td>
-                          <td className="px-3.5 py-2.5 text-right text-emerald-700 font-bold whitespace-nowrap">{e.credit > 0 ? e.credit.toLocaleString('en-IN') : '—'}</td>
-                          <td className="px-3.5 py-2.5 text-right text-rose-700 font-bold whitespace-nowrap">{e.debit > 0 ? e.debit.toLocaleString('en-IN') : '—'}</td>
+                        <tr key={e.id} className="hover:bg-blue-50/40 transition-colors text-[12px] min-[1400px]:text-[13px] min-[1600px]:text-[14px]">
+                          <td className="fit-nowrap px-3.5 py-2.5 font-bold">{formatDateOld(e.transactionDate)}</td>
+                          <td className={`px-3.5 py-2.5 font-bold text-blue-900 uppercase ${(e.accountOrLoanNo || '').length > 14 ? 'break-all' : 'fit-nowrap'}`}>{e.accountOrLoanNo || '—'}</td>
+                          <td className="fit-name px-3.5 py-2.5 font-sans font-medium">{e.customerName || e.partnerName || '—'}</td>
+                          <td className="fit-particulars min-[1600px]:!min-w-[14rem] px-3.5 py-2.5 font-sans text-slate-700" title={e.particulars}>{e.particulars || '—'}</td>
+                          <td className="fit-nowrap px-3.5 py-2.5 text-right text-emerald-700 font-bold">{e.credit > 0 ? e.credit.toLocaleString('en-IN') : '—'}</td>
+                          <td className="fit-nowrap px-3.5 py-2.5 text-right text-rose-700 font-bold">{e.debit > 0 ? e.debit.toLocaleString('en-IN') : '—'}</td>
                         </tr>
                       ))
                     )}

@@ -241,12 +241,12 @@ const PartnerPerformance: React.FC = () => {
         <div className="lg:col-span-4 bg-white rounded-xl border border-slate-200 shadow-sm p-3.5 flex flex-col justify-between gap-2.5">
           <div className="border-b border-slate-100 pb-1.5 flex items-center justify-between">
             <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider block">DATE FILTER RANGE</span>
-            <span className="text-[10px] font-bold text-slate-400 font-mono">
+            <span className="text-[11px] font-bold text-slate-500 font-mono whitespace-nowrap">
               {isoToDisplayFormatted(startDate) || 'Beginning'} → {isoToDisplayFormatted(endDate) || 'Today'}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+          <div className="grid grid-cols-1 min-[1600px]:grid-cols-2 gap-3 w-full">
             <div>
               <FinanceSmartCalendar
                 label="FROM DATE"
@@ -283,15 +283,15 @@ const PartnerPerformance: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-x-5 gap-y-2.5 pt-2.5">
             {partnerSplitData.map((p) => (
               <div key={p.id} className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-1.5 min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-xs">
+                  <div className="flex items-center gap-1.5">
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${p.color.dot}`}></span>
-                    <span className="font-bold text-slate-900 uppercase truncate text-[12px]">{p.name}</span>
+                    <span className="font-bold text-slate-900 uppercase text-[12px] min-[1600px]:text-[13px] leading-tight">{p.name}</span>
                     <span className="text-[10px] text-slate-400 font-semibold">({p.role})</span>
                   </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0 font-mono">
-                    <span className="text-[11px] text-slate-600 font-bold">₹ {p.principalFinanced.toLocaleString('en-IN')}</span>
-                    <span className={`text-[10px] font-black px-1.5 py-0.2 rounded border ${p.color.badge}`}>
+                  <div className="flex items-center gap-1.5 flex-shrink-0 font-sans tabular-nums">
+                    <span className="text-[12px] min-[1600px]:text-[14px] text-slate-700 font-bold whitespace-nowrap">₹ {p.principalFinanced.toLocaleString('en-IN')}</span>
+                    <span className={`text-[11px] min-[1600px]:text-[12px] font-black px-1.5 py-0.2 rounded border whitespace-nowrap ${p.color.badge}`}>
                       {p.pctFormatted}
                     </span>
                   </div>
@@ -325,86 +325,78 @@ const PartnerPerformance: React.FC = () => {
             </span>
           </div>
 
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-xs text-left border-collapse">
-              <thead className="bg-slate-100/90 text-slate-700 uppercase tracking-wider text-[11px] font-bold border-b border-slate-200 sticky top-0 z-10">
+          <div className="w-full">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-100/90 text-slate-700 uppercase tracking-wider text-[11px] min-[1600px]:text-[12px] font-bold border-b border-slate-200 sticky top-0 z-10 leading-tight">
                 <tr>
-                  <th className="px-3.5 py-2.5 text-left whitespace-nowrap">Partner Name</th>
-                  <th className="px-3.5 py-2.5 text-right whitespace-nowrap text-slate-700">Capital</th>
-                  <th className="px-3 py-2.5 text-center whitespace-nowrap text-slate-600">Introduced</th>
-                  <th className="px-3.5 py-2.5 text-right whitespace-nowrap text-blue-900">Financed</th>
-                  <th className="px-3.5 py-2.5 text-right whitespace-nowrap text-emerald-800">Collected</th>
-                  <th className="px-3.5 py-2.5 text-right whitespace-nowrap text-emerald-800">Int Earned</th>
-                  <th className="px-3.5 py-2.5 text-right whitespace-nowrap text-emerald-800">Pen Earned</th>
-                  <th className="px-3.5 py-2.5 text-right whitespace-nowrap text-rose-800">Outstanding</th>
-                  <th className="px-3.5 py-2.5 text-right whitespace-nowrap text-rose-800">Present Due</th>
-                  <th className="px-3.5 py-2.5 text-center whitespace-nowrap text-emerald-900 bg-emerald-50/80">Recovery %</th>
-                  <th className="px-3 py-2.5 text-center whitespace-nowrap text-rose-800">NPA</th>
-                  <th className="px-3.5 py-2.5 text-center whitespace-nowrap text-slate-700">Act / Cls</th>
+                  <th className="px-1.5 py-2.5 text-left align-bottom">Partner Name</th>
+                  <th className="px-1.5 py-2.5 text-right text-slate-700 align-bottom">Capital (₹)</th>
+                  <th className="px-1.5 py-2.5 text-center text-slate-600 align-bottom">Introduced</th>
+                  <th className="px-1.5 py-2.5 text-right text-blue-900 align-bottom">Financed (₹)</th>
+                  <th className="px-1.5 py-2.5 text-right text-emerald-800 align-bottom">Collected (₹)</th>
+                  <th className="px-1.5 py-2.5 text-right text-emerald-800 align-bottom">Int Earned (₹)</th>
+                  <th className="px-1.5 py-2.5 text-right text-emerald-800 align-bottom">Pen Earned (₹)</th>
+                  <th className="px-1.5 py-2.5 text-right text-rose-800 align-bottom">Outstanding (₹)</th>
+                  <th className="px-1.5 py-2.5 text-right text-rose-800 align-bottom">Present Due (₹)</th>
+                  <th className="px-1.5 py-2.5 text-center text-emerald-900 bg-emerald-50/80 align-bottom">Recovery %</th>
+                  <th className="px-1.5 py-2.5 text-center text-rose-800 align-bottom">NPA</th>
+                  <th className="px-1.5 py-2.5 text-center text-slate-700 align-bottom">Act / Cls</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-150 bg-white font-mono text-[11px]">
+              <tbody className="divide-y divide-slate-150 bg-white font-sans tabular-nums text-[12px] min-[1500px]:text-[13px] min-[1600px]:text-[14px]">
                 {rows.map((row) => (
                   <tr 
                     key={row.id} 
                     className="hover:bg-slate-50/80 cursor-pointer transition-colors"
                     onClick={() => navigate('/finance/business-report', { state: { targetPartnerId: row.id } })}
                   >
-                    <td className="px-3.5 py-2.5 text-slate-900 font-sans font-bold uppercase whitespace-nowrap text-xs">
-                      {row.name} <span className="text-[9px] text-slate-500 bg-slate-100 border border-slate-200 px-1 py-0.5 rounded font-bold uppercase ml-1">{row.role}</span>
+                    <td className="px-1.5 py-2.5 text-slate-900 font-sans font-bold uppercase leading-tight">
+                      {row.name} <span className="inline-block text-[10px] text-slate-500 bg-slate-100 border border-slate-200 px-1 py-0.5 rounded font-bold uppercase whitespace-nowrap">{row.role}</span>
                     </td>
-                    <td className={`px-3.5 py-2.5 text-right font-bold whitespace-nowrap ${row.netCapital >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                      ₹ {row.netCapital.toLocaleString('en-IN')}
+                    <td className={`px-1.5 py-2.5 text-right font-bold whitespace-nowrap ${row.netCapital >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{row.netCapital.toLocaleString('en-IN')}
                     </td>
-                    <td className="px-3 py-2.5 text-center font-bold text-slate-700 whitespace-nowrap">{row.loansIntroduced}</td>
-                    <td className="px-3.5 py-2.5 text-right text-blue-700 font-black whitespace-nowrap">₹ {row.principalFinanced.toLocaleString('en-IN')}</td>
-                    <td className="px-3.5 py-2.5 text-right text-emerald-700 font-black whitespace-nowrap">₹ {row.principalCollected.toLocaleString('en-IN')}</td>
-                    <td className="px-3.5 py-2.5 text-right text-emerald-700 font-bold whitespace-nowrap">₹ {Math.round(row.interestEarned).toLocaleString('en-IN')}</td>
-                    <td className="px-3.5 py-2.5 text-right text-emerald-700 font-bold whitespace-nowrap">₹ {Math.round(row.penaltyEarned).toLocaleString('en-IN')}</td>
-                    <td className="px-3.5 py-2.5 text-right text-rose-700 font-black whitespace-nowrap">₹ {Math.round(row.outstanding).toLocaleString('en-IN')}</td>
-                    <td className="px-3.5 py-2.5 text-right text-rose-700 font-black whitespace-nowrap">₹ {Math.round(row.presentDue).toLocaleString('en-IN')}</td>
-                    <td className="px-3.5 py-2.5 text-center text-emerald-900 font-black bg-emerald-50/80 whitespace-nowrap">
+                    <td className="px-1.5 py-2.5 text-center font-bold text-slate-700 whitespace-nowrap">{row.loansIntroduced}</td>
+                    <td className="px-1.5 py-2.5 text-right text-blue-700 font-black whitespace-nowrap">{row.principalFinanced.toLocaleString('en-IN')}</td>
+                    <td className="px-1.5 py-2.5 text-right text-emerald-700 font-black whitespace-nowrap">{row.principalCollected.toLocaleString('en-IN')}</td>
+                    <td className="px-1.5 py-2.5 text-right text-emerald-700 font-bold whitespace-nowrap">{Math.round(row.interestEarned).toLocaleString('en-IN')}</td>
+                    <td className="px-1.5 py-2.5 text-right text-emerald-700 font-bold whitespace-nowrap">{Math.round(row.penaltyEarned).toLocaleString('en-IN')}</td>
+                    <td className="px-1.5 py-2.5 text-right text-rose-700 font-black whitespace-nowrap">{Math.round(row.outstanding).toLocaleString('en-IN')}</td>
+                    <td className="px-1.5 py-2.5 text-right text-rose-700 font-black whitespace-nowrap">{Math.round(row.presentDue).toLocaleString('en-IN')}</td>
+                    <td className="px-1.5 py-2.5 text-center text-emerald-900 font-black bg-emerald-50/80 whitespace-nowrap">
                       {row.recoveryPct.toFixed(1)}%
                     </td>
-                    <td className="px-3 py-2.5 text-center text-rose-800 font-black whitespace-nowrap">
+                    <td className="px-1.5 py-2.5 text-center text-rose-800 font-black whitespace-nowrap">
                       {row.npaCount}
                     </td>
-                    <td className="px-3.5 py-2.5 text-center text-slate-700 font-sans font-bold whitespace-nowrap">{row.activeLoans} / {row.closedLoans}</td>
+                    <td className="px-1.5 py-2.5 text-center text-slate-700 font-sans font-bold whitespace-nowrap">{row.activeLoans} / {row.closedLoans}</td>
                   </tr>
                 ))}
 
                 {/* Grand Total Reconciliation Row */}
-                <tr className="bg-slate-100 font-mono font-black border-t-2 border-slate-300 text-xs text-slate-900">
-                  <td className="px-3.5 py-3 font-sans font-black uppercase text-left">GRAND TOTAL:</td>
-                  <td className="px-3.5 py-3 text-right font-bold text-emerald-800 whitespace-nowrap">
-                    ₹ {grandTotals.netCapital.toLocaleString('en-IN')}
+                <tr className="bg-slate-100 font-sans tabular-nums font-black border-t-2 border-slate-300 text-slate-900 text-[12px] min-[1500px]:text-[13px] min-[1600px]:text-[14px]">
+                  <td className="px-1.5 py-3 font-sans font-black uppercase text-left">GRAND TOTAL:</td>
+                  <td className="px-1.5 py-3 text-right font-bold text-emerald-800 whitespace-nowrap">{grandTotals.netCapital.toLocaleString('en-IN')}
                   </td>
-                  <td className="px-3 py-3 text-center font-bold">{grandTotals.loansIntroduced}</td>
-                  <td className="px-3.5 py-3 text-right font-black text-blue-900 whitespace-nowrap">
-                    ₹ {grandTotals.principalFinanced.toLocaleString('en-IN')}
+                  <td className="px-1.5 py-3 text-center font-bold">{grandTotals.loansIntroduced}</td>
+                  <td className="px-1.5 py-3 text-right font-black text-blue-900 whitespace-nowrap">{grandTotals.principalFinanced.toLocaleString('en-IN')}
                   </td>
-                  <td className="px-3.5 py-3 text-right font-black text-emerald-800 whitespace-nowrap">
-                    ₹ {grandTotals.principalCollected.toLocaleString('en-IN')}
+                  <td className="px-1.5 py-3 text-right font-black text-emerald-800 whitespace-nowrap">{grandTotals.principalCollected.toLocaleString('en-IN')}
                   </td>
-                  <td className="px-3.5 py-3 text-right font-bold text-emerald-800 whitespace-nowrap">
-                    ₹ {Math.round(grandTotals.interestEarned).toLocaleString('en-IN')}
+                  <td className="px-1.5 py-3 text-right font-bold text-emerald-800 whitespace-nowrap">{Math.round(grandTotals.interestEarned).toLocaleString('en-IN')}
                   </td>
-                  <td className="px-3.5 py-3 text-right font-bold text-emerald-800 whitespace-nowrap">
-                    ₹ {Math.round(grandTotals.penaltyEarned).toLocaleString('en-IN')}
+                  <td className="px-1.5 py-3 text-right font-bold text-emerald-800 whitespace-nowrap">{Math.round(grandTotals.penaltyEarned).toLocaleString('en-IN')}
                   </td>
-                  <td className="px-3.5 py-3 text-right font-black text-rose-800 whitespace-nowrap">
-                    ₹ {Math.round(grandTotals.outstanding).toLocaleString('en-IN')}
+                  <td className="px-1.5 py-3 text-right font-black text-rose-800 whitespace-nowrap">{Math.round(grandTotals.outstanding).toLocaleString('en-IN')}
                   </td>
-                  <td className="px-3.5 py-3 text-right font-black text-rose-800 whitespace-nowrap">
-                    ₹ {Math.round(grandTotals.presentDue).toLocaleString('en-IN')}
+                  <td className="px-1.5 py-3 text-right font-black text-rose-800 whitespace-nowrap">{Math.round(grandTotals.presentDue).toLocaleString('en-IN')}
                   </td>
-                  <td className="px-3.5 py-3 text-center font-black bg-emerald-100 text-emerald-950 whitespace-nowrap">
+                  <td className="px-1.5 py-3 text-center font-black bg-emerald-100 text-emerald-950 whitespace-nowrap">
                     {overallRecoveryPct.toFixed(1)}%
                   </td>
-                  <td className="px-3 py-3 text-center font-black text-rose-900 whitespace-nowrap">
+                  <td className="px-1.5 py-3 text-center font-black text-rose-900 whitespace-nowrap">
                     {grandTotals.npaCount}
                   </td>
-                  <td className="px-3.5 py-3 text-center font-sans font-bold whitespace-nowrap">
+                  <td className="px-1.5 py-3 text-center font-sans font-bold whitespace-nowrap">
                     {grandTotals.activeLoans} / {grandTotals.closedLoans}
                   </td>
                 </tr>

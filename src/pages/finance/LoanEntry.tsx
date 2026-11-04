@@ -74,6 +74,9 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
   const [custPresentAddress, setCustPresentAddress] = useState('');
   const [custHouseNo, setCustHouseNo] = useState('');
   const [custMandal, setCustMandal] = useState('');
+  const [custVillage, setCustVillage] = useState('');
+  // Village saved on the customer record; when empty the field can be filled in here
+  const [custVillageSaved, setCustVillageSaved] = useState(false);
   const [custDistrict, setCustDistrict] = useState('');
   const [custPhoto, setCustPhoto] = useState<string | null>(null);
   const [custSignature, setCustSignature] = useState<string | null>(null);
@@ -334,6 +337,8 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
         setCustPresentAddress(cust.present_address || '');
         setCustHouseNo(cust.address || '');
         setCustMandal(cust.mandal || '');
+        setCustVillage(cust.present_village || cust.village || '');
+        setCustVillageSaved(!!(cust.present_village || cust.village));
         setCustDistrict(cust.district || '');
       }
 
@@ -509,6 +514,8 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
         setCustPresentAddress(cust.present_address || '');
         setCustHouseNo(cust.address || '');
         setCustMandal(cust.mandal || '');
+        setCustVillage(cust.present_village || cust.village || '');
+        setCustVillageSaved(!!(cust.present_village || cust.village));
         setCustDistrict(cust.district || '');
       }
 
@@ -591,6 +598,8 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
     setCustPresentAddress('');
     setCustHouseNo('');
     setCustMandal('');
+    setCustVillage('');
+    setCustVillageSaved(false);
     setCustDistrict('');
     setAmount('');
     setInterestRate('3');
@@ -727,6 +736,8 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
         setCustPresentAddress(selected.present_address || '');
         setCustHouseNo(selected.address || '');
         setCustMandal(selected.mandal || '');
+        setCustVillage(selected.present_village || selected.village || '');
+        setCustVillageSaved(!!(selected.present_village || selected.village));
         setCustDistrict(selected.district || '');
         
         checkNPA(selected.id, selected.aadhaar || '');
@@ -906,6 +917,8 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
     setCustPresentAddress('');
     setCustHouseNo('');
     setCustMandal('');
+    setCustVillage('');
+    setCustVillageSaved(false);
     setCustDistrict('');
     setCustSearch('');
     setCustDropdownOpen(false);
@@ -974,6 +987,7 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
       { name: 'loanId', label: 'Loan Number', value: loanId, required: true, ref: loanIdRef },
       { name: 'selectedPartnerId', label: 'Assigned Partner', value: selectedPartnerId, required: true, ref: partnerRef as any },
       { name: 'custName', label: 'Customer Name', value: custName, required: true, ref: custNameRef },
+      { name: 'custVillage', label: 'Village', value: custVillage, required: true },
       { name: 'custPhone', label: 'Customer Phone', value: custPhone, required: mandatoryFields.borrowerPhone, ref: custPhoneRef },
       { name: 'custAadhaar', label: 'Customer Aadhaar UID', value: custAadhaar, required: mandatoryFields.borrowerAadhaar },
       { name: 'g1SelectedId', label: 'Guarantor 1', value: g1SelectedId || g1Name, required: true, ref: g1SearchRef as any },
@@ -1116,6 +1130,8 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
           father_name: custFatherName || null,
           aadhaar_address: custAadhaarAddress || null,
           present_address: custPresentAddress || null,
+          village: custVillage.trim() || null,
+          present_village: custVillage.trim() || null,
           mandal: custMandal || null,
           present_mandal: custMandal || null,
           district: custDistrict || null,
@@ -1187,6 +1203,8 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
             father_name: custFatherName || null,
             aadhaar_address: custAadhaarAddress || null,
             present_address: custPresentAddress || null,
+            village: custVillage.trim() || null,
+            present_village: custVillage.trim() || null,
             mandal: custMandal || null,
             present_mandal: custMandal || null,
             district: custDistrict || null,
@@ -1505,6 +1523,10 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
                   setCustPresentAddress('');
                   setCustHouseNo('');
                   setCustMandal('');
+                  setCustVillage('');
+                  setCustVillageSaved(false);
+    setCustVillage('');
+    setCustVillageSaved(false);
                   setCustDistrict('');
                   setNpaWarning(null);
                 }}
@@ -1646,56 +1668,81 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
                 <Input label="Phone 2" value={custPhone2} onChange={editLoanId ? setCustPhone2 : undefined} readOnly={!editLoanId} placeholder="Phone 2" />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t border-slate-100 pt-2">
-                <div>
+              {/* Address: same layout as New Customer (Aadhaar | Present | House No, Village, Mandal, District) */}
+              <div className="grid grid-cols-12 gap-3 border-t border-slate-100 pt-2">
+                <div className="col-span-12 md:col-span-4 flex flex-col">
                   <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                    Aadhaar Address
+                    Aadhaar Address <span className="text-red-500">*</span>
                   </label>
                   <textarea
                     value={custAadhaarAddress}
                     onChange={editLoanId ? (e) => setCustAadhaarAddress(e.target.value) : undefined}
                     readOnly={!editLoanId}
-                    placeholder="Address printed on Aadhaar"
-                    rows={4}
-                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none resize-none peek-caption-12 disabled:bg-slate-50"
+                    placeholder="Aadhaar Address (Door No, Street, Village, Mandal, District)"
+                    rows={3}
+                    className="w-full flex-1 bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none resize-none peek-caption-12 read-only:bg-slate-50"
                   />
                 </div>
-                <div className="space-y-3">
-                  <span className="block text-[11px] font-bold text-slate-700 uppercase">Present Address Details</span>
-                  <div className="grid grid-cols-2 gap-2">
+                <div className="col-span-12 md:col-span-4 flex flex-col">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                    Present Address <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={custPresentAddress}
+                    onChange={editLoanId ? (e) => setCustPresentAddress(e.target.value) : undefined}
+                    readOnly={!editLoanId}
+                    placeholder="Street / Area / Landmark"
+                    rows={3}
+                    className="w-full flex-1 bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none resize-none peek-caption-12 read-only:bg-slate-50"
+                  />
+                </div>
+                <div className="col-span-12 md:col-span-4 grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">House No <span className="text-red-500">*</span></label>
                     <input
                       type="text"
                       value={custHouseNo}
                       onChange={editLoanId ? (e) => setCustHouseNo(e.target.value) : undefined}
                       readOnly={!editLoanId}
-                      placeholder="House / Door No"
-                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm text-slate-800 focus:ring-1 focus:ring-slate-900 focus:outline-none h-[38px] disabled:bg-slate-50"
+                      placeholder="DOOR NO"
+                      className="w-full bg-white border rounded-lg px-2 text-sm text-slate-800 focus:ring-1 focus:ring-slate-900 focus:outline-none h-[38px] read-only:bg-slate-50 border-slate-200 uppercase"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Village <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={custVillage}
+                      onChange={(editLoanId || !custVillageSaved) ? (e) => { setCustVillage(e.target.value); setErrors(p => ({ ...p, custVillage: false })); } : undefined}
+                      readOnly={!(editLoanId || !custVillageSaved)}
+                      placeholder="VILLAGE"
+                      title={!editLoanId && !custVillageSaved ? 'No village saved for this customer yet: type it here and it is saved to the customer with the loan' : undefined}
+                      className={`w-full bg-white border rounded-lg px-2 text-sm text-slate-800 focus:ring-1 focus:ring-slate-900 focus:outline-none h-[38px] read-only:bg-slate-50 uppercase ${errors.custVillage ? 'border-red-500 bg-red-50 ring-1 ring-red-500' : 'border-slate-200'}`}
+                    />
+                    {errors.custVillage && <p className="text-xs text-red-500 font-bold mt-1">Village is required</p>}
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Mandal <span className="text-red-500">*</span></label>
                     <input
                       type="text"
                       value={custMandal}
                       onChange={editLoanId ? (e) => setCustMandal(e.target.value) : undefined}
                       readOnly={!editLoanId}
-                      placeholder="Mandal"
-                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm text-slate-800 focus:ring-1 focus:ring-slate-900 focus:outline-none h-[38px] disabled:bg-slate-50"
+                      placeholder="MANDAL"
+                      className="w-full bg-white border rounded-lg px-2 text-sm text-slate-800 focus:ring-1 focus:ring-slate-900 focus:outline-none h-[38px] read-only:bg-slate-50 border-slate-200 uppercase"
                     />
                   </div>
-                  <textarea
-                    value={custPresentAddress}
-                    onChange={editLoanId ? (e) => setCustPresentAddress(e.target.value) : undefined}
-                    readOnly={!editLoanId}
-                    placeholder="Street / Village / Area"
-                    rows={2}
-                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none resize-none peek-caption-12 disabled:bg-slate-50"
-                  />
-                  <input
-                    type="text"
-                    value={custDistrict}
-                    onChange={editLoanId ? (e) => setCustDistrict(e.target.value) : undefined}
-                    readOnly={!editLoanId}
-                    placeholder="District"
-                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm text-slate-800 focus:ring-1 focus:ring-slate-900 focus:outline-none h-[38px] disabled:bg-slate-50"
-                  />
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">District <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={custDistrict}
+                      onChange={editLoanId ? (e) => setCustDistrict(e.target.value) : undefined}
+                      readOnly={!editLoanId}
+                      placeholder="DISTRICT"
+                      className="w-full bg-white border rounded-lg px-2 text-sm text-slate-800 focus:ring-1 focus:ring-slate-900 focus:outline-none h-[38px] read-only:bg-slate-50 border-slate-200 uppercase"
+                    />
+                  </div>
                 </div>
               </div>
 

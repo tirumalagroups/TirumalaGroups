@@ -35,9 +35,9 @@ const getAdaptiveCardFontSize = (amount: number, minimumFractionDigits = 0) => {
 const getPillNumberClass = (amount: number) => {
   const str = `₹${amount.toLocaleString('en-IN')}`;
   const len = str.length;
-  if (len >= 13) return 'text-[9.5px] xl:text-[10px] font-extrabold font-mono leading-tight whitespace-nowrap block';
-  if (len >= 10) return 'text-[10.5px] xl:text-[11px] font-extrabold font-mono leading-tight whitespace-nowrap block';
-  return 'text-xs font-extrabold font-mono leading-tight whitespace-nowrap block';
+  if (len >= 13) return 'text-[13px] min-[1600px]:text-[14px] font-extrabold font-mono tabular-nums leading-tight whitespace-nowrap block';
+  if (len >= 10) return 'text-[13px] min-[1600px]:text-[15px] font-extrabold font-mono tabular-nums leading-tight whitespace-nowrap block';
+  return 'text-[14px] min-[1600px]:text-[16px] font-extrabold font-mono tabular-nums leading-tight whitespace-nowrap block';
 };
 
 const FinanceDashboard: React.FC = () => {
@@ -225,21 +225,21 @@ const FinanceDashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-slate-100">
+            <div className="grid grid-cols-1 min-[1600px]:grid-cols-2 gap-1.5 pt-2 border-t border-slate-100">
               <div className="bg-slate-50 px-2 py-1.5 rounded border border-slate-100">
-                <span className="text-[10px] font-bold uppercase text-slate-400 block">Active Loans</span>
-                <span className="text-xs font-extrabold text-slate-800">{metrics.activeLoansCount} Accounts</span>
+                <span className="text-[11px] font-bold uppercase text-slate-400 block">Active Loans</span>
+                <span className="text-[13px] min-[1600px]:text-[14px] font-extrabold text-slate-800 tabular-nums">{metrics.activeLoansCount} Accounts</span>
               </div>
               <div className="bg-slate-50 px-2 py-1.5 rounded border border-slate-100">
-                <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Loans</span>
-                <span className="text-xs font-extrabold text-slate-800">{metrics.totalLoansCount} Accounts</span>
+                <span className="text-[11px] font-bold uppercase text-slate-400 block">Total Loans</span>
+                <span className="text-[13px] min-[1600px]:text-[14px] font-extrabold text-slate-800 tabular-nums">{metrics.totalLoansCount} Accounts</span>
               </div>
               <div className="bg-slate-50 px-2 py-1.5 rounded border border-slate-100 overflow-hidden">
-                <span className="text-[10px] font-bold uppercase text-slate-400 block">Avg Loan</span>
+                <span className="text-[11px] font-bold uppercase text-slate-400 block">Avg Loan</span>
                 <span className={getPillNumberClass(metrics.avgLoanAmount)}>₹{metrics.avgLoanAmount.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-slate-50 px-2 py-1.5 rounded border border-slate-100 overflow-hidden">
-                <span className="text-[10px] font-bold uppercase text-slate-400 block">Max Loan</span>
+                <span className="text-[11px] font-bold uppercase text-slate-400 block">Max Loan</span>
                 <span className={getPillNumberClass(metrics.largestLoanAmount)}>₹{metrics.largestLoanAmount.toLocaleString('en-IN')}</span>
               </div>
             </div>
@@ -260,21 +260,21 @@ const FinanceDashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-rose-100">
+            <div className="grid grid-cols-1 min-[1600px]:grid-cols-2 gap-1.5 pt-2 border-t border-rose-100">
               <div className="bg-rose-50/50 px-2 py-1.5 rounded border border-rose-100 overflow-hidden">
-                <span className="text-[10px] font-bold uppercase text-rose-500 block">Principal</span>
+                <span className="text-[11px] font-bold uppercase text-rose-500 block">Principal</span>
                 <span className={`${getPillNumberClass(metrics.outstandingPrincipal)} text-rose-900`}>₹{metrics.outstandingPrincipal.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-rose-50/50 px-2 py-1.5 rounded border border-rose-100 overflow-hidden">
-                <span className="text-[10px] font-bold uppercase text-rose-500 block">Interest</span>
+                <span className="text-[11px] font-bold uppercase text-rose-500 block">Interest</span>
                 <span className={`${getPillNumberClass(metrics.pendingInterest)} text-rose-900`}>₹{metrics.pendingInterest.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-rose-50/50 px-2 py-1.5 rounded border border-rose-100 overflow-hidden">
-                <span className="text-[10px] font-bold uppercase text-rose-500 block">Penalty</span>
+                <span className="text-[11px] font-bold uppercase text-rose-500 block">Penalty</span>
                 <span className={`${getPillNumberClass(metrics.pendingPenalty)} text-rose-900`}>₹{metrics.pendingPenalty.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-rose-50/50 px-2 py-1.5 rounded border border-rose-100 overflow-hidden">
-                <span className="text-[10px] font-bold uppercase text-rose-500 block">Charges</span>
+                <span className="text-[11px] font-bold uppercase text-rose-500 block">Charges</span>
                 <span className={`${getPillNumberClass(metrics.pendingCharges)} text-rose-900`}>₹{metrics.pendingCharges.toLocaleString('en-IN')}</span>
               </div>
             </div>
@@ -295,21 +295,21 @@ const FinanceDashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-emerald-100">
+            <div className="grid grid-cols-1 min-[1600px]:grid-cols-2 gap-1.5 pt-2 border-t border-emerald-100">
               <div className="bg-emerald-50/50 px-2 py-1.5 rounded border border-emerald-100 overflow-hidden">
-                <span className="text-[10px] font-bold uppercase text-emerald-600 block">Principal</span>
+                <span className="text-[11px] font-bold uppercase text-emerald-600 block">Principal</span>
                 <span className={`${getPillNumberClass(metrics.collectedTodayPrincipal)} text-emerald-900`}>₹{metrics.collectedTodayPrincipal.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-emerald-50/50 px-2 py-1.5 rounded border border-emerald-100 overflow-hidden">
-                <span className="text-[10px] font-bold uppercase text-emerald-600 block">Interest</span>
+                <span className="text-[11px] font-bold uppercase text-emerald-600 block">Interest</span>
                 <span className={`${getPillNumberClass(metrics.collectedTodayInterest)} text-emerald-900`}>₹{metrics.collectedTodayInterest.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-emerald-50/50 px-2 py-1.5 rounded border border-emerald-100 overflow-hidden">
-                <span className="text-[10px] font-bold uppercase text-emerald-600 block">Penalty</span>
+                <span className="text-[11px] font-bold uppercase text-emerald-600 block">Penalty</span>
                 <span className={`${getPillNumberClass(metrics.collectedTodayPenalty)} text-emerald-900`}>₹{metrics.collectedTodayPenalty.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-emerald-50/50 px-2 py-1.5 rounded border border-emerald-100 overflow-hidden">
-                <span className="text-[10px] font-bold uppercase text-emerald-600 block">Charges</span>
+                <span className="text-[11px] font-bold uppercase text-emerald-600 block">Charges</span>
                 <span className={`${getPillNumberClass(metrics.collectedTodayCharges)} text-emerald-900`}>₹{metrics.collectedTodayCharges.toLocaleString('en-IN')}</span>
               </div>
             </div>
@@ -330,18 +330,18 @@ const FinanceDashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-amber-100">
-              <div className="col-span-2 bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100 flex justify-between items-center overflow-hidden">
-                <span className="text-[10px] font-bold uppercase text-amber-700">Total Due</span>
+            <div className="grid grid-cols-1 min-[1600px]:grid-cols-2 gap-1.5 pt-2 border-t border-amber-100">
+              <div className="min-[1600px]:col-span-2 bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100 flex justify-between items-center overflow-hidden">
+                <span className="text-[11px] font-bold uppercase text-amber-700">Total Due</span>
                 <span className={`${getPillNumberClass(metrics.totalOverdueAmount)} text-amber-900`}>₹{metrics.totalOverdueAmount.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100 overflow-hidden">
-                <span className="text-[10px] font-bold uppercase text-amber-700 block">Highest Due</span>
+                <span className="text-[11px] font-bold uppercase text-amber-700 block">Highest Due</span>
                 <span className={`${getPillNumberClass(metrics.highestOverdueAmount)} text-amber-900`}>₹{metrics.highestOverdueAmount.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100">
-                <span className="text-[10px] font-bold uppercase text-amber-700 block">Critical (&gt;90d)</span>
-                <span className="text-xs font-extrabold text-amber-900">{metrics.criticalOverdueCount} Accounts</span>
+                <span className="text-[11px] font-bold uppercase text-amber-700 block">Critical (&gt;90d)</span>
+                <span className="text-[13px] min-[1600px]:text-[14px] font-extrabold text-amber-900 tabular-nums">{metrics.criticalOverdueCount} Accounts</span>
               </div>
             </div>
             <p className="text-[11px] text-amber-600/80 font-semibold">Active accounts past due date requiring recovery action</p>
@@ -362,12 +362,12 @@ const FinanceDashboard: React.FC = () => {
               <Link
                 key={idx}
                 to={action.path}
-                className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center gap-3 h-[46px] group"
+                className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center gap-3 min-h-[46px] group"
               >
                 <div className="text-slate-400 group-hover:text-slate-900 transition-colors">
                   <IconComponent className="w-4 h-4" />
                 </div>
-                <span className="text-xs font-bold uppercase text-slate-800 truncate leading-none">
+                <span className="text-xs font-bold uppercase text-slate-800 leading-tight">
                   {action.label}
                 </span>
               </Link>
@@ -412,38 +412,38 @@ const FinanceDashboard: React.FC = () => {
             </div>
           ) : (
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs table-fixed divide-y divide-slate-200">
+              <div>
+                <table className="w-full divide-y divide-slate-200">
                   <thead className="bg-slate-50 text-slate-600">
                     <tr className="divide-x divide-slate-200">
-                      <th className="w-24 px-3 py-2.5 text-left font-bold uppercase">Loan ID</th>
-                      <th className="px-3 py-2.5 text-left font-bold uppercase">Customer Name</th>
-                      <th className="w-28 px-3 py-2.5 text-left font-bold uppercase">Date</th>
-                      <th className="w-32 px-3 py-2.5 text-right font-bold uppercase">Amount</th>
-                      <th className="w-20 px-3 py-2.5 text-center font-bold uppercase">Category</th>
-                      <th className="w-24 px-3 py-2.5 text-center font-bold uppercase">Status</th>
+                      <th className="px-3 py-2.5 text-left font-bold uppercase text-[12px]">Loan ID</th>
+                      <th className="px-3 py-2.5 text-left font-bold uppercase text-[12px]">Customer Name</th>
+                      <th className="px-3 py-2.5 text-left font-bold uppercase text-[12px]">Date</th>
+                      <th className="px-3 py-2.5 text-right font-bold uppercase text-[12px]">Amount</th>
+                      <th className="px-3 py-2.5 text-center font-bold uppercase text-[12px]">Category</th>
+                      <th className="px-3 py-2.5 text-center font-bold uppercase text-[12px]">Status</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-100 divide-x divide-slate-50">
                     {metrics.recentLoans.map((loan) => (
                       <tr key={loan.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="px-3 py-2 font-mono text-slate-900 font-bold truncate">
+                        <td className="whitespace-nowrap px-3 py-2 text-[13px] min-[1600px]:text-[14px] font-mono text-slate-900 font-bold">
                           {loan.loan_id}
                         </td>
-                        <td className="px-3 py-2 text-slate-900 font-bold uppercase truncate">
+                        <td className="px-3 py-2 text-[13px] min-[1600px]:text-[14px] text-slate-900 font-bold uppercase">
                           {loan.customer?.name || 'N/A'}
                         </td>
-                        <td className="px-3 py-2 text-slate-500 font-medium truncate">
+                        <td className="whitespace-nowrap px-3 py-2 text-[13px] min-[1600px]:text-[14px] text-slate-600 font-medium tabular-nums">
                           {new Date(loan.date).toLocaleDateString('en-IN', {
                             day: '2-digit',
                             month: 'short',
                             year: 'numeric',
                           })}
                         </td>
-                        <td className="px-3 py-2 text-right text-slate-900 font-bold font-mono">
+                        <td className="whitespace-nowrap px-3 py-2 text-[13px] min-[1600px]:text-[14px] text-right text-slate-900 font-bold font-mono tabular-nums">
                           ₹{Number(loan.amount).toLocaleString('en-IN')}
                         </td>
-                        <td className="px-3 py-2 text-center font-bold uppercase text-slate-600">
+                        <td className="px-3 py-2 text-[13px] min-[1600px]:text-[14px] text-center font-bold uppercase text-slate-600">
                           {loan.loan_category?.trim().toUpperCase() || 'CD'}
                         </td>
                         <td className="px-3 py-2 text-center">

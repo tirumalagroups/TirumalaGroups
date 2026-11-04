@@ -534,7 +534,7 @@ const Customers: React.FC = () => {
       <div className="flex justify-between items-center bg-white border border-slate-200 p-3 rounded-lg shadow-sm">
         <div>
           <h1 className="text-[24px] font-bold uppercase text-slate-900 tracking-tight leading-none">CUSTOMERS</h1>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-xs font-bold text-slate-500 uppercase">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-sm font-bold text-slate-500 uppercase">
             <span>Registered Borrowers: <strong className="text-slate-800 font-mono">{stats.total}</strong></span>
             <span>•</span>
             <span>Total Customers: <strong className="text-slate-800 font-mono">{stats.total}</strong></span>
@@ -648,7 +648,7 @@ const Customers: React.FC = () => {
         <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex flex-col w-full">
           {/* Table Container */}
           <div className="overflow-y-auto max-h-[520px] w-full custom-scrollbar">
-            <table className="fit-table w-full divide-y divide-slate-200">
+            <table className="fit-table fit-lg w-full divide-y divide-slate-200">
               <thead className="bg-slate-100 sticky top-0 z-10 text-slate-700">
                 <tr className="divide-x divide-slate-200">
                   <th className="px-1.5 py-2.5 text-center font-bold uppercase text-[11px] tracking-wider">SL</th>
@@ -671,31 +671,31 @@ const Customers: React.FC = () => {
                       onClick={() => setSelectedCust(cust)}
                       className="hover:bg-slate-50 transition-colors cursor-pointer"
                     >
-                      <td className="fit-nowrap px-1.5 py-2 text-center text-slate-400 font-mono font-bold text-xs">
+                      <td className="fit-nowrap px-1.5 py-2 text-center text-slate-400 font-mono font-bold">
                         {pageIndex * pageSize + index + 1}
                       </td>
-                      <td className="fit-nowrap px-2 py-2 font-mono text-slate-900 font-bold text-center text-xs">
+                      <td className="fit-nowrap px-2 py-2 font-mono text-slate-900 font-bold text-center">
                         {cust.customer_id ?? '—'}
                       </td>
-                      <td className="px-3 py-2 uppercase text-slate-900 font-bold whitespace-normal leading-snug">
+                      <td className="px-3 py-2 uppercase text-slate-900 font-bold whitespace-normal">
                         {cust.name}
                       </td>
-                      <td className="px-2.5 py-2 text-slate-800 uppercase whitespace-normal leading-snug">
+                      <td className="px-2.5 py-2 text-slate-800 uppercase whitespace-normal">
                         {formatRelationship(cust.father_name || cust.father_husband_name) || '—'}
                       </td>
-                      <td className="px-2 py-2 font-mono text-slate-800 font-bold whitespace-nowrap text-xs">
+                      <td className="px-2 py-2 font-mono text-slate-800 font-bold whitespace-nowrap">
                         {cust.phone_1 || cust.phone || '—'}
                       </td>
-                      <td className="px-2 py-2 font-mono text-slate-500 whitespace-nowrap text-xs">
+                      <td className="px-2 py-2 font-mono text-slate-500 whitespace-nowrap">
                         {cust.phone_2 || cust.phone2 || '—'}
                       </td>
-                      <td className="px-2.5 py-2 text-slate-800 uppercase whitespace-normal text-xs leading-snug">
+                      <td className="px-2.5 py-2 text-slate-800 uppercase whitespace-normal">
                         {cust.present_village || cust.village || cust.aadhaar_village || '—'}
                       </td>
-                      <td className="px-2.5 py-2 text-slate-800 uppercase whitespace-normal text-xs leading-snug">
+                      <td className="px-2.5 py-2 text-slate-800 uppercase whitespace-normal">
                         {cust.present_mandal || cust.mandal || cust.aadhaar_mandal || '—'}
                       </td>
-                      <td className="px-2.5 py-2 text-slate-800 uppercase whitespace-normal text-xs leading-snug">
+                      <td className="px-2.5 py-2 text-slate-800 uppercase whitespace-normal">
                         {cust.present_district || cust.district || cust.aadhaar_district || '—'}
                       </td>
                       <td className="fit-nowrap px-1.5 py-2 text-center" onClick={(e) => e.stopPropagation()}>

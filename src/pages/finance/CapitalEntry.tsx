@@ -552,10 +552,10 @@ const CapitalEntry: React.FC = () => {
                         <td className="py-2.5 px-2.5 text-slate-900 font-bold uppercase text-[13px] leading-tight" title={pb.partnerName}>
                           {pb.partnerName}
                         </td>
-                        <td className="py-2.5 px-2.5 text-right font-mono text-emerald-600 font-bold text-[13px] whitespace-nowrap">
+                        <td className="py-2.5 px-2.5 text-right font-mono text-emerald-600 font-bold text-[14px] tabular-nums whitespace-nowrap">
                           {pb.capitalIn.toLocaleString('en-IN')}
                         </td>
-                        <td className="py-2.5 px-2.5 text-right font-mono text-slate-900 font-bold text-[13px] whitespace-nowrap">
+                        <td className="py-2.5 px-2.5 text-right font-mono text-slate-900 font-bold text-[14px] tabular-nums whitespace-nowrap">
                           {pb.netBalance.toLocaleString('en-IN')}
                         </td>
                       </tr>
@@ -598,45 +598,45 @@ const CapitalEntry: React.FC = () => {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto max-h-[400px] overflow-y-auto custom-scrollbar">
-              <table className="w-full text-[16px] divide-y divide-slate-200 table-fixed">
+            <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
+              <table className="w-full text-[16px] divide-y divide-slate-200">
                 <thead className="bg-slate-50 sticky top-0 z-10 text-slate-700">
                   <tr className="divide-x divide-slate-200">
-                    <th className="w-28 px-3 py-2 text-left font-bold text-[15px] uppercase">Date</th>
-                    <th className="w-48 px-3 py-2 text-left font-bold text-[15px] uppercase">Partner</th>
+                    <th className="px-3 py-2 text-left font-bold text-[15px] uppercase whitespace-nowrap">Date</th>
+                    <th className="px-3 py-2 text-left font-bold text-[15px] uppercase">Partner</th>
                     <th className="px-3 py-2 text-left font-bold text-[15px] uppercase">Particulars</th>
-                    <th className="w-36 px-3 py-2 text-right font-bold text-[15px] uppercase">Credit (Cr)</th>
-                    <th className="w-36 px-3 py-2 text-right font-bold text-[15px] uppercase">Debit (Dr)</th>
-                    <th className="w-36 px-3 py-2 text-right font-bold text-[15px] uppercase">Balance</th>
-                    <th className="w-24 px-3 py-2 text-left font-bold text-[15px] uppercase">By</th>
-                    <th className="w-28 px-3 py-2 text-right font-bold text-[15px] uppercase">Actions</th>
+                    <th className="px-3 py-2 text-right font-bold text-[15px] uppercase whitespace-nowrap">Credit (Cr)</th>
+                    <th className="px-3 py-2 text-right font-bold text-[15px] uppercase whitespace-nowrap">Debit (Dr)</th>
+                    <th className="px-3 py-2 text-right font-bold text-[15px] uppercase">Balance</th>
+                    <th className="pl-5 pr-3 py-2 text-left font-bold text-[15px] uppercase">By</th>
+                    <th className="px-3 py-2 text-right font-bold text-[15px] uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white divide-x divide-slate-50 font-semibold text-slate-800">
                   {entriesWithRunningBalance.map((e) => (
                     <tr key={e.id} className="hover:bg-slate-50/20" style={{ height: '38px' }}>
-                      <td className="px-3 py-1.5 text-slate-700 font-mono">
+                      <td className="px-3 py-1.5 text-slate-700 font-mono tabular-nums whitespace-nowrap align-top">
                         {e.entry_date.split('-').reverse().join('/')}
                       </td>
-                      <td className="px-3 py-1.5 text-slate-900 uppercase truncate" title={e.partner_name || e.partner?.name || ''}>
+                      <td className="px-3 py-1.5 text-slate-900 uppercase align-top" title={e.partner_name || e.partner?.name || ''}>
                         {e.partner_name?.toUpperCase() || e.partner?.name?.toUpperCase() || '—'}
                       </td>
-                      <td className="px-3 py-1.5 text-slate-650 truncate uppercase" title={e.particulars || ''}>
+                      <td className="px-3 py-1.5 text-slate-650 uppercase align-top [overflow-wrap:anywhere]" title={e.particulars || ''}>
                         {e.particulars || '—'}
                       </td>
-                      <td className="px-3 py-1.5 text-right font-mono text-emerald-700 font-bold whitespace-nowrap">
+                      <td className="px-3 py-1.5 align-top tabular-nums text-right font-mono text-emerald-700 font-bold whitespace-nowrap">
                         {e.credit > 0 ? `${e.credit.toLocaleString('en-IN')}` : '—'}
                       </td>
-                      <td className="px-3 py-1.5 text-right font-mono text-red-700 font-bold whitespace-nowrap">
+                      <td className="px-3 py-1.5 align-top tabular-nums text-right font-mono text-red-700 font-bold whitespace-nowrap">
                         {e.debit > 0 ? `${e.debit.toLocaleString('en-IN')}` : '—'}
                       </td>
-                      <td className="px-3 py-1.5 text-right font-mono text-slate-900 font-bold whitespace-nowrap">
+                      <td className="px-3 py-1.5 align-top tabular-nums text-right font-mono text-slate-900 font-bold whitespace-nowrap">
                         {(e.running_balance || 0).toLocaleString('en-IN')}
                       </td>
-                      <td className="px-3 py-1.5 text-slate-500 uppercase truncate">
+                      <td className="pl-5 pr-3 py-1.5 text-slate-500 uppercase align-top">
                         {e.created_by || 'STAFF'}
                       </td>
-                      <td className="px-3 py-1.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap align-top" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-end gap-1.5">
                           <button
                             type="button"
@@ -740,7 +740,7 @@ const CapitalEntry: React.FC = () => {
                 <tr key={e.id}>
                   <td className="py-2 px-2 font-mono text-[13px]">{e.entry_date.split('-').reverse().join('/')}</td>
                   <td className="py-2 px-2 text-slate-800 uppercase text-[13px]">{e.partner_name}</td>
-                  <td className="py-2 px-2 text-slate-600 uppercase text-[13px] truncate max-w-xs">{e.particulars || '—'}</td>
+                  <td className="py-2 px-2 text-slate-600 uppercase text-[13px]">{e.particulars || '—'}</td>
                   <td className="py-2 px-2 text-right font-mono text-emerald-600 text-[13px]">{e.credit > 0 ? `${e.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}</td>
                   <td className="py-2 px-2 text-right font-mono text-red-600 text-[13px]">{e.debit > 0 ? `${e.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}</td>
                   <td className="py-2 px-2 text-right font-mono font-bold text-slate-900 text-[13px]">{(e.running_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>

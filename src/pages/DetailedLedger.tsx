@@ -9,7 +9,7 @@ import toast from 'react-hot-toast';
 import ModeLabel from '../components/UI/ModeLabel';
 import CustomCalendar from '../components/UI/CustomCalendar';
 import { format } from 'date-fns';
-import { getSharedPrintStyles, printPreviewFrame, toDisplayCase } from '../utils/print';
+import { getSharedPrintStyles, printPreviewFrame, toDisplayCase, PREVIEW_FIT_HEAD } from '../utils/print';
 import { TrendingUp, TrendingDown, Search, BarChart3, Plus, Database, RefreshCw, Calendar, AlertTriangle } from 'lucide-react';
 import { useBook } from '../contexts/BookContext';
 
@@ -788,10 +788,10 @@ const DetailedLedger: React.FC = () => {
     <meta charset="utf-8">
     <style>
       ${getSharedPrintStyles({ isLandscape: false, fontSizePt: 7.5 })}
-      th, td { padding: 2px 4px; }
+      th, td { padding: 2px 3px; }
       /* No fixed column widths: each column grows or shrinks with its content */
       body { background: #f3f4f6; padding: 16px; }
-      .page { background: #fff; max-width: 210mm; margin: 0 auto; padding: 10mm 8mm; border: 1px solid #d1d5db; box-sizing: border-box; }
+      .page { background: #fff; max-width: 210mm; margin: 0 auto; padding: 8mm 6mm; border: 1px solid #d1d5db; box-sizing: border-box; }
       .header { text-align: center; border-bottom: 1.5px solid #111; padding-bottom: 5px; margin-bottom: 6px; }
       .header h1 { margin: 0; font-size: 13pt; }
       .header h2 { margin: 1px 0 0; font-size: 10.5pt; font-weight: 600; }
@@ -806,6 +806,7 @@ const DetailedLedger: React.FC = () => {
         thead { display: table-header-group; }
       }
     </style>
+    ${PREVIEW_FIT_HEAD}
   </head>
   <body>
     <div class="page">
@@ -1530,8 +1531,8 @@ const DetailedLedger: React.FC = () => {
 
       {/* Print Preview Modal: shows the exact document that gets printed */}
       {showPrintPreview && (
-        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
-          <div className='bg-white rounded-lg max-w-6xl w-full h-[90vh] flex flex-col'>
+        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 z-50'>
+          <div className='bg-white rounded-lg w-[98vw] h-[96vh] flex flex-col'>
             <div className='flex items-center justify-between px-6 py-4 border-b no-print'>
               <h3 className='text-lg font-semibold'>
                 Print Preview - Detailed Ledger

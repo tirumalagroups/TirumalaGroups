@@ -2167,39 +2167,39 @@ const NewEntry: React.FC = () => {
                   <div className='text-sm'>Try selecting a different date or create a new entry for this date.</div>
                 </div>
               ) : (
-                <div className='w-full overflow-x-auto border border-gray-200 rounded-lg shadow-sm bg-white'>
+                <div className='w-full border border-gray-200 rounded-lg shadow-sm bg-white'>
                   <div className='max-h-96 overflow-y-auto custom-scrollbar'>
-                    <table className='w-full text-[13px] table-fixed min-w-full divide-y divide-gray-200'>
+                    <table className='fit-table fit-lg w-full divide-y divide-gray-200'>
                       <thead className='sticky top-0 bg-gray-50 z-10'>
                         <tr className='border-b border-gray-200'>
-                          <th className='w-[4%] xl:w-[3%] px-1.5 py-2 text-center font-semibold text-gray-700 text-[14px] leading-tight'>
+                          <th className=' px-1.5 py-2 text-center font-semibold text-gray-700 text-[14px] leading-tight'>
                             S.No
                           </th>
-                          <th className='w-[10%] xl:w-[8%] px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
+                          <th className=' px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
                             Date
                           </th>
-                          <th className='w-[13%] xl:w-[11%] px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
+                          <th className=' px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
                             Company
                           </th>
-                          <th className='w-[13%] xl:w-[11%] px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
+                          <th className=' px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
                             Account
                           </th>
-                          <th className='w-[13%] xl:w-[11%] px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
+                          <th className=' px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
                             Sub Account
                           </th>
-                          <th className='w-[22%] xl:w-[26%] px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
+                          <th className=' px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
                             Particulars
                           </th>
-                          <th className='w-[9%] xl:w-[8%] px-1.5 py-2 text-right font-semibold text-gray-700 text-[14px] leading-tight'>
+                          <th className=' px-1.5 py-2 text-right font-semibold text-gray-700 text-[14px] leading-tight'>
                             Credit
                           </th>
-                          <th className='w-[9%] xl:w-[8%] px-1.5 py-2 text-right font-semibold text-gray-700 text-[14px] leading-tight'>
+                          <th className=' px-1.5 py-2 text-right font-semibold text-gray-700 text-[14px] leading-tight'>
                             Debit
                           </th>
-                          <th className='w-[9%] xl:w-[8%] px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
+                          <th className=' px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
                             Payment Mode
                           </th>
-                          <th className='w-[8%] xl:w-[6%] px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
+                          <th className=' px-1.5 py-2 text-left font-semibold text-gray-700 text-[14px] leading-tight'>
                             Staff
                           </th>
                         </tr>
@@ -2208,48 +2208,48 @@ const NewEntry: React.FC = () => {
                         {Array.isArray(recentEntries) && (showAllRecent ? recentEntries : recentEntries.slice(0, 4)).map((entry: any, index: number) => (
                           <tr
                             key={entry.id}
-                            className={`hover:bg-gray-50 transition-colors h-[38px] md:h-[40px] ${
+                            className={`hover:bg-gray-50 transition-colors ${
                               index % 2 === 0 ? 'bg-white' : 'bg-gray-25'
                             }`}
                           >
-                            <td className='w-[4%] xl:w-[3%] px-1.5 py-1.5 text-center font-medium text-gray-600 text-[13px]'>{index + 1}</td>
-                            <td className='w-[10%] xl:w-[8%] px-1.5 py-1.5 text-[13px] font-medium text-gray-800 leading-tight'>
-                              <div className='truncate'>{format(new Date(entry.c_date), 'dd-MMM-yy')}</div>
+                            <td className=' px-1.5 py-1.5 text-center font-medium text-gray-600'>{index + 1}</td>
+                            <td className=' px-1.5 py-1.5 font-medium text-gray-800 leading-tight'>
+                              <div className='fit-nowrap'>{format(new Date(entry.c_date), 'dd-MMM-yy')}</div>
                               {entry.pending_sync && (
                                 <span className='inline-flex items-center text-[9px] font-bold text-amber-600 bg-amber-50 px-1 py-0.2 rounded border border-amber-200 animate-pulse'>
                                   Sync
                                 </span>
                               )}
                             </td>
-                            <td className='w-[13%] xl:w-[11%] px-1.5 py-1.5 font-bold text-blue-600 text-[13px] truncate' title={entry.company_name}>
+                            <td className=' px-1.5 py-1.5 font-bold text-blue-600' title={entry.company_name}>
                               {entry.company_name}
                             </td>
-                            <td className='w-[13%] xl:w-[11%] px-1.5 py-1.5 text-[13px] font-medium text-gray-800 truncate' title={entry.acc_name?.replace(/\[DELETED\]\s*/g, '')}>
+                            <td className=' px-1.5 py-1.5 font-medium text-gray-800' title={entry.acc_name?.replace(/\[DELETED\]\s*/g, '')}>
                               {entry.acc_name?.replace(/\[DELETED\]\s*/g, '') || '-'}
                             </td>
-                            <td className='w-[13%] xl:w-[11%] px-1.5 py-1.5 text-[13px] font-medium text-gray-800 truncate' title={entry.sub_acc_name?.replace(/\[DELETED\]\s*/g, '')}>
+                            <td className=' px-1.5 py-1.5 font-medium text-gray-800' title={entry.sub_acc_name?.replace(/\[DELETED\]\s*/g, '')}>
                               {entry.sub_acc_name?.replace(/\[DELETED\]\s*/g, '') || '-'}
                             </td>
                             <td
-                              className='w-[22%] xl:w-[26%] px-1.5 py-1.5 text-[13px] font-medium text-gray-800 truncate'
+                              className=' px-1.5 py-1.5 font-medium text-gray-800'
                               title={entry.particulars?.replace(/\[DELETED\]\s*/g, '')}
                             >
                               {entry.particulars?.replace(/\[DELETED\]\s*/g, '') || '-'}
                             </td>
-                            <td className='w-[9%] xl:w-[8%] px-1.5 py-1.5 text-right font-semibold text-green-750 text-[13px] tabular-nums'>
+                            <td className=' px-1.5 py-1.5 text-right font-semibold text-green-750 tabular-nums fit-nowrap'>
                               {entry.credit > 0
                                 ? `${entry.credit.toLocaleString()}`
                                 : '-'}
                             </td>
-                            <td className='w-[9%] xl:w-[8%] px-1.5 py-1.5 text-right font-semibold text-red-750 text-[13px] tabular-nums'>
+                            <td className=' px-1.5 py-1.5 text-right font-semibold text-red-750 tabular-nums fit-nowrap'>
                               {entry.debit > 0
                                 ? `${entry.debit.toLocaleString()}`
                                 : '-'}
                             </td>
-                            <td className='w-[9%] xl:w-[8%] px-1.5 py-1.5 text-[13px] font-medium text-gray-800 truncate' title={entry.payment_mode || 'No payment mode'}>
+                            <td className=' px-1.5 py-1.5 font-medium text-gray-800' title={entry.payment_mode || 'No payment mode'}>
                               {entry.payment_mode && String(entry.payment_mode).trim() ? (entry.payment_mode === 'Online' ? 'Double' : entry.payment_mode === 'Bank Transfer' ? 'Bank' : String(entry.payment_mode).trim()) : '-'}
                             </td>
-                            <td className='w-[8%] xl:w-[6%] px-1.5 py-1.5 text-[13px] font-medium text-gray-800 truncate' title={entry.staff}>
+                            <td className=' px-1.5 py-1.5 font-medium text-gray-800' title={entry.staff}>
                               {entry.staff}
                             </td>
                           </tr>

@@ -460,9 +460,9 @@ const CallHistory: React.FC = () => {
             No Call History records match filters.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-155 text-xs">
-              <thead className="bg-slate-50 uppercase font-bold text-[11px] text-slate-700">
+          <div>
+            <table className="w-full divide-y divide-slate-155">
+              <thead className="bg-slate-50 uppercase font-bold text-[12px] text-slate-700">
                 <tr>
                   <th className="px-3 py-2.5 text-left">Loan ID</th>
                   <th className="px-3 py-2.5 text-left">Borrower Name</th>
@@ -470,7 +470,7 @@ const CallHistory: React.FC = () => {
                   <th className="px-3 py-2.5 text-center">Result</th>
                   <th className="px-3 py-2.5 text-left">Staff Name</th>
                   <th className="px-3 py-2.5 text-left">Last Log Remarks</th>
-                  <th className="px-3 py-2.5 text-center w-24">Logs count</th>
+                  <th className="px-3 py-2.5 text-center">Logs count</th>
                   <th className="px-3 py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
@@ -481,29 +481,29 @@ const CallHistory: React.FC = () => {
                     onDoubleClick={() => handleOpenModal(g)}
                     className="hover:bg-slate-50/50 cursor-pointer transition-colors h-[38px]"
                   >
-                    <td className="px-3 py-1.5 font-mono font-bold text-slate-900">{g.loan_number}</td>
-                    <td className="px-3 py-1.5">
+                    <td className="whitespace-nowrap px-3 py-1.5 text-[13px] min-[1600px]:text-[14px] font-mono font-bold text-slate-900">{g.loan_number}</td>
+                    <td className="px-3 py-1.5 text-[13px] min-[1600px]:text-[14px]">
                       <div className="font-bold text-slate-900">{g.customer_name}</div>
-                      <div className="text-[10px] text-slate-400 font-mono">{g.customer_phone}</div>
+                      <div className="text-slate-500 font-mono tabular-nums">{g.customer_phone}</div>
                     </td>
-                    <td className="px-3 py-1.5 text-center font-mono font-bold text-slate-700">
+                    <td className="whitespace-nowrap px-3 py-1.5 text-[13px] min-[1600px]:text-[14px] text-center font-mono font-bold text-slate-700 tabular-nums">
                       {g.latest_follow_up.follow_up_date}
                     </td>
                     <td className="px-3 py-1.5 text-center whitespace-nowrap">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${getCompactStatusStyle(g.latest_follow_up.result)}`}>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-black uppercase ${getCompactStatusStyle(g.latest_follow_up.result)}`}>
                         {g.latest_follow_up.result}
                       </span>
                     </td>
-                    <td className="px-3 py-1.5 font-bold text-slate-700 uppercase">
+                    <td className="px-3 py-1.5 text-[13px] min-[1600px]:text-[14px] font-bold text-slate-700 uppercase">
                       {g.latest_follow_up.followed_up_by}
                     </td>
-                    <td className="px-3 py-1.5 text-slate-600 max-w-xs truncate" title={g.latest_follow_up.narration}>
+                    <td className="min-w-[9rem] [overflow-wrap:anywhere] px-3 py-1.5 text-[13px] min-[1600px]:text-[14px] text-slate-700" title={g.latest_follow_up.narration}>
                       {g.latest_follow_up.narration}
                     </td>
-                    <td className="px-3 py-1.5 text-center font-bold font-mono text-indigo-700 bg-indigo-50/30">
+                    <td className="whitespace-nowrap px-3 py-1.5 text-[13px] min-[1600px]:text-[14px] text-center font-bold font-mono text-indigo-700 bg-indigo-50/30">
                       {g.all_follow_ups.length}
                     </td>
-                    <td className="px-3 py-1.5 text-right">
+                    <td className="whitespace-nowrap px-3 py-1.5 text-[13px] min-[1600px]:text-[14px] text-right">
                       <button
                         onClick={() => handleOpenModal(g)}
                         className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-900 font-bold uppercase cursor-pointer"
@@ -549,28 +549,28 @@ const CallHistory: React.FC = () => {
                 {/* Top Summary Bar - 40% Height Reduction Single Row */}
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-3 shrink-0 uppercase font-bold text-center text-[10px]">
                   <div className="bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs flex flex-col justify-center">
-                    <span className="text-slate-400 text-[9px] leading-none mb-0.5">Total Calls</span>
-                    <span className="text-sm font-black text-slate-900 leading-none">{stats.total}</span>
+                    <span className="text-slate-500 text-[11px] leading-none mb-1">Total Calls</span>
+                    <span className="text-base font-black text-slate-900 leading-none tabular-nums">{stats.total}</span>
                   </div>
                   <div className="bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs flex flex-col justify-center">
-                    <span className="text-slate-400 text-[9px] leading-none mb-0.5">Answered</span>
-                    <span className="text-sm font-black text-emerald-600 leading-none">{stats.answered}</span>
+                    <span className="text-slate-500 text-[11px] leading-none mb-1">Answered</span>
+                    <span className="text-base font-black text-emerald-600 leading-none tabular-nums">{stats.answered}</span>
                   </div>
                   <div className="bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs flex flex-col justify-center">
-                    <span className="text-slate-400 text-[9px] leading-none mb-0.5">Promises</span>
-                    <span className="text-sm font-black text-blue-600 leading-none">{stats.promises}</span>
+                    <span className="text-slate-500 text-[11px] leading-none mb-1">Promises</span>
+                    <span className="text-base font-black text-blue-600 leading-none tabular-nums">{stats.promises}</span>
                   </div>
                   <div className="bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs flex flex-col justify-center">
-                    <span className="text-slate-400 text-[9px] leading-none mb-0.5">Callbacks</span>
-                    <span className="text-sm font-black text-purple-600 leading-none">{stats.callbacks}</span>
+                    <span className="text-slate-500 text-[11px] leading-none mb-1">Callbacks</span>
+                    <span className="text-base font-black text-purple-600 leading-none tabular-nums">{stats.callbacks}</span>
                   </div>
                   <div className="bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs flex flex-col justify-center">
-                    <span className="text-slate-400 text-[9px] leading-none mb-0.5">Pending</span>
-                    <span className="text-sm font-black text-amber-700 leading-none">{stats.pendingFollowUp}</span>
+                    <span className="text-slate-500 text-[11px] leading-none mb-1">Pending</span>
+                    <span className="text-base font-black text-amber-700 leading-none tabular-nums">{stats.pendingFollowUp}</span>
                   </div>
                   <div className="bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs flex flex-col justify-center">
-                    <span className="text-slate-400 text-[9px] leading-none mb-0.5">Last Call</span>
-                    <span className="text-[11px] font-black text-slate-950 leading-none font-mono">{stats.lastContact}</span>
+                    <span className="text-slate-500 text-[11px] leading-none mb-1">Last Call</span>
+                    <span className="text-[14px] font-black text-slate-950 leading-none font-mono">{stats.lastContact}</span>
                   </div>
                 </div>
 
@@ -607,7 +607,7 @@ const CallHistory: React.FC = () => {
                             <td className="px-2 py-1.5 border-r border-slate-200 font-mono font-bold text-slate-800 whitespace-nowrap">{dateStr}</td>
                             <td className="px-2 py-1.5 border-r border-slate-200 font-mono text-slate-600 whitespace-nowrap">{timeStr}</td>
                             <td className="px-2.5 py-1.5 border-r border-slate-200 text-center whitespace-nowrap">
-                              <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase border ${getCompactStatusStyle(log.result)}`}>
+                              <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-black uppercase border ${getCompactStatusStyle(log.result)}`}>
                                 {log.result}
                               </span>
                             </td>

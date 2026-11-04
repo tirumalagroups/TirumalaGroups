@@ -36,7 +36,7 @@
   table.fit-table {
     width: 100%;
     table-layout: auto;
-    font-size: 13px !important;
+    font-size: 14px !important;
   }
   table.fit-table th,
   table.fit-table td {
@@ -143,7 +143,11 @@
   @media (min-width: 1600px) {
     table.fit-table .fit-name { min-width: 9.5rem; }
   }
-  /* Smaller laptop screens: slightly smaller text so every column still fits */
+  /* Smaller laptop screens: slightly smaller text so every column still fits
+     (big screens, 1600px and up, get the larger 14px text set above) */
+  @media (max-width: 1599px) {
+    table.fit-table { font-size: 13px !important; }
+  }
   @media (max-width: 1499px) {
     table.fit-table { font-size: 12px !important; }
     table.fit-table th,
@@ -154,10 +158,13 @@
     table.fit-table { font-size: 11.5px !important; }
   }
   /* Very wide tables (15+ columns): slightly smaller text and tighter gaps so everything fits */
-  table.fit-table.fit-dense { font-size: 12px !important; }
+  table.fit-table.fit-dense { font-size: 13.5px !important; }
   table.fit-table.fit-dense th,
   table.fit-table.fit-dense td { padding: 4px 2px; }
   table.fit-table.fit-dense .fit-particulars { min-width: 7rem; }
+  @media (max-width: 1599px) {
+    table.fit-table.fit-dense { font-size: 12px !important; }
+  }
   @media (max-width: 1499px) {
     table.fit-table.fit-dense { font-size: 11.5px !important; }
     table.fit-table.fit-dense .fit-particulars { min-width: 6.5rem; }

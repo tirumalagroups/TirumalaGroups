@@ -839,70 +839,70 @@ const EditedDeletedLogs: React.FC = () => {
           {filteredEvents.length === 0 ? (
             <div className="text-center py-8 text-slate-400 uppercase font-bold text-xs">No transactions found.</div>
           ) : (
-            <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="min-w-full divide-y divide-slate-200">
+            <div className="border border-slate-200 rounded-xl">
+              <table className="w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">TIMESTAMP</th>
-                    <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">OPERATOR</th>
-                    <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">TABLE</th>
-                    <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">LOAN NO</th>
-                    <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">CUSTOMER</th>
-                    <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">CHANGED FIELDS</th>
-                    <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">SOURCE</th>
-                    <th className="px-4 py-3 text-right text-xs font-black text-slate-800 uppercase tracking-wider">ACTIONS</th>
+                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">TIMESTAMP</th>
+                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">OPERATOR</th>
+                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">TABLE</th>
+                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">LOAN NO</th>
+                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">CUSTOMER</th>
+                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">CHANGED FIELDS</th>
+                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">SOURCE</th>
+                    <th className="px-3 py-3 text-right text-xs font-black text-slate-800 uppercase tracking-wider">ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-slate-100">
                   {filteredEvents.map((item) => {
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="px-4 py-3.5 whitespace-nowrap text-xs text-slate-600 font-mono">
+                        <td className="px-3 py-3 min-w-[7.5rem] text-[13px] min-[1600px]:text-[14px] text-slate-700 font-mono tabular-nums">
                           {formatDateHuman(item.timestamp)}
                         </td>
-                        <td className="px-4 py-3.5 text-xs text-slate-900 font-bold uppercase">
+                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-slate-900 font-bold uppercase">
                           {item.operator}
                         </td>
-                        <td className="px-4 py-3.5 text-xs text-slate-700 font-mono font-bold">
+                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-slate-700 font-mono font-bold">
                           {mapTableName(item.tableName)}
                         </td>
-                        <td className="px-4 py-3.5 text-xs text-blue-900 font-mono font-black">
+                        <td className="whitespace-nowrap px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-blue-900 font-mono font-black">
                           {item.displayLoanNo}
                         </td>
-                        <td className="px-4 py-3.5 text-xs text-slate-900 font-bold">
+                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-slate-900 font-bold">
                           {item.displayCustomer}
                         </td>
-                        <td className="px-4 py-3.5">
+                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] min-w-[11rem]">
                           {item.eventType === 'CREATE' ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
                                 RECORD CREATED
                               </span>
-                              <span className="text-xs text-slate-500 font-medium truncate">Initial Record Creation</span>
+                              <span className="text-slate-500 font-medium">Initial Record Creation</span>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1.5 flex-wrap max-w-md">
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
                                 {item.changedFields.length} Field{item.changedFields.length > 1 ? 's' : ''} Edited
                               </span>
-                              <span className="text-xs text-slate-700 font-medium truncate">
+                              <span className="text-slate-700 font-medium">
                                 {item.changedFields.map(f => f.fieldLabel).join(', ')}
                               </span>
                             </div>
                           )}
                         </td>
-                        <td className="px-4 py-3.5 whitespace-nowrap">
-                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                        <td className="px-3 py-3">
+                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase bg-slate-100 text-slate-600 border border-slate-200">
                             {item.source}
                           </span>
                         </td>
-                        <td className="px-4 py-3.5 whitespace-nowrap text-right">
+                        <td className="px-3 py-3 whitespace-nowrap text-right">
                           <button
                             onClick={() => setSelectedEventForModal(item)}
-                            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors uppercase"
+                            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg !text-[12px] font-bold inline-flex items-center gap-1.5 transition-colors uppercase whitespace-nowrap"
                           >
                             <Database className="w-3.5 h-3.5" />
-                            VIEW DETAILS
+                            VIEW<span className="hidden min-[1600px]:inline"> DETAILS</span>
                           </button>
                         </td>
                       </tr>
@@ -919,50 +919,52 @@ const EditedDeletedLogs: React.FC = () => {
           {filteredDeletedLogs.length === 0 ? (
             <div className="text-center py-8 text-slate-400 uppercase font-bold text-xs">No transactions found.</div>
           ) : (
-            <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="min-w-full divide-y divide-slate-200">
+            <div className="border border-slate-200 rounded-xl">
+              <table className="w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">TIMESTAMP</th>
-                    <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">OPERATOR</th>
-                    <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">TABLE</th>
-                    <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">DETAILS</th>
-                    <th className="px-4 py-3 text-right text-xs font-black text-slate-800 uppercase tracking-wider">ACTIONS</th>
+                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">TIMESTAMP</th>
+                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">OPERATOR</th>
+                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">TABLE</th>
+                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">DETAILS</th>
+                    <th className="px-3 py-3 text-right text-xs font-black text-slate-800 uppercase tracking-wider">ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-slate-100">
                   {filteredDeletedLogs.map((log) => {
                     return (
                       <tr key={log.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="px-4 py-3.5 whitespace-nowrap text-xs text-slate-600 font-mono">
+                        <td className="px-3 py-3 min-w-[7.5rem] text-[13px] min-[1600px]:text-[14px] text-slate-700 font-mono tabular-nums">
                           {formatDateHuman(log.deleted_at)}
                         </td>
-                        <td className="px-4 py-3.5 text-xs text-slate-900 font-bold uppercase">
+                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-slate-900 font-bold uppercase">
                           {log.deleted_by}
                         </td>
-                        <td className="px-4 py-3.5 text-xs text-slate-700 font-mono font-bold">
+                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-slate-700 font-mono font-bold">
                           {mapTableName(log.table_name)}
                         </td>
-                        <td className="px-4 py-3.5 text-xs text-slate-900 font-bold">
+                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-slate-900 font-bold">
                           {getDeletedLogSummary(log)}
                         </td>
-                        <td className="px-4 py-3.5 whitespace-nowrap text-right flex items-center justify-end gap-2">
+                        <td className="whitespace-nowrap px-3 py-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => setSelectedDeleteForModal(log)}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors uppercase"
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg !text-[12px] font-bold inline-flex items-center gap-1.5 transition-colors uppercase whitespace-nowrap"
                           >
                             <Database className="w-3.5 h-3.5" />
-                            VIEW DETAILS
+                            VIEW<span className="hidden min-[1600px]:inline"> DETAILS</span>
                           </button>
                           <Button
                             onClick={() => handleRestore(log)}
                             variant="success"
                             size="sm"
                             disabled={restoring === log.id}
-                            className="font-bold uppercase text-xs"
+                            className="font-bold uppercase !text-[12px]"
                           >
                             {restoring === log.id ? 'RESTORING...' : 'RESTORE'}
                           </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1038,9 +1040,9 @@ const EditedDeletedLogs: React.FC = () => {
                 <table className="min-w-full divide-y divide-slate-200 border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
                   <thead className="bg-slate-100">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider w-1/4">FIELD NAME</th>
-                      <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider w-3/8">BEFORE (OLD VALUE)</th>
-                      <th className="px-4 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider w-3/8">AFTER (NEW VALUE)</th>
+                      <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider w-1/4">FIELD NAME</th>
+                      <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider w-3/8">BEFORE (OLD VALUE)</th>
+                      <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider w-3/8">AFTER (NEW VALUE)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">

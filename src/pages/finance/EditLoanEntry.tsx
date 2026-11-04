@@ -85,29 +85,29 @@ const EditLoanEntry: React.FC = () => {
             ) : filteredLoans.length === 0 ? (
               <div className="text-center py-8 text-slate-400 font-bold uppercase">No transactions found.</div>
             ) : (
-              <div className="overflow-x-auto">
+              <div>
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-gray-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                    <tr className="bg-gray-50 border-b border-slate-200 text-[12px] font-black text-slate-500 uppercase tracking-wider">
                       <th className="px-3 py-3">Loan ID</th>
                       <th className="px-3 py-3">Customer</th>
                       <th className="px-3 py-3">Aadhaar</th>
                       <th className="px-3 py-3 text-right">Principal</th>
-                      <th className="px-3 py-3">Instalment</th>
+                      <th className="pl-8 pr-3 py-3">Instalment</th>
                       <th className="px-3 py-3 text-center">Status</th>
                       <th className="px-3 py-3 text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-100 font-medium text-slate-700 text-xs">
+                  <tbody className="bg-white divide-y divide-gray-100 font-medium text-slate-700 text-[13px] min-[1600px]:text-[15px] tabular-nums">
                     {filteredLoans.map(loan => (
                       <tr key={loan.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-3 py-3 whitespace-nowrap text-gray-900 font-mono font-bold">
                           {loan.loan_id}
                         </td>
-                        <td className="px-3 py-3 whitespace-nowrap">
+                        <td className="px-3 py-3">
                           <div className="text-gray-900 font-bold uppercase">{loan.customer?.name}</div>
                           {loan.customer?.phone && (
-                            <div className="text-gray-500 text-[10px] mt-0.5">{loan.customer.phone}</div>
+                            <div className="text-gray-500 font-mono mt-0.5">{loan.customer.phone}</div>
                           )}
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap text-gray-600 font-mono">
@@ -116,11 +116,11 @@ const EditLoanEntry: React.FC = () => {
                         <td className="px-3 py-3 whitespace-nowrap text-right text-gray-900 font-bold">
                           {Number(loan.amount).toLocaleString('en-IN')}
                         </td>
-                        <td className="px-3 py-3 whitespace-nowrap text-gray-700">
+                        <td className="pl-8 pr-3 py-3 whitespace-nowrap text-gray-700">
                           {loan.due_type} ({Number(loan.due_amount).toLocaleString('en-IN')})
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap text-center">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${ loan.status === 'Active' ? 'bg-green-100 text-green-800 border border-green-200' : loan.status === 'NPA_CLOSED' ? 'bg-orange-100 text-orange-800 border border-orange-200' : 'bg-gray-100 text-gray-800' }`}>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-black uppercase ${ loan.status === 'Active' ? 'bg-green-100 text-green-800 border border-green-200' : loan.status === 'NPA_CLOSED' ? 'bg-orange-100 text-orange-800 border border-orange-200' : 'bg-gray-100 text-gray-800' }`}>
                             {loan.status}
                           </span>
                         </td>

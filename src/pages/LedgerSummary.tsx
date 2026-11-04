@@ -9,7 +9,7 @@ import ModeLabel from '../components/UI/ModeLabel';
 import { format } from 'date-fns';
 import { Calendar, Search, AlertTriangle } from 'lucide-react';
 import CustomCalendar from '../components/UI/CustomCalendar';
-import { getSharedPrintStyles, printPreviewFrame, toDisplayCase } from '../utils/print';
+import { getSharedPrintStyles, printPreviewFrame, toDisplayCase, PREVIEW_FIT_HEAD } from '../utils/print';
 import { useBook } from '../contexts/BookContext';
 
 interface LedgerSummaryFilters {
@@ -553,6 +553,7 @@ const LedgerSummary: React.FC = () => {
         .page { max-width: none; border: none; padding: 0; margin: 0; }
       }
     </style>
+    ${PREVIEW_FIT_HEAD}
   </head>
   <body>
     <div class="page">
@@ -1242,8 +1243,8 @@ const LedgerSummary: React.FC = () => {
 
       {/* Print Preview Modal: shows the exact document that gets printed */}
       {showPrintPreview && (
-        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
-          <div className='bg-white rounded-lg max-w-5xl w-full h-[90vh] flex flex-col'>
+        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 z-50'>
+          <div className='bg-white rounded-lg w-[98vw] h-[96vh] flex flex-col'>
             <div className='flex items-center justify-between px-6 py-4 border-b no-print'>
               <h3 className='text-lg font-semibold'>
                 Print Preview - Ledger Summary

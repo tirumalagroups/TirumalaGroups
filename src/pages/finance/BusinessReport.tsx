@@ -307,7 +307,7 @@ const BusinessReport: React.FC = () => {
           <label className='text-slate-400 mb-1 finance-small-label uppercase'>
             Selected Partner
           </label>
-          <span className='text-[#0b1329] truncate finance-h1'>
+          <span className='text-[#0b1329] finance-h1 leading-tight break-words'>
             {selectedPartnerName}
           </span>
         </div>
@@ -433,34 +433,34 @@ const BusinessReport: React.FC = () => {
                 Loan Details ({loans.length})
               </h2>
             </div>
-            <div className='overflow-x-auto'>
-              <table className='w-full text-left border-collapse finance-caption'>
+            <div className='w-full'>
+              <table className='w-full text-left border-collapse finance-caption tabular-nums'>
                 <thead>
-                  <tr className='bg-white border-b border-slate-200 text-slate-400 text-[10px]'>
-                    <th className='px-3 py-2 uppercase font-bold'>CD No</th>
-                    <th className='px-3 py-2 uppercase font-bold'>Borrower</th>
-                    <th className='px-3 py-2 uppercase font-bold text-right'>
+                  <tr className='bg-white border-b border-slate-200 text-slate-500 text-[11px] min-[1600px]:text-[12px] leading-tight'>
+                    <th className='px-2 py-2 uppercase font-bold'>CD No</th>
+                    <th className='px-2 py-2 uppercase font-bold'>Borrower</th>
+                    <th className='px-2 py-2 uppercase font-bold text-right'>
                       Principal
                     </th>
-                    <th className='px-3 py-2 uppercase font-bold text-right text-emerald-600'>
+                    <th className='px-2 py-2 uppercase font-bold text-right text-emerald-600'>
                       Int Recv
                     </th>
-                    <th className='px-3 py-2 uppercase font-bold text-right text-emerald-600'>
+                    <th className='px-2 py-2 uppercase font-bold text-right text-emerald-600'>
                       Pen Recv
                     </th>
-                    <th className='px-3 py-2 uppercase font-bold text-right text-rose-500'>
+                    <th className='px-2 py-2 uppercase font-bold text-right text-rose-500'>
                       Pend Int
                     </th>
-                    <th className='px-3 py-2 uppercase font-bold text-right text-rose-500'>
+                    <th className='px-2 py-2 uppercase font-bold text-right text-rose-500'>
                       Pend Pen
                     </th>
-                    <th className='px-3 py-2 uppercase font-bold text-right text-rose-700'>
+                    <th className='px-2 py-2 uppercase font-bold text-right text-rose-700'>
                       Present Due
                     </th>
-                    <th className='px-3 py-2 uppercase font-bold text-center'>
+                    <th className='px-2 py-2 uppercase font-bold text-center'>
                       Status
                     </th>
-                    <th className='px-3 py-2 w-10'></th>
+                    <th className='px-2 py-2 w-10'></th>
                   </tr>
                 </thead>
                 <tbody className='divide-y divide-slate-100'>
@@ -482,44 +482,44 @@ const BusinessReport: React.FC = () => {
                           className='hover:bg-slate-50/50 transition-colors cursor-pointer'
                           onClick={() => navigateToLedger(row.loanId, row.cdNumber)}
                         >
-                          <td className='px-3 py-2.5 font-mono text-slate-900 font-black'>
+                          <td className='px-2 py-2.5 font-mono text-slate-900 font-black whitespace-nowrap'>
                             {row.cdNumber}
                           </td>
-                          <td className='px-3 py-2.5 text-slate-900 font-bold uppercase truncate max-w-[150px]'>
+                          <td className='px-2 py-2.5 text-slate-900 font-bold uppercase leading-snug'>
                             {row.borrower}
                           </td>
-                          <td className='px-3 py-2.5 text-right text-slate-900 font-medium'>
+                          <td className='px-2 py-2.5 text-right whitespace-nowrap text-slate-900 font-medium'>
                             {row.principal.toLocaleString('en-IN')}
                           </td>
-                          <td className='px-3 py-2.5 text-right text-emerald-650 font-bold'>
+                          <td className='px-2 py-2.5 text-right whitespace-nowrap text-emerald-650 font-bold'>
                             
                             {Math.round(row.interestReceived).toLocaleString(
                               'en-IN'
                             )}
                           </td>
-                          <td className='px-3 py-2.5 text-right text-emerald-600'>
+                          <td className='px-2 py-2.5 text-right whitespace-nowrap text-emerald-600'>
                             
                             {Math.round(row.penaltyReceived).toLocaleString(
                               'en-IN'
                             )}
                           </td>
-                          <td className='px-3 py-2.5 text-right text-rose-500'>
+                          <td className='px-2 py-2.5 text-right whitespace-nowrap text-rose-500'>
                             
                             {Math.round(row.pendingInterest).toLocaleString(
                               'en-IN'
                             )}
                           </td>
-                          <td className='px-3 py-2.5 text-right text-rose-500'>
+                          <td className='px-2 py-2.5 text-right whitespace-nowrap text-rose-500'>
                             
                             {Math.round(row.pendingPenalty).toLocaleString(
                               'en-IN'
                             )}
                           </td>
-                          <td className='px-3 py-2.5 text-right text-rose-700 font-black'>
+                          <td className='px-2 py-2.5 text-right whitespace-nowrap text-rose-700 font-black'>
                             
                             {Math.round(row.presentDue).toLocaleString('en-IN')}
                           </td>
-                          <td className='px-3 py-2.5 text-center'>
+                          <td className='px-2 py-2.5 text-center'>
                             <span
                               className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase ${
                                 row.status === 'Active'
@@ -534,7 +534,7 @@ const BusinessReport: React.FC = () => {
                               {row.status}
                             </span>
                           </td>
-                          <td className='px-3 py-2.5 text-slate-400 text-center'>
+                          <td className='px-2 py-2.5 text-slate-400 text-center'>
                             <ChevronRight className='w-4 h-4' />
                           </td>
                         </tr>

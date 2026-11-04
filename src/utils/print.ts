@@ -816,6 +816,7 @@ export const buildDailyReportHtml = (data: any[], options: DailyReportHtmlOption
   <title>${title} - Thirumala Group</title>
   <meta charset="utf-8">
   <style>${css}</style>
+  ${PREVIEW_FIT_HEAD}
 </head>
 <body>
   ${showToolbar ? `<div class="toolbar"><button onclick="window.print()">&#128424; Print</button></div>` : ''}
@@ -867,6 +868,46 @@ export const printDailyReport = (data: any[], options: PrintOptions = {}) => {
     printWindow.print();
   };
 };
+
+/**
+ * Print preview fit: on screen, the A4 page (.page / .print-container) is enlarged so it
+ * fills the whole preview window/tab instead of sitting small in the middle.
+ * Only the screen view is zoomed; the printed paper is unchanged.
+ * Put this just before </head> of a preview document.
+ */
+export const PREVIEW_FIT_HEAD = `<style>
+  @media print {
+    .pv-fit { transform: none !important; margin: 0 !important; }
+  }
+</style>
+<script>
+(function () {
+  // Lay the page out at real A4 width, then scale the whole page up (like zooming a photo),
+  // so the preview keeps exactly the same proportions and line breaks as the printed paper.
+  function fit() {
+    var page = document.querySelector('.page, .print-container');
+    if (!page || !document.body) return;
+    page.classList.add('pv-fit');
+    page.style.transform = 'none';
+    page.style.marginBottom = '';
+    page.style.marginLeft = '';
+    page.style.marginRight = '';
+    var cs = getComputedStyle(document.body);
+    var avail = document.body.clientWidth - parseFloat(cs.paddingLeft || '0') - parseFloat(cs.paddingRight || '0') - 2;
+    var w = page.offsetWidth, h = page.offsetHeight;
+    if (!(w > 0) || avail <= w) return;
+    var z = Math.min(avail / w, 2.5);
+    page.style.transformOrigin = 'top left';
+    page.style.marginLeft = '0';
+    page.style.marginRight = '0';
+    page.style.transform = 'scale(' + z + ')';
+    page.style.marginBottom = (h * (z - 1)) + 'px';
+  }
+  window.addEventListener('load', fit);
+  window.addEventListener('resize', fit);
+  document.addEventListener('DOMContentLoaded', fit);
+})();
+</script>`;
 
 /**
  * Prints the document shown in a preview <iframe> (same A4 page rules as the

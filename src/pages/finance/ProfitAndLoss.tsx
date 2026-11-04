@@ -4,6 +4,7 @@ import Button from '../../components/UI/Button';
 import { FinanceSmartCalendar } from '../../components/finance/FinanceSmartCalendar';
 import { dailyFinancialTransactionService, DailyFinancialTransaction } from '../../services/dailyFinancialTransactionService';
 import { supabaseFinance } from '../../lib/supabaseFinance';
+import { supabase } from '../../lib/supabase';
 import { 
   ArrowLeft, 
   RefreshCw, 
@@ -12,9 +13,6 @@ import {
   ChevronDown, 
   ChevronRight, 
   ExternalLink,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
   Users,
   Building2,
   Wallet,
@@ -64,6 +62,63 @@ const getAdaptiveCardFontSize = (amount: number, minimumFractionDigits = 2, maxF
   return 'text-[23px] sm:text-[26px] xl:text-[28px]';
 };
 
+const fmtINR = (n: number) =>
+  (Number.isFinite(n) ? n : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// "2020-09-19" -> "19-Sep-2020"
+const formatDateLong = (dateStr?: string | null): string => {
+  if (!dateStr) return '—';
+  const [y, m, d] = dateStr.split('T')[0].split('-');
+  const mi = Number(m) - 1;
+  return y && d && mi >= 0 && mi < 12 ? `${d}-${MONTHS[mi]}-${y}` : dateStr;
+};
+
+// Loan types shown in the "Total Loans Details" print section (only those with data)
+type PLLoanType = 'CD' | 'STBD' | 'HP' | 'TBD';
+const PL_LOAN_TYPES: PLLoanType[] = ['CD', 'STBD', 'HP', 'TBD'];
+
+const loanTypeFromLoan = (loanId?: string | null, category?: string | null): PLLoanType | null => {
+  const id = (loanId || '').toUpperCase();
+  if (id.startsWith('STBD')) return 'STBD';
+  if (id.startsWith('TBD')) return 'TBD';
+  if (id.startsWith('HP')) return 'HP';
+  if (id.startsWith('CD')) return 'CD';
+  const c = (category || '').toUpperCase();
+  return PL_LOAN_TYPES.find(t => c === t) || null;
+};
+
+// "CD DISBURSEMENT" / "STBD DISBURSEMENT" ... -> loan type (principal account of that type)
+const loanTypeFromHead = (head?: string | null): PLLoanType | null => {
+  const h = (head || '').toUpperCase().trim();
+  if (!h.endsWith('DISBURSEMENT')) return null;
+  if (h.startsWith('STBD')) return 'STBD';
+  if (h.startsWith('TBD')) return 'TBD';
+  if (h.startsWith('HP')) return 'HP';
+  if (h.startsWith('CD')) return 'CD';
+  return null;
+};
+
+interface PLLoanTypeStat {
+  type: PLLoanType;
+  issued: number;      // principal given out in the period
+  collection: number;  // principal paid back in the period
+  newLoans: number;    // loans opened in the period
+  closedLoans: number; // loans closed in the period
+}
+
+const PLTotalLine: React.FC<{ label: string; value: number; tone: 'income' | 'expense' | 'neutral'; strong?: boolean }> = ({ label, value, tone, strong }) => {
+  const color = tone === 'income' ? 'text-emerald-800 border-emerald-300' : tone === 'expense' ? 'text-rose-800 border-rose-300' : 'text-slate-900 border-slate-400';
+  return (
+    <div className="flex items-center justify-end gap-3">
+      <span className={`text-right uppercase text-slate-700 ${strong ? 'text-[15px] font-black' : 'text-[14px] font-bold'}`}>{label}:</span>
+      <span className={`min-w-[12rem] text-right font-mono tabular-nums whitespace-nowrap bg-white border-2 rounded px-3 py-1 ${color} ${strong ? 'text-[19px] font-black' : 'text-[17px] font-black'}`}>
+        ₹ {fmtINR(value)}
+      </span>
+    </div>
+  );
+};
+
 const ProfitAndLoss: React.FC = () => {
   const navigate = useNavigate();
   
@@ -81,6 +136,7 @@ const ProfitAndLoss: React.FC = () => {
   const [openingCash, setOpeningCash] = useState(0);
   const [closingCash, setClosingCash] = useState(0);
   const [accountBalances, setAccountBalances] = useState<BSAccountBalanceItem[]>([]);
+  const [loanStats, setLoanStats] = useState<PLLoanTypeStat[]>([]);
 
   const [financeMode] = useState<'REGULAR' | 'ITR'>(() => {
     const mode = sessionStorage.getItem('finance_previous_mode') || localStorage.getItem('finance_previous_mode');
@@ -359,6 +415,49 @@ const ProfitAndLoss: React.FC = () => {
       balances.sort((a, b) => a.accountName.localeCompare(b.accountName));
       setAccountBalances(balances);
 
+      // 5. Total Loans Details (for the print): principal issued / paid back per loan type,
+      //    from the same period entries, plus new / closed loan counts from the loans list
+      const statMap = new Map<PLLoanType, PLLoanTypeStat>();
+      const statFor = (t: PLLoanType) => {
+        if (!statMap.has(t)) statMap.set(t, { type: t, issued: 0, collection: 0, newLoans: 0, closedLoans: 0 });
+        return statMap.get(t)!;
+      };
+      txs.forEach(t => {
+        const type = loanTypeFromHead(t.headOfAccount);
+        if (!type) return;
+        const st = statFor(type);
+        st.issued += t.debit;
+        st.collection += t.credit;
+      });
+      try {
+        let loanRows: any[] = [];
+        for (let page = 0; page < 50; page++) {
+          const { data, error } = await supabase
+            .from('finance_loans')
+            .select('loan_id, loan_category, date, status, updated_at')
+            .range(page * 1000, page * 1000 + 999);
+          if (error) throw error;
+          loanRows = loanRows.concat(data || []);
+          if (!data || data.length < 1000) break;
+        }
+        const inRange = (d?: string | null) => {
+          const day = (d || '').split('T')[0];
+          return !!day && day >= startDate && day <= endDate;
+        };
+        loanRows.forEach(l => {
+          const type = loanTypeFromLoan(l.loan_id, l.loan_category);
+          if (!type) return;
+          const st = statFor(type);
+          if (inRange(l.date)) st.newLoans += 1;
+          const status = (l.status || '').toUpperCase();
+          // Loans have no separate closing date; the last update of a closed loan is its closing day
+          if ((status === 'CLOSED' || status === 'NPA_CLOSED') && inRange(l.updated_at)) st.closedLoans += 1;
+        });
+      } catch (loanErr) {
+        console.warn('Could not load loan counts for the P&L print:', loanErr);
+      }
+      setLoanStats(PL_LOAN_TYPES.map(t => statMap.get(t)).filter((x): x is PLLoanTypeStat => !!x));
+
     } catch (err) {
       console.error(err);
       toast.error('Failed to compile statement data');
@@ -419,6 +518,14 @@ const ProfitAndLoss: React.FC = () => {
 
   const netBusinessPosition = totalAssets - totalOtherLiabilities;
 
+  // Only loan types that have any data in the period
+  const loanStatsShown = useMemo(() =>
+    loanStats.filter(s => s.issued > 0 || s.collection > 0 || s.newLoans > 0 || s.closedLoans > 0), [loanStats]);
+  const loanStatsTotal = useMemo(() => loanStatsShown.reduce(
+    (acc, s) => ({ issued: acc.issued + s.issued, collection: acc.collection + s.collection, newLoans: acc.newLoans + s.newLoans, closedLoans: acc.closedLoans + s.closedLoans }),
+    { issued: 0, collection: 0, newLoans: 0, closedLoans: 0 }
+  ), [loanStatsShown]);
+
   const handleExportExcel = () => {
     const plData = [
       ...incomeHeads.map(head => ({
@@ -442,7 +549,7 @@ const ProfitAndLoss: React.FC = () => {
       })),
       { 'Category': 'TOTAL EXPENSES', 'Head of Account': '', 'Opening Balance': 0, 'Current Period Amount': totalExpenses, 'Total Amount': totalExpenses, '% Share of Total Expense': '100%', 'Ledger Count': 0 },
       { 'Category': 'NET PERIOD PROFIT', 'Head of Account': '', 'Opening Balance': 0, 'Current Period Amount': totalProfit, 'Total Amount': totalProfit, '% Share of Total Expense': '—', 'Ledger Count': 0 },
-      { 'Category': 'PER PARTNER SHARE', 'Head of Account': '', 'Opening Balance': 0, 'Current Period Amount': shareValue, 'Total Amount': shareValue, '% Share of Total Expense': '—', 'Ledger Count': 0 }
+      { 'Category': 'EACH PARTNER PROFIT', 'Head of Account': '', 'Opening Balance': 0, 'Current Period Amount': shareValue, 'Total Amount': shareValue, '% Share of Total Expense': '—', 'Ledger Count': 0 }
     ];
 
     const bsData = [
@@ -484,6 +591,117 @@ const ProfitAndLoss: React.FC = () => {
 
     exportToExcelMultiSheet(sheets, `PL_and_Balance_Sheet_${startDate}_to_${endDate}`);
     toast.success('P&L & Balance Sheet exported to Excel!');
+  };
+
+  // One side of the T statement (incomes or expenses): Account | Amount, with drill-down
+  const renderPLSide = (side: 'income' | 'expense') => {
+    const isIncome = side === 'income';
+    const heads = isIncome ? incomeHeads : expenseHeads;
+    const amountColor = isIncome ? 'text-emerald-800' : 'text-rose-800';
+    return (
+      <div className="flex flex-col min-w-0">
+        <div className={`px-3 py-2 text-center text-[15px] font-black uppercase tracking-wide border-b border-slate-300 ${isIncome ? 'bg-emerald-50 text-emerald-900' : 'bg-rose-50 text-rose-900'}`}>
+          {isIncome ? 'Incomes' : 'Expenses'}
+        </div>
+        <table className="w-full border-collapse table-auto">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50 text-[12px] font-bold uppercase text-slate-500">
+              <th className="w-8 px-1 py-1.5"></th>
+              <th className="px-2 py-1.5 text-left">Account</th>
+              <th className="px-2 py-1.5 text-right whitespace-nowrap">Amount (₹)</th>
+              <th className="w-10 px-1 py-1.5 text-center">Ledger</th>
+            </tr>
+          </thead>
+          <tbody>
+            {heads.map((head) => {
+              const isExpanded = expandedHeadNames.has(head.name);
+              return (
+                <React.Fragment key={head.name}>
+                  <tr className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                    <td className="px-1 py-2 text-center align-top">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpandHead(head.name)}
+                        className="p-0.5 text-slate-400 hover:text-slate-700 rounded transition-colors cursor-pointer"
+                        title={isExpanded ? 'Hide entries' : 'Show entries'}
+                      >
+                        {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-700" /> : <ChevronRight className="w-4 h-4" />}
+                      </button>
+                    </td>
+                    <td className="px-2 py-2 text-[14px] font-bold uppercase text-slate-900 break-words align-top">
+                      {head.name}
+                      <span className="ml-1.5 text-[11px] font-semibold normal-case text-slate-400 whitespace-nowrap">({head.ledgerCount})</span>
+                    </td>
+                    <td className={`px-2 py-2 text-right font-mono tabular-nums text-[15px] font-black whitespace-nowrap align-top ${amountColor}`}>
+                      {fmtINR(head.currentPeriod)}
+                    </td>
+                    <td className="px-1 py-2 text-center align-top">
+                      <button
+                        type="button"
+                        onClick={() => navigateToDetailedLedger(head.name)}
+                        title="Open ledger"
+                        className="inline-flex items-center justify-center p-1 rounded text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+
+                  {isExpanded && (
+                    <tr className="bg-slate-50">
+                      <td colSpan={4} className="px-2 py-2 border-b border-slate-200">
+                        <div className="bg-white rounded-lg border border-slate-200 p-2 space-y-1.5 shadow-sm">
+                          <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-700 border-b pb-1">
+                            <span>ENTRIES ({head.ledgerCount})</span>
+                            <button
+                              onClick={() => navigateToDetailedLedger(head.name)}
+                              className="text-slate-900 hover:underline font-bold text-[11px] inline-flex items-center gap-1 whitespace-nowrap"
+                            >
+                              View Full Ledger <ExternalLink className="w-3 h-3" />
+                            </button>
+                          </div>
+                          <div className="max-h-[260px] overflow-y-auto scrollbar-thin">
+                            <table className="w-full text-[12px] text-left border-collapse table-auto">
+                              <thead className="sticky top-0 bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-200">
+                                <tr className="text-[12px]">
+                                  <th className="p-1 whitespace-nowrap">Date</th>
+                                  <th className="p-1 whitespace-nowrap">Receipt</th>
+                                  <th className="p-1">Particulars</th>
+                                  <th className="p-1 text-right text-emerald-700 whitespace-nowrap">Credit</th>
+                                  <th className="p-1 text-right text-rose-700 whitespace-nowrap">Debit</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {head.entries.map((entry) => (
+                                  <tr key={entry.id} className="hover:bg-slate-50 align-top text-[13px]">
+                                    <td className="p-1 font-mono font-bold whitespace-nowrap">{formatDateOld(entry.transactionDate)}</td>
+                                    <td className="p-1 font-mono font-bold whitespace-nowrap">{entry.receiptOrVoucherNo || '—'}</td>
+                                    <td className="p-1 text-slate-700 break-words">{entry.particulars || '—'}</td>
+                                    <td className="p-1 text-right font-mono tabular-nums text-emerald-700 font-bold whitespace-nowrap">{entry.credit > 0 ? fmtINR(entry.credit) : '—'}</td>
+                                    <td className="p-1 text-right font-mono tabular-nums text-rose-700 font-bold whitespace-nowrap">{entry.debit > 0 ? fmtINR(entry.debit) : '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {heads.length === 0 && (
+              <tr>
+                <td colSpan={4} className="text-center py-6 text-slate-400 font-bold uppercase text-[13px] italic">
+                  {isIncome ? 'No income recorded' : 'No expenses recorded'}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
   };
 
   return (
@@ -575,336 +793,47 @@ const ProfitAndLoss: React.FC = () => {
           <span className="text-xs font-bold text-slate-500 uppercase">Operating Income &amp; Expenses</span>
         </div>
 
-        {/* 4 Primary P&L KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          
-          {/* Total Income */}
-          <div className="bg-white border border-emerald-200 rounded-xl p-4 shadow-sm flex flex-col justify-between h-[110px] hover:border-emerald-300 transition-all bg-gradient-to-b from-emerald-50/20 to-white">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">Total Income</span>
-              <TrendingUp className="w-4 h-4 text-emerald-500 shrink-0" />
-            </div>
-            <div className="text-right">
-              <div className={`font-black font-mono text-emerald-700 tracking-tight leading-none ${getAdaptiveCardFontSize(totalIncome)}`}>
-                ₹ {totalIncome.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </div>
-              <span className="text-[10px] text-slate-400 font-bold uppercase block mt-1.5">Across {incomeHeads.length} Income Heads</span>
-            </div>
-          </div>
-
-          {/* Total Expenses */}
-          <div className="bg-white border border-rose-200 rounded-xl p-4 shadow-sm flex flex-col justify-between h-[110px] hover:border-rose-300 transition-all bg-gradient-to-b from-rose-50/20 to-white">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-rose-700">Total Expenses</span>
-              <TrendingDown className="w-4 h-4 text-rose-500 shrink-0" />
-            </div>
-            <div className="text-right">
-              <div className={`font-black font-mono text-rose-700 tracking-tight leading-none ${getAdaptiveCardFontSize(totalExpenses)}`}>
-                ₹ {totalExpenses.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </div>
-              <span className="text-[10px] text-slate-400 font-bold uppercase block mt-1.5">Across {expenseHeads.length} Expense Heads</span>
-            </div>
-          </div>
-
-          {/* Net Profit / Loss */}
-          <div className={`bg-white border ${totalProfit >= 0 ? 'border-emerald-200 bg-gradient-to-b from-emerald-50/20 to-white' : 'border-rose-200 bg-gradient-to-b from-rose-50/20 to-white'} rounded-xl p-4 shadow-sm flex flex-col justify-between h-[110px] transition-all`}>
-            <div className="flex justify-between items-center">
-              <span className={`text-xs font-bold uppercase tracking-wider ${totalProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                Net Profit / Loss
-              </span>
-              <DollarSign className={`w-4 h-4 shrink-0 ${totalProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`} />
-            </div>
-            <div className="text-right">
-              <div className={`font-black font-mono tracking-tight leading-none ${totalProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'} ${getAdaptiveCardFontSize(totalProfit)}`}>
-                ₹ {totalProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </div>
-              <span className="text-[10px] text-slate-400 font-bold uppercase block mt-1.5">
-                {totalProfit >= 0 ? 'Net Period Surplus' : 'Net Period Deficit'}
-              </span>
-            </div>
-          </div>
-
-          {/* Partner Share */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col justify-between h-[110px] hover:border-slate-300 transition-all">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Partner Share ({partnerCount})
-              </span>
-              <Users className="w-4 h-4 text-slate-400 shrink-0" />
-            </div>
-            <div className="text-right">
-              <div className={`font-black font-mono text-slate-900 tracking-tight leading-none ${getAdaptiveCardFontSize(shareValue, 0, 0)}`}>
-                ₹ {shareValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-              </div>
-              <span className="text-[10px] text-slate-400 font-bold uppercase block mt-1.5">Per Partner Distribution</span>
-            </div>
-          </div>
-
-        </div>
-
         {loading ? (
           <div className="flex justify-center py-16 bg-white rounded-xl border border-slate-200">
             <div className="animate-spin rounded-full h-8 w-8 border-4 border-slate-200 border-t-slate-900"></div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Income Accounts Table Card */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">
-              <div className="p-3.5 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
-                  Income Heads (Interest, Penalty, etc.)
-                </h3>
-                <span className="font-mono font-black text-emerald-700 text-xs sm:text-sm whitespace-nowrap">
-                  ₹ {totalIncome.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </span>
+          <div className="bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden">
+            {/* Statement title */}
+            <div className="text-center py-3 border-b border-slate-200 bg-slate-50">
+              <div className="text-[19px] font-black uppercase tracking-wide text-slate-900 leading-tight">Tirumala Finance</div>
+              <div className="text-[14px] font-bold uppercase text-slate-600">
+                Profit and Loss Statement · {formatDateLong(startDate)} to {formatDateLong(endDate)}
               </div>
-              <div className="overflow-x-auto flex-1 max-h-[420px] overflow-y-auto scrollbar-thin">
-                <table className="w-full text-xs text-left border-collapse min-w-[500px]">
-                  <thead className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur-[2px] text-slate-600 uppercase tracking-wider text-[10px] sm:text-[11px] font-bold border-b border-slate-200">
-                    <tr>
-                      <th className="w-7 px-1.5 py-2.5 text-center"></th>
-                      <th className="px-2 py-2.5">Account</th>
-                      <th className="px-2 py-2.5 text-right text-slate-500 whitespace-nowrap">Opening</th>
-                      <th className="px-2 py-2.5 text-right text-emerald-700 whitespace-nowrap">Current Period</th>
-                      <th className="px-2 py-2.5 text-right text-slate-900 whitespace-nowrap">Total</th>
-                      <th className="px-2 py-2.5 text-right text-slate-500 whitespace-nowrap">% Share</th>
-                      <th className="px-2 py-2.5 text-center whitespace-nowrap">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-150 bg-white text-[11px]">
-                    {incomeHeads.map((head) => {
-                      const isExpanded = expandedHeadNames.has(head.name);
-                      return (
-                        <React.Fragment key={head.name}>
-                          <tr className="hover:bg-slate-50 transition-colors">
-                            <td className="px-1.5 py-2 text-center">
-                              <button
-                                type="button"
-                                onClick={() => toggleExpandHead(head.name)}
-                                className="p-0.5 text-slate-400 hover:text-slate-700 rounded transition-colors cursor-pointer"
-                                title={isExpanded ? "Collapse" : "Expand"}
-                              >
-                                {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-700" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                              </button>
-                            </td>
-                            <td className="px-2 py-2 font-bold text-slate-900 uppercase truncate max-w-[140px]" title={head.name}>
-                              {head.name}
-                            </td>
-                            <td className="px-2 py-2 text-right font-mono text-slate-500 whitespace-nowrap">
-                              {head.opening !== 0 ? head.opening.toLocaleString('en-IN') : '—'}
-                            </td>
-                            <td className="px-2 py-2 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">
-                              {head.currentPeriod.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </td>
-                            <td className="px-2 py-2 text-right font-mono font-black text-slate-900 whitespace-nowrap">
-                              {head.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </td>
-                            <td className="px-2 py-2 text-right font-mono text-slate-600 whitespace-nowrap">{head.percentage}%</td>
-                            <td className="px-2 py-2 text-center whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => navigateToDetailedLedger(head.name)}
-                                className="inline-flex items-center gap-1 text-slate-700 hover:text-slate-900 text-[10px] font-bold hover:underline"
-                              >
-                                <span>Ledger</span>
-                                <ExternalLink className="w-3 h-3" />
-                              </button>
-                            </td>
-                          </tr>
-
-                          {/* Expandable Sub-table */}
-                          {isExpanded && (
-                            <tr className="bg-slate-50">
-                              <td colSpan={7} className="px-2 py-2 border-y border-slate-200">
-                                <div className="bg-white rounded-lg border border-slate-200 p-2 space-y-1.5 shadow-sm">
-                                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-700 border-b pb-1">
-                                    <span>TRANSACTION BREAKDOWN ({head.ledgerCount} entries)</span>
-                                    <button 
-                                      onClick={() => navigateToDetailedLedger(head.name)}
-                                      className="text-slate-900 hover:underline font-bold text-[10px] inline-flex items-center gap-1"
-                                    >
-                                      View Full Ledger <ExternalLink className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                  <div className="overflow-x-auto max-h-[260px] overflow-y-auto scrollbar-thin">
-                                    <table className="w-full text-[10px] text-left border-collapse">
-                                      <thead className="sticky top-0 bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-200">
-                                        <tr>
-                                          <th className="p-1 whitespace-nowrap">Date</th>
-                                          <th className="p-1 whitespace-nowrap">Source</th>
-                                          <th className="p-1 whitespace-nowrap">Receipt</th>
-                                          <th className="p-1 whitespace-nowrap">Particulars</th>
-                                          <th className="p-1 text-right text-emerald-700 whitespace-nowrap">Credit</th>
-                                          <th className="p-1 text-right text-rose-700 whitespace-nowrap">Debit</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-150 font-mono">
-                                        {head.entries.map((entry) => (
-                                          <tr key={entry.id} className="hover:bg-slate-50">
-                                            <td className="p-1 font-bold whitespace-nowrap">{formatDateOld(entry.transactionDate)}</td>
-                                            <td className="p-1 text-slate-600 whitespace-nowrap">{entry.sourceType}</td>
-                                            <td className="p-1 font-bold whitespace-nowrap">{entry.receiptOrVoucherNo || '—'}</td>
-                                            <td className="p-1 font-sans text-slate-700 truncate max-w-[140px]" title={entry.particulars}>{entry.particulars || '—'}</td>
-                                            <td className="p-1 text-right text-emerald-700 font-bold whitespace-nowrap">{entry.credit > 0 ? entry.credit.toLocaleString('en-IN') : '—'}</td>
-                                            <td className="p-1 text-right text-rose-700 font-bold whitespace-nowrap">{entry.debit > 0 ? entry.debit.toLocaleString('en-IN') : '—'}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                    {incomeHeads.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="text-center py-6 text-slate-400 font-bold uppercase text-xs italic">No income transactions recorded.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {incomeHeads.length > 0 && (
-                <div className="p-2.5 bg-slate-50 border-t border-slate-200 flex justify-between items-center font-mono font-black text-xs">
-                  <span className="font-sans font-bold uppercase text-slate-600">TOTAL INCOME</span>
-                  <span className="text-emerald-700 text-xs sm:text-sm">₹ {totalIncome.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                </div>
-              )}
             </div>
 
-            {/* Expense Accounts Table Card */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">
-              <div className="p-3.5 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-rose-800 flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-rose-600"></span>
-                  Expense Heads (Operating Expenses)
-                </h3>
-                <span className="font-mono font-black text-rose-700 text-xs sm:text-sm whitespace-nowrap">
-                  ₹ {totalExpenses.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="overflow-x-auto flex-1 max-h-[420px] overflow-y-auto scrollbar-thin">
-                <table className="w-full text-xs text-left border-collapse min-w-[500px]">
-                  <thead className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur-[2px] text-slate-600 uppercase tracking-wider text-[10px] sm:text-[11px] font-bold border-b border-slate-200">
-                    <tr>
-                      <th className="w-7 px-1.5 py-2.5 text-center"></th>
-                      <th className="px-2 py-2.5">Account</th>
-                      <th className="px-2 py-2.5 text-right text-slate-500 whitespace-nowrap">Opening</th>
-                      <th className="px-2 py-2.5 text-right text-rose-700 whitespace-nowrap">Current Period</th>
-                      <th className="px-2 py-2.5 text-right text-slate-900 whitespace-nowrap">Total</th>
-                      <th className="px-2 py-2.5 text-right text-slate-500 whitespace-nowrap">% Share</th>
-                      <th className="px-2 py-2.5 text-center whitespace-nowrap">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-150 bg-white text-[11px]">
-                    {expenseHeads.map((head) => {
-                      const isExpanded = expandedHeadNames.has(head.name);
-                      return (
-                        <React.Fragment key={head.name}>
-                          <tr className="hover:bg-slate-50 transition-colors">
-                            <td className="px-1.5 py-2 text-center">
-                              <button
-                                type="button"
-                                onClick={() => toggleExpandHead(head.name)}
-                                className="p-0.5 text-slate-400 hover:text-slate-700 rounded transition-colors cursor-pointer"
-                                title={isExpanded ? "Collapse" : "Expand"}
-                              >
-                                {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-700" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                              </button>
-                            </td>
-                            <td className="px-2 py-2 font-bold text-slate-900 uppercase truncate max-w-[140px]" title={head.name}>
-                              {head.name}
-                            </td>
-                            <td className="px-2 py-2 text-right font-mono text-slate-500 whitespace-nowrap">
-                              {head.opening !== 0 ? head.opening.toLocaleString('en-IN') : '—'}
-                            </td>
-                            <td className="px-2 py-2 text-right font-mono font-bold text-rose-700 whitespace-nowrap">
-                              {head.currentPeriod.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </td>
-                            <td className="px-2 py-2 text-right font-mono font-black text-slate-900 whitespace-nowrap">
-                              {head.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </td>
-                            <td className="px-2 py-2 text-right font-mono text-slate-600 whitespace-nowrap">{head.percentage}%</td>
-                            <td className="px-2 py-2 text-center whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => navigateToDetailedLedger(head.name)}
-                                className="inline-flex items-center gap-1 text-slate-700 hover:text-slate-900 text-[10px] font-bold hover:underline"
-                              >
-                                <span>Ledger</span>
-                                <ExternalLink className="w-3 h-3" />
-                              </button>
-                            </td>
-                          </tr>
-
-                          {/* Expandable Sub-table */}
-                          {isExpanded && (
-                            <tr className="bg-slate-50">
-                              <td colSpan={7} className="px-2 py-2 border-y border-slate-200">
-                                <div className="bg-white rounded-lg border border-slate-200 p-2 space-y-1.5 shadow-sm">
-                                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-700 border-b pb-1">
-                                    <span>TRANSACTION BREAKDOWN ({head.ledgerCount} entries)</span>
-                                    <button 
-                                      onClick={() => navigateToDetailedLedger(head.name)}
-                                      className="text-slate-900 hover:underline font-bold text-[10px] inline-flex items-center gap-1"
-                                    >
-                                      View Full Ledger <ExternalLink className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                  <div className="overflow-x-auto max-h-[260px] overflow-y-auto scrollbar-thin">
-                                    <table className="w-full text-[10px] text-left border-collapse">
-                                      <thead className="sticky top-0 bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-200">
-                                        <tr>
-                                          <th className="p-1 whitespace-nowrap">Date</th>
-                                          <th className="p-1 whitespace-nowrap">Source</th>
-                                          <th className="p-1 whitespace-nowrap">Receipt</th>
-                                          <th className="p-1 whitespace-nowrap">Particulars</th>
-                                          <th className="p-1 text-right text-emerald-700 whitespace-nowrap">Credit</th>
-                                          <th className="p-1 text-right text-rose-700 whitespace-nowrap">Debit</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-150 font-mono">
-                                        {head.entries.map((entry) => (
-                                          <tr key={entry.id} className="hover:bg-slate-50">
-                                            <td className="p-1 font-bold whitespace-nowrap">{formatDateOld(entry.transactionDate)}</td>
-                                            <td className="p-1 text-slate-600 whitespace-nowrap">{entry.sourceType}</td>
-                                            <td className="p-1 font-bold whitespace-nowrap">{entry.receiptOrVoucherNo || '—'}</td>
-                                            <td className="p-1 font-sans text-slate-700 truncate max-w-[140px]" title={entry.particulars}>{entry.particulars || '—'}</td>
-                                            <td className="p-1 text-right text-emerald-700 font-bold whitespace-nowrap">{entry.credit > 0 ? entry.credit.toLocaleString('en-IN') : '—'}</td>
-                                            <td className="p-1 text-right text-rose-700 font-bold whitespace-nowrap">{entry.debit > 0 ? entry.debit.toLocaleString('en-IN') : '—'}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                    {expenseHeads.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="text-center py-6 text-slate-400 font-bold uppercase text-xs italic">No expense transactions recorded.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {expenseHeads.length > 0 && (
-                <div className="p-2.5 bg-slate-50 border-t border-slate-200 flex justify-between items-center font-mono font-black text-xs">
-                  <span className="font-sans font-bold uppercase text-slate-600">TOTAL EXPENSES</span>
-                  <span className="text-rose-700 text-xs sm:text-sm">₹ {totalExpenses.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                </div>
-              )}
+            {/* T statement: incomes on the left, expenses on the right */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 lg:divide-x divide-slate-300">
+              {renderPLSide('income')}
+              {renderPLSide('expense')}
             </div>
 
+            {/* Totals under the statement */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 lg:divide-x divide-slate-300 border-t-2 border-slate-800 bg-slate-50">
+              <div className="p-3 space-y-2">
+                <PLTotalLine label="Total Incomes" value={totalIncome} tone="income" />
+                <PLTotalLine
+                  label={totalProfit >= 0 ? 'Total Profit' : 'Total Loss'}
+                  value={totalProfit}
+                  tone={totalProfit >= 0 ? 'income' : 'expense'}
+                  strong
+                />
+              </div>
+              <div className="p-3 space-y-2">
+                <PLTotalLine label="Total Expenses" value={totalExpenses} tone="expense" />
+                <PLTotalLine
+                  label={`Each Partner Profit (${partnerCount})`}
+                  value={shareValue}
+                  tone="neutral"
+                  strong
+                />
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1129,18 +1058,18 @@ const ProfitAndLoss: React.FC = () => {
                   No balance sheet accounts recorded.
                 </div>
               ) : (
-                <div className="overflow-x-auto max-h-[380px] overflow-y-auto scrollbar-thin">
-                  <table className="w-full text-xs text-left border-collapse">
+                <div className="max-h-[380px] overflow-y-auto scrollbar-thin">
+                  <table className="w-full text-[13px] text-left border-collapse table-auto">
                     <thead className="sticky top-0 z-10 bg-slate-100 text-slate-600 uppercase tracking-wider text-[11px] font-bold border-b border-slate-200">
                       <tr>
-                        <th className="w-12 px-3 py-2.5 text-center">S.No</th>
-                        <th className="px-4 py-2.5">Account Name</th>
-                        <th className="px-3 py-2.5 text-center">Category</th>
-                        <th className="px-4 py-2.5 text-right text-slate-500 whitespace-nowrap">Opening Balance</th>
-                        <th className="px-4 py-2.5 text-right text-emerald-700 whitespace-nowrap">Credit</th>
-                        <th className="px-4 py-2.5 text-right text-rose-700 whitespace-nowrap">Debit</th>
-                        <th className="px-4 py-2.5 text-right text-slate-900 whitespace-nowrap">Closing Balance</th>
-                        <th className="px-3 py-2.5 text-center whitespace-nowrap">Action</th>
+                        <th className="w-12 px-2 py-2 text-center">S.No</th>
+                        <th className="px-2 py-2">Account Name</th>
+                        <th className="px-2 py-2 text-center">Category</th>
+                        <th className="px-2 py-2 text-right text-slate-500 whitespace-nowrap">Opening Balance</th>
+                        <th className="px-2 py-2 text-right text-emerald-700 whitespace-nowrap">Credit</th>
+                        <th className="px-2 py-2 text-right text-rose-700 whitespace-nowrap">Debit</th>
+                        <th className="px-2 py-2 text-right text-slate-900 whitespace-nowrap">Closing Balance</th>
+                        <th className="px-2 py-2 text-center whitespace-nowrap">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-150 bg-white font-mono">
@@ -1149,11 +1078,11 @@ const ProfitAndLoss: React.FC = () => {
                           key={idx} 
                           className="hover:bg-slate-50 transition-colors"
                         >
-                          <td className="px-3 py-2.5 text-center text-slate-400 font-bold">{idx + 1}</td>
-                          <td className="px-4 py-2.5 text-slate-900 font-sans font-bold uppercase truncate max-w-[240px]">
+                          <td className="px-2 py-2 text-center text-slate-400 font-bold">{idx + 1}</td>
+                          <td className="px-2 py-2 text-slate-900 font-sans font-bold uppercase break-words">
                             {acc.accountName}
                           </td>
-                          <td className="px-3 py-2.5 text-center">
+                          <td className="px-2 py-2 text-center">
                             <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-sans font-bold uppercase ${
                               acc.category === 'ASSET' ? 'bg-blue-100 text-blue-800' :
                               acc.category === 'CAPITAL' ? 'bg-purple-100 text-purple-800' : 'bg-amber-100 text-amber-800'
@@ -1161,19 +1090,19 @@ const ProfitAndLoss: React.FC = () => {
                               {acc.category}
                             </span>
                           </td>
-                          <td className={`px-4 py-2.5 text-right font-bold whitespace-nowrap ${acc.opening >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                          <td className={`px-2 py-2 text-right font-bold whitespace-nowrap ${acc.opening >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                             {Math.abs(acc.opening).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {acc.opening >= 0 ? 'Cr' : 'Dr'}
                           </td>
-                          <td className="px-4 py-2.5 text-emerald-700 text-right font-bold whitespace-nowrap">
+                          <td className="px-2 py-2 text-emerald-700 text-right font-bold whitespace-nowrap">
                             {acc.credit > 0 ? acc.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
                           </td>
-                          <td className="px-4 py-2.5 text-rose-700 text-right font-bold whitespace-nowrap">
+                          <td className="px-2 py-2 text-rose-700 text-right font-bold whitespace-nowrap">
                             {acc.debit > 0 ? acc.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
                           </td>
-                          <td className={`px-4 py-2.5 text-right font-black whitespace-nowrap ${acc.closing >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
+                          <td className={`px-2 py-2 text-right font-black whitespace-nowrap ${acc.closing >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
                             {Math.abs(acc.closing).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {acc.closing >= 0 ? 'Cr' : 'Dr'}
                           </td>
-                          <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                          <td className="px-2 py-2 text-center whitespace-nowrap">
                             <button
                               type="button"
                               onClick={() => navigateToDetailedLedger(acc.accountName)}
@@ -1195,243 +1124,206 @@ const ProfitAndLoss: React.FC = () => {
         )}
       </div>
 
-      {/* Complete P&L & Balance Sheet Print Preview Modal */}
+      {/* P&L & Balance Sheet print (A4 portrait) */}
       <FinancePrintPreview
         isOpen={showPrintPreview}
         onClose={() => setShowPrintPreview(false)}
         title="Profit & Loss & Balance Sheet Statement"
-        documentTitle={`P&L / BALANCE SHEET: ${formatDateOld(startDate)} TO ${formatDateOld(endDate)}`}
+        documentTitle="Gajwel, Dist: Siddipet, Telangana"
         orientation="portrait"
       >
-        <div className="space-y-6 pb-8 font-sans text-slate-900 text-[10px]">
-          
-          {/* Header */}
-          <div className="text-center border-b-2 border-slate-900 pb-3">
-            <h1 className="text-lg font-black uppercase text-slate-900 tracking-wide">TIRUMALA FINANCE</h1>
-            <h2 className="text-sm font-bold uppercase text-slate-700 mt-0.5">PROFIT &amp; LOSS &amp; BALANCE SHEET STATEMENT</h2>
-            <p className="text-[10px] text-slate-500 uppercase font-mono mt-1">Period: {formatDateOld(startDate)} To {formatDateOld(endDate)}</p>
+        <div className="pl-print">
+          <style>{`
+            .pl-print { max-width: 190mm; margin: 0 auto; color: #000; font-family: Arial, Helvetica, sans-serif; }
+            .pl-print .pl-period { display: flex; justify-content: space-between; align-items: baseline; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 5px 2px; margin-bottom: 10px; font-size: 13px; font-weight: bold; }
+            .pl-print .pl-section { text-align: center; font-size: 14px; font-weight: 900; margin: 14px 0 5px; letter-spacing: 0.5px; }
+            .pl-print table { width: 100%; border-collapse: collapse; table-layout: auto; margin-bottom: 4px; }
+            .pl-print th, .pl-print td { border: 1px solid #444; padding: 4px 6px; font-size: 12px; line-height: 1.3; vertical-align: top; }
+            .pl-print th { background: #eef0f3; font-weight: bold; text-align: left; }
+            .pl-print .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-family: 'Courier New', monospace; font-weight: bold; }
+            .pl-print .ctr { text-align: center; }
+            .pl-print th.num { font-family: inherit; }
+            .pl-print tr.tot td { font-weight: 900; background: #f3f4f6; border-top: 2px solid #000; }
+            .pl-print .gap td { border: none; height: 4px; padding: 0; }
+            @media print {
+              .print-document .pl-print th, .print-document .pl-print td { font-size: 9.5pt !important; padding: 3px 5px !important; border: 1px solid #000 !important; line-height: 1.3 !important; vertical-align: top !important; }
+              .print-document .pl-print th { background: #eef0f3 !important; }
+              .print-document .pl-print .num { white-space: nowrap !important; text-align: right !important; }
+              .print-document .pl-print tr.tot td { background: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              .print-document .pl-print .gap td { border: none !important; padding: 0 !important; }
+            }
+          `}</style>
+
+          <div className="pl-period">
+            <span>From: {formatDateLong(startDate)} &nbsp; To: {formatDateLong(endDate)}</span>
+            <span>Profit &amp; Loss and Balance Sheet</span>
           </div>
 
-          {/* PART I: PROFIT & LOSS */}
-          <div className="space-y-3">
-            <div className="bg-slate-100 p-1.5 font-black uppercase tracking-wider text-slate-900 border-l-4 border-slate-900 text-[11px]">
-              Part 1: Income &amp; Expenses (Profit &amp; Loss)
-            </div>
-
-            <div className="grid grid-cols-2 gap-6">
-              
-              {/* Income Column */}
-              <div>
-                <div className="border-b-2 border-emerald-800 px-1 pb-1 font-bold text-emerald-900 uppercase">
-                  INCOME (Interest, Penalty, etc.)
-                </div>
-                <table className="w-full text-left mt-2 border-collapse font-mono">
-                  <thead>
-                    <tr className="border-b border-slate-300 font-sans font-bold text-slate-600 text-[9px] uppercase">
-                      <th className="py-1">Account</th>
-                      <th className="py-1 text-right">Current Period</th>
-                      <th className="py-1 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {incomeHeads.map((head, idx) => (
-                      <tr key={idx} className="border-b border-slate-100">
-                        <td className="py-1 uppercase text-slate-900 font-bold">{head.name}</td>
-                        <td className="py-1 text-right text-emerald-800 font-black">{head.currentPeriod.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                        <td className="py-1 text-right text-slate-900 font-black">{head.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                      </tr>
-                    ))}
-                    {incomeHeads.length === 0 && (
-                      <tr><td colSpan={3} className="py-2 text-center text-slate-400">No income recorded</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Expense Column */}
-              <div>
-                <div className="border-b-2 border-rose-800 px-1 pb-1 font-bold text-rose-900 uppercase">
-                  EXPENSES (Operating Expenses)
-                </div>
-                <table className="w-full text-left mt-2 border-collapse font-mono">
-                  <thead>
-                    <tr className="border-b border-slate-300 font-sans font-bold text-slate-600 text-[9px] uppercase">
-                      <th className="py-1">Account</th>
-                      <th className="py-1 text-right">Current Period</th>
-                      <th className="py-1 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {expenseHeads.map((head, idx) => (
-                      <tr key={idx} className="border-b border-slate-100">
-                        <td className="py-1 uppercase text-slate-900 font-bold">{head.name}</td>
-                        <td className="py-1 text-right text-rose-800 font-black">{head.currentPeriod.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                        <td className="py-1 text-right text-slate-900 font-black">{head.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                      </tr>
-                    ))}
-                    {expenseHeads.length === 0 && (
-                      <tr><td colSpan={3} className="py-2 text-center text-slate-400">No expenses recorded</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-            </div>
-
-            {/* P&L Totals Summary Banner */}
-            <div className="grid grid-cols-4 gap-4 border border-slate-900 p-2 text-center font-bold uppercase bg-slate-50 font-mono">
-              <div>
-                <span className="block text-[8px] text-slate-500 font-sans">TOTAL INCOME</span>
-                <span className="text-emerald-800 font-black">₹ {totalIncome.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div>
-                <span className="block text-[8px] text-slate-500 font-sans">TOTAL EXPENSES</span>
-                <span className="text-rose-800 font-black">₹ {totalExpenses.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div>
-                <span className="block text-[8px] text-slate-500 font-sans">NET PROFIT / LOSS</span>
-                <span className={totalProfit >= 0 ? 'text-emerald-800 font-black' : 'text-rose-800 font-black'}>₹ {totalProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div>
-                <span className="block text-[8px] text-slate-500 font-sans">PARTNER SHARE ({partnerCount})</span>
-                <span className="text-slate-900 font-black">₹ {shareValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
-              </div>
-            </div>
+          {/* Total Loans Details */}
+          <div className="pl-section">TOTAL LOANS DETAILS</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Loan Type</th>
+                <th className="num">Loans Issued (₹)</th>
+                <th className="num">Collection (₹)</th>
+                <th className="num">Balance (₹)</th>
+                <th className="num">New Loans</th>
+                <th className="num">Closed Loans</th>
+                <th className="num">Running</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loanStatsShown.map(s => (
+                <tr key={s.type}>
+                  <td>{s.type}</td>
+                  <td className="num">{fmtINR(s.issued)}</td>
+                  <td className="num">{fmtINR(s.collection)}</td>
+                  <td className="num">{fmtINR(s.issued - s.collection)}</td>
+                  <td className="num">{s.newLoans}</td>
+                  <td className="num">{s.closedLoans}</td>
+                  <td className="num">{s.newLoans - s.closedLoans}</td>
+                </tr>
+              ))}
+              {loanStatsShown.length === 0 && (
+                <tr><td colSpan={7} className="ctr">No loans in this period</td></tr>
+              )}
+              {loanStatsShown.length > 0 && (
+                <tr className="tot">
+                  <td>Total</td>
+                  <td className="num">{fmtINR(loanStatsTotal.issued)}</td>
+                  <td className="num">{fmtINR(loanStatsTotal.collection)}</td>
+                  <td className="num">{fmtINR(loanStatsTotal.issued - loanStatsTotal.collection)}</td>
+                  <td className="num">{loanStatsTotal.newLoans}</td>
+                  <td className="num">{loanStatsTotal.closedLoans}</td>
+                  <td className="num">{loanStatsTotal.newLoans - loanStatsTotal.closedLoans}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <div style={{ fontSize: '10px', color: '#444' }}>
+            Collection = loan principal paid back. Balance = Loans Issued − Collection. Running = New Loans − Closed Loans.
           </div>
 
-          {/* PART II: BALANCE SHEET */}
-          <div className="space-y-3 pt-2">
-            <div className="bg-slate-100 p-1.5 font-black uppercase tracking-wider text-slate-900 border-l-4 border-slate-900 text-[11px]">
-              Part 2: What We Own &amp; What We Owe (Balance Sheet)
-            </div>
+          {/* Profit & Loss Details */}
+          <div className="pl-section">PROFIT &amp; LOSS DETAILS</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Income</th>
+                <th className="num">Amount (₹)</th>
+                <th>Expenditure</th>
+                <th className="num">Amount (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: Math.max(incomeHeads.length, expenseHeads.length, 1) }).map((_, i) => {
+                const inc = incomeHeads[i];
+                const exp = expenseHeads[i];
+                return (
+                  <tr key={i}>
+                    <td>{inc ? inc.name : ''}</td>
+                    <td className="num">{inc ? fmtINR(inc.currentPeriod) : ''}</td>
+                    <td>{exp ? exp.name : ''}</td>
+                    <td className="num">{exp ? fmtINR(exp.currentPeriod) : ''}</td>
+                  </tr>
+                );
+              })}
+              <tr className="tot">
+                <td>Total Income</td>
+                <td className="num">{fmtINR(totalIncome)}</td>
+                <td>Total Expenditure</td>
+                <td className="num">{fmtINR(totalExpenses)}</td>
+              </tr>
+              <tr className="gap"><td colSpan={4}></td></tr>
+              <tr className="tot">
+                <td>{totalProfit >= 0 ? 'Total Profit' : 'Total Loss'}</td>
+                <td className="num">{fmtINR(totalProfit)}</td>
+                <td>Cash Balance</td>
+                <td className="num">{fmtINR(closingCash)}</td>
+              </tr>
+              <tr className="tot">
+                <td>Each Partner Profit ({partnerCount})</td>
+                <td className="num">{fmtINR(shareValue)}</td>
+                <td>Total Capital</td>
+                <td className="num">{fmtINR(totalCapitalContributed)}</td>
+              </tr>
+            </tbody>
+          </table>
 
-            <div className="grid grid-cols-2 gap-6">
-              
-              {/* Assets Column */}
-              <div>
-                <div className="border-b-2 border-blue-800 px-1 pb-1 font-bold text-blue-900 uppercase">
-                  WHAT WE OWN
-                </div>
-                <table className="w-full text-left mt-2 border-collapse font-mono">
-                  <thead>
-                    <tr className="border-b border-slate-300 font-sans font-bold text-slate-600 text-[9px] uppercase">
-                      <th className="py-1">Item</th>
-                      <th className="py-1 text-right">Amount (₹)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b border-slate-100">
-                      <td className="py-1 uppercase text-slate-900 font-bold">Loan Money Given Out (Not Yet Repaid)</td>
-                      <td className="py-1 text-right text-blue-900 font-black">{totalLoanPrincipalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    </tr>
-                    <tr className="border-b border-slate-100">
-                      <td className="py-1 uppercase text-slate-900 font-bold">Cash in Hand</td>
-                      <td className="py-1 text-right text-slate-900 font-black">{closingCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    </tr>
-                    {bankAndOtherAssetAccounts.map((acc, idx) => (
-                      <tr key={idx} className="border-b border-slate-100">
-                        <td className="py-1 uppercase text-slate-900 font-bold">{acc.accountName}</td>
-                        <td className="py-1 text-right text-slate-900 font-black">{acc.netOutstandingAsset.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                      </tr>
-                    ))}
-                    <tr className="border-t-2 border-slate-900 font-bold bg-slate-50">
-                      <td className="py-1.5 uppercase text-slate-900">TOTAL WE OWN</td>
-                      <td className="py-1.5 text-right text-blue-900 font-black">₹ {totalAssets.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+          {/* Balance Sheet */}
+          <div className="pl-section">BALANCE SHEET (WHAT WE OWN &amp; WHAT WE OWE)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>What We Own</th>
+                <th className="num">Amount (₹)</th>
+                <th>What We Owe</th>
+                <th className="num">Amount (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const own: { name: string; amount: number }[] = [
+                  { name: 'Loan Money Given Out (Not Yet Repaid)', amount: totalLoanPrincipalReceivable },
+                  { name: 'Cash in Hand', amount: closingCash },
+                  ...bankAndOtherAssetAccounts.map(a => ({ name: a.accountName, amount: a.netOutstandingAsset }))
+                ];
+                const owe: { name: string; amount: number }[] = [
+                  { name: 'Money Put In by Partners', amount: totalCapitalContributed },
+                  { name: totalProfit >= 0 ? 'Profit for This Period' : 'Loss for This Period', amount: totalProfit },
+                  ...liabilityAccounts.map(a => ({ name: a.accountName, amount: Math.abs(a.closing) }))
+                ];
+                return Array.from({ length: Math.max(own.length, owe.length) }).map((_, i) => (
+                  <tr key={i}>
+                    <td>{own[i]?.name || ''}</td>
+                    <td className="num">{own[i] ? fmtINR(own[i].amount) : ''}</td>
+                    <td>{owe[i]?.name || ''}</td>
+                    <td className="num">{owe[i] ? fmtINR(owe[i].amount) : ''}</td>
+                  </tr>
+                ));
+              })()}
+              <tr className="tot">
+                <td>Total We Own</td>
+                <td className="num">{fmtINR(totalAssets)}</td>
+                <td>Total We Owe</td>
+                <td className="num">{fmtINR(totalLiabilitiesAndCapital)}</td>
+              </tr>
+            </tbody>
+          </table>
 
-              {/* Liabilities & Capital Column */}
-              <div>
-                <div className="border-b-2 border-purple-800 px-1 pb-1 font-bold text-purple-900 uppercase">
-                  WHAT WE OWE (PARTNERS’ MONEY &amp; PROFIT)
-                </div>
-                <table className="w-full text-left mt-2 border-collapse font-mono">
-                  <thead>
-                    <tr className="border-b border-slate-300 font-sans font-bold text-slate-600 text-[9px] uppercase">
-                      <th className="py-1">Item</th>
-                      <th className="py-1 text-right">Amount (₹)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b border-slate-100">
-                      <td className="py-1 uppercase text-slate-900 font-bold">Money Put In by Partners</td>
-                      <td className="py-1 text-right text-purple-900 font-black">{totalCapitalContributed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    </tr>
-                    <tr className="border-b border-slate-100">
-                      <td className="py-1 uppercase text-slate-900 font-bold">Profit for This Period</td>
-                      <td className={`py-1 text-right font-black ${totalProfit >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
-                        {totalProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                    {liabilityAccounts.map((acc, idx) => (
-                      <tr key={idx} className="border-b border-slate-100">
-                        <td className="py-1 uppercase text-slate-900 font-bold">{acc.accountName}</td>
-                        <td className="py-1 text-right text-slate-900 font-black">{Math.abs(acc.closing).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                      </tr>
-                    ))}
-                    <tr className="border-t-2 border-slate-900 font-bold bg-slate-50">
-                      <td className="py-1.5 uppercase text-slate-900">TOTAL WE OWE (PARTNERS + PROFIT)</td>
-                      <td className="py-1.5 text-right text-purple-900 font-black">₹ {totalLiabilitiesAndCapital.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-            </div>
-
-            {/* Balance Sheet Accounts Audit Table in Print */}
-            <div className="pt-2">
-              <div className="border-b border-slate-300 pb-1 font-bold text-slate-800 uppercase text-[9px]">
-                ACCOUNT-WISE BALANCES
-              </div>
-              <table className="w-full text-left mt-1.5 border-collapse font-mono text-[9px]">
+          {/* Account-wise balances */}
+          {accountBalances.length > 0 && (
+            <>
+              <div className="pl-section">ACCOUNT-WISE BALANCES</div>
+              <table>
                 <thead>
-                  <tr className="border-b border-slate-300 font-sans font-bold text-slate-600 uppercase">
-                    <th className="py-1 w-8 text-center">S.No</th>
-                    <th className="py-1">Account Name</th>
-                    <th className="py-1 text-center">Category</th>
-                    <th className="py-1 text-right">Opening</th>
-                    <th className="py-1 text-right">Credit</th>
-                    <th className="py-1 text-right">Debit</th>
-                    <th className="py-1 text-right">Closing</th>
+                  <tr>
+                    <th className="ctr">S.No</th>
+                    <th>Account</th>
+                    <th className="ctr">Type</th>
+                    <th className="num">Opening</th>
+                    <th className="num">Credit</th>
+                    <th className="num">Debit</th>
+                    <th className="num">Closing</th>
                   </tr>
                 </thead>
                 <tbody>
                   {accountBalances.map((acc, idx) => (
-                    <tr key={idx} className="border-b border-slate-100">
-                      <td className="py-0.5 text-center text-slate-400">{idx + 1}</td>
-                      <td className="py-0.5 font-bold uppercase text-slate-900">{acc.accountName}</td>
-                      <td className="py-0.5 text-center uppercase font-sans text-[8px]">{acc.category}</td>
-                      <td className="py-0.5 text-right">{Math.abs(acc.opening).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {acc.opening >= 0 ? 'Cr' : 'Dr'}</td>
-                      <td className="py-0.5 text-right text-emerald-800">{acc.credit > 0 ? acc.credit.toLocaleString('en-IN') : '—'}</td>
-                      <td className="py-0.5 text-right text-rose-800">{acc.debit > 0 ? acc.debit.toLocaleString('en-IN') : '—'}</td>
-                      <td className="py-0.5 text-right font-black">{Math.abs(acc.closing).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {acc.closing >= 0 ? 'Cr' : 'Dr'}</td>
+                    <tr key={idx}>
+                      <td className="ctr">{idx + 1}</td>
+                      <td>{acc.accountName}</td>
+                      <td className="ctr">{acc.category}</td>
+                      <td className="num">{fmtINR(Math.abs(acc.opening))} {acc.opening >= 0 ? 'Cr' : 'Dr'}</td>
+                      <td className="num">{acc.credit > 0 ? fmtINR(acc.credit) : '—'}</td>
+                      <td className="num">{acc.debit > 0 ? fmtINR(acc.debit) : '—'}</td>
+                      <td className="num">{fmtINR(Math.abs(acc.closing))} {acc.closing >= 0 ? 'Cr' : 'Dr'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-
-            {/* Net Position Banner */}
-            <div className="border border-slate-900 p-2 text-center font-bold uppercase bg-slate-50 font-mono grid grid-cols-3 gap-2">
-              <div>
-                <span className="block text-[8px] text-slate-500 font-sans">TOTAL WE OWN</span>
-                <span className="text-blue-900 font-black">₹ {totalAssets.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div>
-                <span className="block text-[8px] text-slate-500 font-sans">TOTAL WE OWE (PARTNERS + PROFIT)</span>
-                <span className="text-purple-900 font-black">₹ {totalLiabilitiesAndCapital.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div>
-                <span className="block text-[8px] text-slate-500 font-sans">NET WORTH (OWN − OWE)</span>
-                <span className="text-emerald-800 font-black">₹ {netBusinessPosition.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-              </div>
-            </div>
-
-          </div>
-
+            </>
+          )}
         </div>
       </FinancePrintPreview>
 

@@ -1627,7 +1627,7 @@ const Dashboard: React.FC = () => {
                             </td>
                             <td className='py-3 px-4 text-right font-semibold'>
                               <span
-                                className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                className={`px-2 py-1 rounded-full text-sm font-semibold whitespace-nowrap ${
                                   company.closingBalance >= 0
                                     ? 'bg-green-50 text-green-700 border border-green-200'
                                     : 'bg-red-50 text-red-700 border border-red-200'

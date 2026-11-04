@@ -35,6 +35,7 @@ import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
 import CompoundInterestModal from '../../components/finance/CompoundInterestModal';
 import { getLocalBusinessDateISO } from '../../utils/dateUtils';
 import { formatRelationship } from '../../utils/relationship';
+import { receiptRowsFromStatement, formatReceiptAmount, amountInWords } from '../../utils/cdReceiptPrint';
 import { cdCompoundInterestEngine, TOOLTIP_TEXT } from '../../services/cdCompoundInterestEngine';
 
 
@@ -236,6 +237,10 @@ const CDLedger: React.FC = () => {
 
   // Print Preview Modal State
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  // Receipt print: chooser (pick a receipt) + A4 preview
+  const [showReceiptChooser, setShowReceiptChooser] = useState(false);
+  const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(null);
+  const [showReceiptPreview, setShowReceiptPreview] = useState(false);
   const [showCompoundModal, setShowCompoundModal] = useState(false);
 
   // Return Document Modal State
@@ -1077,6 +1082,32 @@ const CDLedger: React.FC = () => {
 
     return totals;
   }, [groupedPivotStatementEntries]);
+
+  // Receipts of the selected loan, newest first (rows without a receipt number are skipped)
+  const receiptRows = useMemo(() => {
+    const list = receiptRowsFromStatement(groupedPivotStatementEntries);
+    return list
+      .map((r, idx) => ({ r, idx }))
+      .sort((a, b) => {
+        const d = new Date(b.r.date).getTime() - new Date(a.r.date).getTime();
+        return Number.isFinite(d) && d !== 0 ? d : b.idx - a.idx;
+      })
+      .map(x => x.r);
+  }, [groupedPivotStatementEntries]);
+
+  const selectedReceipt = useMemo(
+    () => receiptRows.find(r => r.id === selectedReceiptId) || null,
+    [receiptRows, selectedReceiptId]
+  );
+
+  const openReceiptChooser = () => {
+    if (receiptRows.length === 0) {
+      toast.error('No receipts found for this loan yet');
+      return;
+    }
+    setSelectedReceiptId(receiptRows[0].id); // latest receipt by default
+    setShowReceiptChooser(true);
+  };
 
   // Grouped payment entries for receipt-centric statement reports (Change 6, 8, 9, 10, 11, 12, 13)
   const groupedPayments = useMemo(() => {
@@ -2115,7 +2146,7 @@ const CDLedger: React.FC = () => {
                             setUniversalSearchQuery('');
                           }}
                         >
-                          <td className="px-4 py-3.5 text-gray-400 font-mono text-xs">{idx + 1}</td>
+                          <td className="px-4 py-3.5 text-slate-500 font-mono text-sm">{idx + 1}</td>
                           <td className="px-4 py-3.5 font-black text-base text-green-700 font-mono tracking-wide">{loan.loan_id}</td>
                           <td className="px-4 py-3.5 font-black text-base text-gray-900">{loan.customer?.name || 'N/A'}</td>
                           <td className="px-4 py-3.5 text-gray-600 font-mono">{loan.customer?.phone || '-'}</td>
@@ -3247,6 +3278,16 @@ const CDLedger: React.FC = () => {
                   Open Report
                 </Button>
 
+                <Button
+                  onClick={openReceiptChooser}
+                  variant="primary"
+                  size="sm"
+                  icon={Printer}
+                  className="bg-indigo-600 hover:bg-indigo-700 border-0 text-white rounded-xl shadow-sm text-xs py-2 px-4"
+                >
+                  Receipt Print
+                </Button>
+
 
                 <Button
                   onClick={() => setShowNpaModal(true)}
@@ -3550,6 +3591,153 @@ const CDLedger: React.FC = () => {
                 <div>
                   <div className="border-t border-gray-300 pt-1.5 w-32 mx-auto">Auditor Signature</div>
                 </div>
+              </div>
+            </div>
+          );
+        })()}
+      </FinancePrintPreview>
+
+      {/* Receipt chooser: pick which receipt to print */}
+      {showReceiptChooser && selectedLoan && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowReceiptChooser(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50">
+              <div>
+                <h3 className="text-[16px] font-black uppercase text-slate-900">Select Receipt to Print</h3>
+                <p className="text-[12px] font-bold uppercase text-slate-500">{selectedLoan.loan_id} · {selectedLoan.customer?.name}</p>
+              </div>
+              <button onClick={() => setShowReceiptChooser(false)} className="p-1.5 rounded hover:bg-slate-200 text-slate-600" title="Close">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="max-h-[360px] overflow-y-auto">
+              <table className="w-full text-[13px]">
+                <thead className="bg-slate-100 sticky top-0">
+                  <tr className="text-[11px] uppercase text-slate-600">
+                    <th className="px-3 py-2 w-8"></th>
+                    <th className="px-3 py-2 text-left">Receipt No</th>
+                    <th className="px-3 py-2 text-left">Date</th>
+                    <th className="px-3 py-2 text-left">Type</th>
+                    <th className="px-3 py-2 text-right">Total Paid</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {receiptRows.map(r => (
+                    <tr
+                      key={r.id}
+                      onClick={() => setSelectedReceiptId(r.id)}
+                      className={`cursor-pointer border-b border-slate-100 ${selectedReceiptId === r.id ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}
+                    >
+                      <td className="px-3 py-2 text-center">
+                        <input type="radio" readOnly checked={selectedReceiptId === r.id} className="accent-indigo-600" />
+                      </td>
+                      <td className="px-3 py-2 font-mono font-bold text-slate-900 whitespace-nowrap">{r.receiptNo}</td>
+                      <td className="px-3 py-2 font-bold whitespace-nowrap">{formatDateOld(r.date)}</td>
+                      <td className="px-3 py-2 font-bold uppercase text-[12px]">{r.eventType}</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold whitespace-nowrap">{formatReceiptAmount(r.totalPaid)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50">
+              <button onClick={() => setShowReceiptChooser(false)} className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-[13px] font-bold uppercase text-slate-700 hover:bg-slate-100">
+                Cancel
+              </button>
+              <button
+                disabled={!selectedReceipt}
+                onClick={() => { setShowReceiptChooser(false); setShowReceiptPreview(true); }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 text-white text-[13px] font-bold uppercase hover:bg-indigo-700 disabled:opacity-50"
+              >
+                <Printer className="w-4 h-4" /> Preview Receipt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receipt Print Preview (A4 portrait) */}
+      <FinancePrintPreview
+        isOpen={showReceiptPreview && !!selectedLoan && !!selectedReceipt}
+        onClose={() => setShowReceiptPreview(false)}
+        title="Receipt Print Preview (A4)"
+        subtitle={selectedReceipt ? `Receipt ${selectedReceipt.receiptNo}` : undefined}
+        documentTitle="GAJWEL, DIST: SIDDIPET, TELANGANA"
+      >
+        {selectedLoan && selectedReceipt && (() => {
+          const r = selectedReceipt;
+          const cust: any = selectedLoan.customer || {};
+          const phone = [cust.phone_1 || cust.phone, cust.phone_2 || cust.phone2].filter(Boolean).join(' / ');
+          const guardian = formatRelationship(cust.father_name || cust.father_husband_name);
+          const lines = [
+            { label: 'Principal Paid', value: r.principalPaid },
+            { label: 'Interest Paid', value: r.interestPaid },
+            { label: 'Penalty Paid', value: r.penaltyPaid },
+            { label: 'Document Charges', value: r.docCharges },
+          ];
+          return (
+            <div className="cd-receipt uppercase text-black">
+              <style>{`
+                .cd-receipt .rc-title { font-size: 18px; font-weight: 800; letter-spacing: 2px; text-align: center; margin: 0 0 14px; }
+                .cd-receipt .rc-meta { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+                .cd-receipt table { width: 100%; border-collapse: collapse; }
+                .cd-receipt td { border: 1px solid #555; padding: 7px 10px; font-size: 14px; vertical-align: top; }
+                .cd-receipt td.rc-label { width: 40%; font-weight: 700; background: #f3f4f6; }
+                .cd-receipt td.rc-amt { text-align: right; white-space: nowrap; font-weight: 700; font-variant-numeric: tabular-nums; }
+                .cd-receipt tr.rc-total td { font-size: 16px; font-weight: 800; background: #e5e7eb; }
+                .cd-receipt .rc-words { margin-top: 10px; font-size: 13px; font-weight: 700; }
+                .cd-receipt .font-mono { font-size: 15px; font-weight: 700; }
+                .cd-receipt .rc-sign { display: flex; justify-content: space-between; margin-top: 70px; font-size: 13px; font-weight: 700; }
+                .cd-receipt .rc-sign div { border-top: 1px solid #000; padding-top: 6px; width: 38%; text-align: center; }
+                @media print {
+                  .print-document .cd-receipt td { font-size: 11pt !important; padding: 6px 9px !important; border: 1px solid #000 !important; vertical-align: top !important; }
+                  .print-document .cd-receipt .font-mono { font-size: 11.5pt !important; }
+                  .print-document .cd-receipt td.rc-label { background: #f0f2f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                  .print-document .cd-receipt tr.rc-total td { font-size: 12.5pt !important; background: #e5e7eb !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                }
+              `}</style>
+
+              <div className="rc-title">Payment Receipt</div>
+              <div className="rc-meta">
+                <span>Receipt No: <span className="font-mono">{r.receiptNo}</span></span>
+                <span>Date: {formatDateOld(r.date)}</span>
+              </div>
+
+              <table className="mb-4">
+                <tbody>
+                  <tr><td className="rc-label">CD No</td><td className="font-mono font-bold">{selectedLoan.loan_id}</td></tr>
+                  <tr><td className="rc-label">Customer Name</td><td className="font-bold">{cust.name || '—'}</td></tr>
+                  <tr><td className="rc-label">Guardian</td><td>{guardian || '—'}</td></tr>
+                  <tr><td className="rc-label">Phone</td><td className="font-mono">{phone || '—'}</td></tr>
+                  <tr><td className="rc-label">Payment Type</td><td>{r.eventType}</td></tr>
+                </tbody>
+              </table>
+
+              <table>
+                <tbody>
+                  {lines.map(l => (
+                    <tr key={l.label}>
+                      <td className="rc-label">{l.label}</td>
+                      <td className="rc-amt">{formatReceiptAmount(l.value)}</td>
+                    </tr>
+                  ))}
+                  <tr className="rc-total">
+                    <td className="rc-label">Total Paid</td>
+                    <td className="rc-amt">₹ {formatReceiptAmount(r.totalPaid)}</td>
+                  </tr>
+                  <tr>
+                    <td className="rc-label">Balance Principal Outstanding</td>
+                    <td className="rc-amt">{formatReceiptAmount(r.outstandingPrincipal)}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div className="rc-words">Amount in words: {amountInWords(r.totalPaid)}</div>
+              <div className="rc-words">Received by (Operator): {r.operator || '—'}</div>
+
+              <div className="rc-sign">
+                <div>Customer Signature</div>
+                <div>Cashier Signature</div>
               </div>
             </div>
           );
