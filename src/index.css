@@ -181,6 +181,12 @@
     table.fit-table.fit-lg td { padding: 6px 5px; }
   }
 
+  /* Dues List > NPA List: every NPA-closed account is a loss, shown in red */
+  tr.npa-loss-row td,
+  tr.npa-loss-row td * {
+    color: #b91c1c !important;
+  }
+
   /* Peek Typography System */
   .peek-h1 { @apply text-[22px] font-bold text-slate-950 leading-[1.40] tracking-[0.16px]; }
   .peek-header { @apply text-[17px] font-extrabold text-slate-950 leading-[1.50] tracking-[0.16px]; }

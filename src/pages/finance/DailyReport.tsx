@@ -15,6 +15,7 @@ import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
 import { useNavigate } from 'react-router-dom';
 import { getLocalBusinessDateISO } from '../../utils/dateUtils';
 import CustomCalendar from '../../components/UI/CustomCalendar';
+import { displayHeadName } from '../../utils/financeLabels';
 
 const DailyReportFinance: React.FC = () => {
   const navigate = useNavigate();
@@ -428,7 +429,7 @@ const DailyReportFinance: React.FC = () => {
                 <tr key={tx.id} className="border-b border-slate-200">
                   <td className="p-2 border-r">{formatTransDate(tx.transactionDate)}</td>
                   <td className="p-2 border-r whitespace-nowrap font-black">{getCdNo(tx) || '—'}</td>
-                  <td className="p-2 border-r">{tx.headOfAccount}</td>
+                  <td className="p-2 border-r">{displayHeadName(tx.headOfAccount)}</td>
                   <td className="p-2 border-r">{getParticulars(tx)}</td>
                   <td className="p-2 border-r text-right text-emerald-700">{tx.credit > 0 ? tx.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}</td>
                   <td className="p-2 text-right text-red-700">{tx.debit > 0 ? tx.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}</td>
@@ -585,7 +586,7 @@ const DailyReportFinance: React.FC = () => {
                         className="hover:bg-slate-50/50 cursor-pointer transition-colors"
                       >
                         <td className="px-4 py-3 font-mono text-slate-500">{formatTransDate(tx.transactionDate)}</td>
-                        <td className="px-4 py-3 uppercase text-slate-900">{tx.headOfAccount}</td>
+                        <td className="px-4 py-3 uppercase text-slate-900">{displayHeadName(tx.headOfAccount)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           {getCdNo(tx) ? (
                             <span
@@ -686,7 +687,7 @@ const DailyReportFinance: React.FC = () => {
               <button onClick={() => setSelectedTx(null)} className="text-slate-400 hover:text-slate-600 font-black">CLOSE</button>
             </div>
             <div className="p-4 space-y-3">
-              <div><span className="text-slate-400 block text-[10px]">Head of Account</span><span className="text-slate-950 font-black">{selectedTx.headOfAccount}</span></div>
+              <div><span className="text-slate-400 block text-[10px]">Head of Account</span><span className="text-slate-950 font-black">{displayHeadName(selectedTx.headOfAccount)}</span></div>
               <div><span className="text-slate-400 block text-[10px]">Particulars</span><span className="text-slate-800 font-bold">{selectedTx.particulars}</span></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><span className="text-slate-400 block text-[10px]">Receipt No</span><span className="text-indigo-700 font-mono">{selectedTx.receiptOrVoucherNo || '—'}</span></div>

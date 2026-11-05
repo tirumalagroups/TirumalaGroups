@@ -7,6 +7,7 @@ import { Printer, ArrowLeft, Search, FileSpreadsheet } from 'lucide-react';
 import toast from 'react-hot-toast';
 import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { displayHeadName } from '../../utils/financeLabels';
 export function formatParticularsText(rawText?: string | null): string {
   if (!rawText) return '—';
   let text = rawText.trim();
@@ -216,7 +217,7 @@ const DetailedLedgerFinance: React.FC = () => {
       idx + 1,
       entry.transactionDate.split('-').reverse().join('/'),
       entry.accountOrLoanNo || '',
-      entry.headOfAccount,
+      displayHeadName(entry.headOfAccount),
       entry.customerName || entry.accountOrLoanNo || '',
       entry.credit,
       entry.debit,
@@ -323,7 +324,7 @@ const DetailedLedgerFinance: React.FC = () => {
           >
             <option value="ALL">ALL HEADS</option>
             {uniqueHeads.map(h => (
-              <option key={h} value={h}>{h.toUpperCase()}</option>
+              <option key={h} value={h}>{displayHeadName(h).toUpperCase()}</option>
             ))}
           </select>
         </div>
@@ -386,7 +387,7 @@ const DetailedLedgerFinance: React.FC = () => {
                             {entry.transactionDate.split('-').reverse().join('/')}
                           </td>
                           <td className={`px-2 py-2 font-mono text-slate-900 font-bold align-top ${(entry.accountOrLoanNo || '').length > 14 ? 'break-all' : 'fit-nowrap'}`}>{entry.accountOrLoanNo || '—'}</td>
-                          <td className="px-2 py-2 text-slate-800 uppercase align-top">{entry.headOfAccount}</td>
+                          <td className="px-2 py-2 text-slate-800 uppercase align-top">{entry.displayType || (entry.npaRole === "CHILD" && entry.npaComponent ? `NPA CLOSE - ${entry.npaComponent}` : displayHeadName(entry.headOfAccount))}</td>
                           <td className="fit-name px-2 py-2 text-slate-800 uppercase align-top">{entry.customerName || entry.accountOrLoanNo || '—'}</td>
                           <td className="fit-nowrap px-2 py-2 text-right text-emerald-700 font-bold font-mono align-top">
                             {entry.credit > 0 ? `${entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
@@ -469,7 +470,7 @@ const DetailedLedgerFinance: React.FC = () => {
                     <td className="py-2 px-1 text-center font-mono align-top">{idx + 1}</td>
                     <td className="py-2 px-2 font-mono align-top whitespace-nowrap">{entry.transactionDate.split('-').reverse().join('/')}</td>
                     <td className="py-2 px-2 font-mono font-bold uppercase align-top">{entry.accountOrLoanNo || '—'}</td>
-                    <td className="py-2 px-2 uppercase font-medium align-top">{entry.headOfAccount}</td>
+                    <td className="py-2 px-2 uppercase font-medium align-top">{entry.displayType || (entry.npaRole === "CHILD" && entry.npaComponent ? `NPA CLOSE - ${entry.npaComponent}` : displayHeadName(entry.headOfAccount))}</td>
                     <td className="py-2 px-2 text-right font-mono text-emerald-700 align-top">{entry.credit > 0 ? `${entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}</td>
                     <td className="py-2 px-2 text-right font-mono text-red-700 align-top">{entry.debit > 0 ? `${entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}</td>
                     <td className="py-2 px-2 text-right font-mono font-bold align-top">{Math.abs(entry.runningBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {entry.runningBalance >= 0 ? 'Cr' : 'Dr'}</td>

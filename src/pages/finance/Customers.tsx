@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { 
-  User, 
   Search, 
   Edit2, 
   Plus, 
@@ -11,16 +10,11 @@ import {
   Info,
   ChevronLeft,
   ChevronRight,
-  Eye,
-  FileText,
-  Printer,
-  X,
-  MapPin,
-  FileCode,
-  History,
-  ShieldAlert
+  Eye,
+  Printer,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import CustomerFullDetails from '../../components/finance/CustomerFullDetails';
 
 import { getRelationshipDisplay, formatRelationship } from "../../utils/relationship";
 export { getRelationshipDisplay };
@@ -86,10 +80,6 @@ const Customers: React.FC = () => {
 
   // Selected Customer Profile View Modal & Extra parameters
   const [selectedCust, setSelectedCust] = useState<CustomerWithLoans | null>(null);
-  const [selectedCustDocs, setSelectedCustDocs] = useState<any[]>([]);
-  const [selectedCustFollowups, setSelectedCustFollowups] = useState<any[]>([]);
-  const [selectedCustGuarantors, setSelectedCustGuarantors] = useState<any[]>([]);
-  const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
 
   // Debounce search query
   useEffect(() => {
@@ -270,62 +260,6 @@ const Customers: React.FC = () => {
     fetchStats();
   }, [fetchCustomers]);
 
-  // Load extra details when selectedCust is opened
-  useEffect(() => {
-    if (!selectedCust) {
-      setSelectedCustDocs([]);
-      setSelectedCustFollowups([]);
-      setSelectedCustGuarantors([]);
-      return;
-    }
-
-    const fetchExtraDetails = async () => {
-      try {
-        const loanIds = selectedCust.loans.map(l => l.id);
-        if (loanIds.length === 0) return;
-
-        // Fetch documents
-        const { data: docs } = await supabase
-          .from('finance_loan_documents')
-          .select('*')
-          .in('loan_id', loanIds);
-        setSelectedCustDocs(docs || []);
-
-        // Fetch followups
-        const { data: followups } = await supabase
-          .from('finance_loan_payment_followups')
-          .select('*')
-          .in('loan_id', loanIds)
-          .order('followed_up_at', { ascending: false });
-        setSelectedCustFollowups(followups || []);
-
-        // Fetch guarantors
-        const { data: loansWithGuarantors } = await supabase
-          .from('finance_loans')
-          .select('id, loan_id, guarantor_1_id, guarantor_2_id')
-          .in('id', loanIds);
-        
-        if (loansWithGuarantors && loansWithGuarantors.length > 0) {
-          const gIds = [
-            ...loansWithGuarantors.map(l => l.guarantor_1_id),
-            ...loansWithGuarantors.map(l => l.guarantor_2_id)
-          ].filter(Boolean) as string[];
-
-          if (gIds.length > 0) {
-            const { data: guarantors } = await supabase
-              .from('finance_customers')
-              .select('id, name, phone_1, phone, customer_id')
-              .in('id', gIds);
-            setSelectedCustGuarantors(guarantors || []);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load customer profile details:', err);
-      }
-    };
-
-    fetchExtraDetails();
-  }, [selectedCust]);
 
   const handlePrint = (cust: CustomerWithLoans) => {
     const printWindow = window.open('', '_blank');
@@ -759,323 +693,19 @@ const Customers: React.FC = () => {
         </div>
       )}
 
-      {/* Dynamic Profile details View Modal */}
+      {/* Full customer details (nothing hidden, full Aadhaar) */}
       {selectedCust && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
-          <div className="bg-white border border-slate-200 w-full max-w-5xl rounded-lg shadow-xl overflow-hidden animate-in fade-in zoom-in duration-150">
-            
-            {/* Modal Header */}
-            <div className="bg-slate-900 text-white px-4 py-3 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <span className="font-mono font-bold text-slate-300">#{selectedCust.customer_id}</span>
-                <span className="font-extrabold uppercase text-sm tracking-wide">{selectedCust.name}</span>
-              </div>
-              <button
-                onClick={() => setSelectedCust(null)}
-                className="text-slate-400 hover:text-white p-1 hover:bg-slate-800 rounded"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4 max-h-[70vh] overflow-y-auto custom-scrollbar space-y-4 bg-slate-50">
-              
-              {/* Photo & Parameters row */}
-              <div className="flex flex-col sm:flex-row gap-4 p-3 bg-white border border-slate-200 rounded items-start shadow-sm">
-                <div className="w-20 h-20 rounded border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center shrink-0 group relative">
-                  {selectedCust.customer_photo_url ? (
-                    <>
-                      <img
-                        src={selectedCust.customer_photo_url}
-                        alt={selectedCust.name}
-                        className="w-full h-full object-contain"
-                      />
-                      <div 
-                        onClick={() => selectedCust.customer_photo_url && setPreviewPhoto(selectedCust.customer_photo_url)}
-                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[9px] font-bold transition-opacity cursor-pointer uppercase"
-                      >
-                        Zoom
-                      </div>
-                    </>
-                  ) : (
-                    <User className="w-10 h-10 text-slate-350" />
-                  )}
-                </div>
-                
-                <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3 w-full text-xs">
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Guardian Relationship</span>
-                    {(() => {
-                      const rel = getRelationshipDisplay(selectedCust.father_name || selectedCust.father_husband_name);
-                      return (
-                        <span className="text-sm font-bold text-slate-850">
-                          <strong className="text-[10px] text-slate-450 uppercase mr-1">{rel.label}:</strong>
-                          {rel.name.toUpperCase()}
-                        </span>
-                      );
-                    })()}
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Introducing Partner</span>
-                    <span className="text-sm font-bold text-slate-800">{(selectedCust.partner_name || 'Direct Customer').toUpperCase()}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Primary Phone</span>
-                    <span className="text-sm font-mono font-bold text-slate-800">{selectedCust.phone_1 || selectedCust.phone || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Alternate Phone</span>
-                    <span className="text-sm font-mono font-bold text-slate-800">{selectedCust.phone_2 || selectedCust.phone2 || '—'}</span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Aadhaar UID (Protected)</span>
-                    <span className="text-sm font-mono font-bold text-slate-900 tracking-wider">
-                      {selectedCust.aadhaar ? `XXXX-XXXX-${selectedCust.aadhaar.slice(-4)}` : 'NOT FOUND'}
-                    </span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Profile Date</span>
-                    <span className="text-sm font-semibold text-slate-600">
-                      {new Date(selectedCust.created_at).toLocaleString('en-IN')}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Grid sections layout */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                
-                {/* Left block */}
-                <div className="space-y-4">
-                  {/* Address */}
-                  <div className="bg-white p-3 border border-slate-200 rounded space-y-2.5 shadow-sm">
-                    <h4 className="text-[11px] font-bold uppercase text-slate-850 tracking-wider flex items-center gap-1.5 border-b pb-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                      Address parameters
-                    </h4>
-                    <div className="space-y-2 text-xs">
-                      <div className="p-2 bg-slate-50 border border-slate-150 rounded">
-                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Present Address</span>
-                        <p className="font-semibold text-slate-700 leading-normal">
-                          {selectedCust.present_address || selectedCust.address || '—'}
-                        </p>
-                        <div className="text-[9px] font-bold text-slate-500 pt-1 uppercase">
-                          Village: {selectedCust.present_village || selectedCust.village || '—'} | Mandal: {selectedCust.present_mandal || selectedCust.mandal || '—'}
-                        </div>
-                      </div>
-                      
-                      <div className="p-2 bg-slate-50 border border-slate-150 rounded">
-                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Aadhaar Address</span>
-                        <p className="font-semibold text-slate-700 leading-normal">
-                          {selectedCust.aadhaar_address || '—'}
-                        </p>
-                        <div className="text-[9px] font-bold text-slate-500 pt-1 uppercase">
-                          Village: {selectedCust.aadhaar_village || '—'} | Mandal: {selectedCust.aadhaar_mandal || '—'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Documents list */}
-                  <div className="bg-white p-3 border border-slate-200 rounded space-y-2 shadow-sm">
-                    <h4 className="text-[11px] font-bold uppercase text-slate-850 tracking-wider flex items-center gap-1.5 border-b pb-1.5">
-                      <FileCode className="w-3.5 h-3.5 text-slate-500" />
-                      Documents Checklist ({selectedCustDocs.length})
-                    </h4>
-                    
-                    {selectedCustDocs.length > 0 ? (
-                      <div className="space-y-1.5 max-h-[160px] overflow-y-auto custom-scrollbar">
-                        {selectedCustDocs.map(doc => (
-                          <div key={doc.id} className="flex justify-between items-center p-2 bg-slate-50 border border-slate-150 rounded text-xs">
-                            <div>
-                              <span className="font-bold text-slate-800 block leading-tight">{doc.document_name}</span>
-                              <span className="text-[9px] text-slate-450 uppercase font-bold">{doc.category}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {doc.file_url && (
-                                <a 
-                                  href={doc.file_url} 
-                                  target="_blank" 
-                                  rel="noreferrer"
-                                  className="text-[9px] bg-slate-905 text-white font-bold uppercase px-2 py-0.5 rounded hover:bg-slate-800"
-                                >
-                                  View
-                                </a>
-                              )}
-                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${doc.is_submitted ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                                {doc.is_submitted ? 'Submitted' : 'Pending'}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="p-3 bg-slate-50 text-center text-xs text-slate-400 font-bold uppercase">
-                        No uploaded documents.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Right block */}
-                <div className="space-y-4">
-                  {/* Loan accounts summary */}
-                  <div className="bg-white p-3 border border-slate-200 rounded space-y-2 shadow-sm">
-                    <h4 className="text-[11px] font-bold uppercase text-slate-850 tracking-wider flex items-center gap-1.5 border-b pb-1.5">
-                      <FileText className="w-3.5 h-3.5 text-slate-500" />
-                      Loan Accounts ({selectedCust.loans.length})
-                    </h4>
-                    
-                    {selectedCust.loans && selectedCust.loans.length > 0 ? (
-                      <div className="border border-slate-200 rounded overflow-hidden">
-                        <table className="w-full text-xs">
-                          <thead className="bg-slate-100">
-                            <tr>
-                              <th className="px-2 py-1 text-left font-bold text-slate-600 uppercase">Loan ID</th>
-                              <th className="px-2 py-1 text-left font-bold text-slate-600 uppercase">Type</th>
-                              <th className="px-2 py-1 text-right font-bold text-slate-600 uppercase">Outstanding</th>
-                              <th className="px-2 py-1 text-center font-bold text-slate-600 uppercase">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 bg-white">
-                            {selectedCust.loans.map(l => (
-                              <tr key={l.id} className="hover:bg-slate-50/50">
-                                <td className="px-2 py-1 font-mono font-bold text-slate-900">{l.loan_id}</td>
-                                <td className="px-2 py-1 font-bold text-slate-650 uppercase">{l.loan_category}</td>
-                                <td className="px-2 py-1 font-mono font-bold text-slate-800 text-right">
-                                  {l.outstanding_amount ? l.outstanding_amount.toLocaleString('en-IN') : '0.00'}
-                                </td>
-                                <td className="px-2 py-1 text-center">
-                                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${
-                                    l.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-650'
-                                  }`}>
-                                    {l.status}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <div className="p-3 bg-slate-50 text-center text-xs text-slate-400 font-bold uppercase">
-                        No linked loan accounts.
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Guarantors registry */}
-                  <div className="bg-white p-3 border border-slate-200 rounded space-y-2 shadow-sm">
-                    <h4 className="text-[11px] font-bold uppercase text-slate-850 tracking-wider flex items-center gap-1.5 border-b pb-1.5">
-                      <ShieldAlert className="w-3.5 h-3.5 text-slate-500" />
-                      Guarantors ({selectedCustGuarantors.length})
-                    </h4>
-                    
-                    {selectedCustGuarantors.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                        {selectedCustGuarantors.map(g => (
-                          <div key={g.id} className="p-2 bg-slate-50 border border-slate-150 rounded">
-                            <span className="text-[9px] text-slate-400 uppercase font-bold block">Guarantor Name</span>
-                            <span className="font-bold text-slate-900 block uppercase">{g.name}</span>
-                            <span className="text-[9px] text-slate-500 font-mono">Phone: {g.phone_1 || g.phone || '—'}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="p-3 bg-slate-50 text-center text-xs text-slate-400 font-bold uppercase">
-                        No guarantors registry linked.
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Call timeline */}
-                  <div className="bg-white p-3 border border-slate-200 rounded space-y-2 shadow-sm">
-                    <h4 className="text-[11px] font-bold uppercase text-slate-850 tracking-wider flex items-center gap-1.5 border-b pb-1.5">
-                      <History className="w-3.5 h-3.5 text-slate-500" />
-                      Follow-up Timeline ({selectedCustFollowups.length})
-                    </h4>
-                    
-                    {selectedCustFollowups.length > 0 ? (
-                      <div className="space-y-2 max-h-[160px] overflow-y-auto custom-scrollbar pr-0.5 text-xs">
-                        {selectedCustFollowups.map(log => (
-                          <div key={log.id} className="p-2 bg-slate-50 border border-slate-150 rounded space-y-1">
-                            <div className="flex justify-between items-center text-[9px] text-slate-400 font-bold uppercase">
-                              <span>Staff: {log.followed_up_by}</span>
-                              <span>{new Date(log.followed_up_at).toLocaleDateString('en-IN')}</span>
-                            </div>
-                            <p className="font-bold text-slate-800">
-                              <span className="text-[9px] text-slate-450 uppercase font-bold mr-1">Outcome:</span>
-                              {log.result}
-                            </p>
-                            <p className="text-slate-650 leading-relaxed text-[11px] bg-white p-1.5 border border-slate-100 rounded">
-                              {log.narration}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="p-3 bg-slate-50 text-center text-xs text-slate-400 font-bold uppercase">
-                        No callback followups logged.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-              </div>
-
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-between items-center">
-              <button
-                onClick={() => handlePrint(selectedCust)}
-                className="inline-flex items-center gap-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-250 rounded px-3 py-1.5 font-bold text-xs uppercase transition-colors shadow-sm"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                Print Profile
-              </button>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setSelectedCust(null)}
-                  className="px-3 py-1.5 text-xs font-bold uppercase text-slate-600 hover:bg-slate-100 rounded border bg-white"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => {
-                    const cid = selectedCust.id;
-                    setSelectedCust(null);
-                    navigate(`/finance/new-customer?edit=${cid}`);
-                  }}
-                  className="px-3 py-1.5 text-xs font-bold uppercase bg-slate-905 hover:bg-slate-800 text-white rounded active:scale-95 transition-transform"
-                >
-                  Edit Profile
-                </button>
-              </div>
-            </div>
-
-          </div>
-        </div>
+        <CustomerFullDetails
+          customer={selectedCust}
+          onClose={() => setSelectedCust(null)}
+          onPrint={(c) => handlePrint(c)}
+          onEdit={(cid) => {
+            setSelectedCust(null);
+            navigate(`/finance/new-customer?edit=${cid}`);
+          }}
+        />
       )}
 
-      {/* Photo Preview Modal */}
-      {previewPhoto && (
-        <div 
-          onClick={() => setPreviewPhoto(null)}
-          className="fixed inset-0 bg-black/80 flex justify-center items-center z-50 p-4 cursor-zoom-out"
-        >
-          <div className="relative max-w-lg max-h-[85vh] overflow-hidden rounded bg-white p-2">
-            <img src={previewPhoto} alt="Customer Preview" className="max-w-full max-h-[80vh] object-contain rounded" />
-            <button 
-              onClick={() => setPreviewPhoto(null)}
-              className="absolute top-4 right-4 bg-black/60 hover:bg-black text-white p-1 rounded-full"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-      )}
 
     </div>
   );

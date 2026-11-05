@@ -23,6 +23,7 @@ import { buildFinalStatementHtml } from '../../utils/finalStatementPrint';
 import { printPreviewFrame } from '../../utils/print';
 import { useNavigate } from 'react-router-dom';
 import { exportToExcelMultiSheet } from '../../utils/excel';
+import { displayHeadName } from '../../utils/financeLabels';
 
 const formatDateOld = (dateStr?: string | null): string => {
   if (!dateStr) return '—';
@@ -184,26 +185,26 @@ const FinalStatement: React.FC = () => {
       { 'Section': 'ASSETS', 'Account Name': 'Cash in Hand (Closing Cash)', 'Amount': metrics.closingCash },
       ...bankAndOtherAssetAccounts.map(acc => ({
         'Section': 'ASSETS',
-        'Account Name': acc.accountName,
+        'Account Name': displayHeadName(acc.accountName),
         'Amount': Math.abs(acc.closing)
       })),
       { 'Section': 'TOTAL ASSETS', 'Account Name': '', 'Amount': metrics.totalAssets },
       ...capitalAccounts.map(acc => ({
         'Section': 'LIABILITIES & CAPITAL',
-        'Account Name': acc.accountName,
+        'Account Name': displayHeadName(acc.accountName),
         'Amount': acc.closing
       })),
       { 'Section': 'LIABILITIES & CAPITAL', 'Account Name': 'Retained Net Profit', 'Amount': metrics.netProfit },
       ...liabilityAccounts.map(acc => ({
         'Section': 'LIABILITIES & CAPITAL',
-        'Account Name': acc.accountName,
+        'Account Name': displayHeadName(acc.accountName),
         'Amount': Math.abs(acc.closing)
       })),
       { 'Section': 'TOTAL LIABILITIES & CAPITAL', 'Account Name': '', 'Amount': metrics.totalLiabilitiesAndCapital }
     ];
 
     const accountData = metrics.accounts.map((acc: FinalStatementAccount) => ({
-      'Account Name': acc.accountName,
+      'Account Name': displayHeadName(acc.accountName),
       'Category': acc.category,
       'Classification': acc.reportClassification,
       'Opening Balance': acc.opening,
@@ -332,7 +333,7 @@ const FinalStatement: React.FC = () => {
                             ? <ChevronDown className="w-4 h-4 mt-0.5 text-slate-700 shrink-0" />
                             : <ChevronRight className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" />}
                           <span>
-                            {acc.accountName}
+                            {displayHeadName(acc.accountName)}
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); navigateToDetailedLedger(acc.accountName); }}

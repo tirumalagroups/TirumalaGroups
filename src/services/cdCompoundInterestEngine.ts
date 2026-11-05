@@ -64,6 +64,8 @@ export interface CISummary {
   initialPrincipal: number;
   currentOutstandingPrincipal: number;
   totalPrincipalPaid: number;
+  /** All money paid by the customer that the CI took off the balance (each receipt once) */
+  totalPaymentsReceived?: number;
   compoundInterestEarned: number;
   finalCompoundBalance: number;
   effectiveLoanDays: number;
@@ -102,20 +104,41 @@ export const cdCompoundInterestEngine = {
     ledgerEntries: any[] = [],
     asOfDate?: string
   ): CIResult {
-    let initialPrincipal = Number(loan.amount) || 0;
     const monthlyRate = Number(loan.interest_rate) || 0;
     const loanStartDate = (loan.date || '').split('T')[0];
+
+    const entryDateOf = (e: any) => String(e.entry_date || e.date || '').split('T')[0];
+    const typeOf = (e: any) => String(e.entry_type || e.type || '').toLowerCase();
+    const accountOf = (e: any) => String(e.account_name || '').trim().toUpperCase();
+
+    // A. Starting principal = the ORIGINAL loan amount (the disbursement row on the loan date).
+    //    loan.amount holds the CURRENT principal (it goes down after partial payments),
+    //    so using it made the CI start from the wrong amount (e.g. CD127: 20,000 instead of 1,00,000).
+    const isDisbursementRow = (e: any) => {
+      const t = typeOf(e);
+      return (t === 'original_loan' || t === 'disbursement') && Number(e.debit) > 0;
+    };
+    const openingDisbursed = (ledgerEntries || [])
+      .filter(e => isDisbursementRow(e) && entryDateOf(e) === loanStartDate)
+      .reduce((sum, e) => sum + (Number(e.debit) || 0), 0);
+    let initialPrincipal = openingDisbursed > 0 ? openingDisbursed : (Number(loan.amount) || 0);
 
     if (!loanStartDate || initialPrincipal <= 0) {
       return this.emptyResult(initialPrincipal, monthlyRate, loanStartDate);
     }
 
     // Determine target calculation end date
-    const isClosed = (loan.status || '').toLowerCase() === 'closed';
+    const statusUpper = (loan.status || '').trim().toUpperCase();
+    const isNpaClosed = statusUpper === 'NPA_CLOSED' || statusUpper === 'NPA CLOSED' || statusUpper === 'NPA';
+    const isClosed = statusUpper === 'CLOSED' || isNpaClosed;
     let endDate = (asOfDate || '').split('T')[0];
 
     if (isClosed && loan.closed_at) {
       endDate = (loan.closed_at || '').split('T')[0];
+    } else if (isClosed) {
+      // No closing date saved on the loan: freeze at the last ledger entry
+      const lastEntry = (ledgerEntries || []).map(entryDateOf).filter(Boolean).sort().pop();
+      endDate = lastEntry || endDate || getLocalBusinessDateISO();
     } else if (!endDate) {
       endDate = getLocalBusinessDateISO();
     }
@@ -136,71 +159,91 @@ export const cdCompoundInterestEngine = {
     }
 
     const eventsByDate = new Map<string, DateEventAgg>();
+    const getEvent = (date: string): DateEventAgg => {
+      const existing = eventsByDate.get(date) || {
+        date,
+        paymentCredit: 0,
+        principalPaid: 0,
+        additionalDebit: 0,
+        isClose: false,
+        particularsList: []
+      };
+      eventsByDate.set(date, existing);
+      return existing;
+    };
 
-    (ledgerEntries || []).forEach(e => {
-      const eDate = (e.entry_date || e.date || '').split('T')[0];
+    // Rows that are NOT money paid by the customer towards the loan balance:
+    // opening interest/commission and document charges taken at issue, NPA write-off /
+    // NPA pending (loan receivable) book entries.
+    const isNonPaymentRow = (e: any) => {
+      const t = typeOf(e);
+      const acc = accountOf(e);
+      return (
+        t === 'opening_commission' || t === 'commission' ||
+        t === 'document_charge' || t === 'document charges' || acc === 'CD DOCUMENT CHARGES A/C' ||
+        t === 'npa_writeoff' || acc.includes('WRITE-OFF') || acc.includes('LOAN RECEIVABLE')
+      );
+    };
+    const isCloseRow = (e: any) => {
+      const t = typeOf(e);
+      const p = String(e.particulars || '').toLowerCase();
+      return t === 'close' || t === 'settlement' || t === 'npa_close' || t === 'npa_writeoff' ||
+        p.includes('loan closed') || p.includes('npa closed') || p.includes('npa closure');
+    };
+
+    // B. One payment per receipt. A receipt is saved as an "Amount Paid" total row PLUS its split
+    //    rows (principal / interest / penalty). Adding all of them counted the money twice
+    //    (e.g. CD127 on 10-Dec-2021: 84,850 paid became a 1,69,700 "payment").
+    //    Use the Amount Paid total when the receipt has one, otherwise the sum of its split rows.
+    interface ReceiptAgg { date: string; amountPaidTotal: number; splitTotal: number; principal: number; particulars: string[] }
+    const receipts = new Map<string, ReceiptAgg>();
+
+    (ledgerEntries || []).forEach((e, idx) => {
+      const eDate = entryDateOf(e);
       if (!eDate || eDate < loanStartDate || (isClosed && eDate > endDate)) return;
 
-      const typeLower = (e.entry_type || e.type || '').toLowerCase();
-      const partLower = (e.particulars || e.account_name || '').toLowerCase();
+      const t = typeOf(e);
       const credit = Number(e.credit) || 0;
       const debit = Number(e.debit) || 0;
-      const principalPaid = Number(e.principal_paid) || Number(e.principal_amount) || 0;
 
-      // Ignore initial disbursement on loanStartDate as it is already the starting principal
-      if (eDate === loanStartDate && (typeLower === 'original_loan' || typeLower === 'disbursement')) {
+      if (isCloseRow(e)) {
+        getEvent(eDate).isClose = true;
+        // NPA close collects no money (the whole balance goes to loss), so an NPA close row
+        // is the point where the CI stops, not a payment that wipes the balance.
+        const p = String(e.particulars || '').toLowerCase();
+        if (p.includes('npa') || typeOf(e).startsWith('npa')) return;
+      }
+
+      // Initial disbursement on the loan date is already the starting principal
+      if (isDisbursementRow(e)) {
+        if (eDate > loanStartDate) getEvent(eDate).additionalDebit += debit;
         return;
       }
 
-      let isPayment = false;
-      let isClose = false;
-      let isAdditionalDisb = false;
+      if (credit <= 0 || isNonPaymentRow(e)) return;
 
-      if (typeLower === 'close' || partLower.includes('loan closed')) {
-        isClose = true;
-        isPayment = credit > 0;
-      } else if (
-        typeLower === 'renewal' ||
-        typeLower === 'principal_payment' ||
-        typeLower === 'interest_payment' ||
-        typeLower === 'penalty_payment' ||
-        typeLower === 'amount_paid' ||
-        typeLower === 'partial_payment' ||
-        credit > 0
-      ) {
-        isPayment = credit > 0;
-      } else if ((typeLower === 'disbursement' || typeLower === 'original_loan') && debit > 0 && eDate > loanStartDate) {
-        isAdditionalDisb = true;
+      const receiptNo = String(e.receipt_no || '').trim();
+      const key = receiptNo && receiptNo !== '-' && receiptNo !== '—' ? `${eDate}|${receiptNo}` : `${eDate}|row-${idx}`;
+      const r = receipts.get(key) || { date: eDate, amountPaidTotal: 0, splitTotal: 0, principal: 0, particulars: [] };
+      if (t === 'amount_paid' || accountOf(e) === 'CD AMOUNT PAID') {
+        r.amountPaidTotal += credit;
+      } else {
+        r.splitTotal += credit;
+        if (t === 'principal_payment' || String(e.particulars || '').toLowerCase().includes('principal')) {
+          r.principal += credit;
+        }
       }
+      if (e.particulars) r.particulars.push(String(e.particulars));
+      receipts.set(key, r);
+    });
 
-      if (isPayment || isClose || isAdditionalDisb) {
-        const existing: DateEventAgg = eventsByDate.get(eDate) || {
-          date: eDate,
-          paymentCredit: 0,
-          principalPaid: 0,
-          additionalDebit: 0,
-          isClose: false,
-          particularsList: []
-        };
-
-        if (credit > 0) {
-          existing.paymentCredit += credit;
-        }
-        if (principalPaid > 0) {
-          existing.principalPaid += principalPaid;
-        }
-        if (debit > 0 && isAdditionalDisb) {
-          existing.additionalDebit += debit;
-        }
-        if (isClose) {
-          existing.isClose = true;
-        }
-        if (e.particulars) {
-          existing.particularsList.push(String(e.particulars));
-        }
-
-        eventsByDate.set(eDate, existing);
-      }
+    receipts.forEach(r => {
+      const paid = r.amountPaidTotal > 0 ? r.amountPaidTotal : r.splitTotal;
+      if (paid <= 0) return;
+      const ev = getEvent(r.date);
+      ev.paymentCredit += paid;
+      ev.principalPaid += r.principal;
+      ev.particularsList.push(...r.particulars);
     });
 
     // Ensure final target end date is represented if not closed before endDate
@@ -441,6 +484,7 @@ export const cdCompoundInterestEngine = {
         initialPrincipal: round2(initialPrincipal),
         currentOutstandingPrincipal: round2(currentBalance),
         totalPrincipalPaid: round2(totalPrincipalPaid),
+        totalPaymentsReceived: round2(totalPaymentsReceived),
         compoundInterestEarned,
         finalCompoundBalance,
         effectiveLoanDays: totalDaysSimulated,

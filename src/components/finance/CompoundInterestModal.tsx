@@ -84,22 +84,23 @@ const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-4 bg-slate-100 p-4 rounded-b-lg border border-slate-200 text-center items-center">
+        {/* Loan amount + compound interest - payments = final balance after compounding */}
+        <div className="grid grid-cols-4 gap-4 bg-slate-100 p-4 rounded-b-lg border border-slate-200 text-center items-center">
           <div>
-            <p className="text-[10px] font-black text-slate-500 uppercase">Principal</p>
-            <p className="text-lg font-mono font-bold text-slate-700">₹{(summary.initialPrincipal || 0).toLocaleString('en-IN')}</p>
+            <p className="text-[11px] font-black text-slate-500 uppercase">Loan Amount</p>
+            <p className="text-lg font-mono font-bold text-slate-700">₹{(summary.initialPrincipal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           </div>
           <div>
-            <p className="text-[10px] font-black text-slate-500 uppercase">Compound Interest Earned</p>
-            <p className="text-lg font-mono font-bold text-red-600">
-              + ₹{(summary.compoundInterestEarned || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
+            <p className="text-[11px] font-black text-slate-500 uppercase">+ Compound Interest</p>
+            <p className="text-lg font-mono font-bold text-red-600">₹{(summary.compoundInterestEarned || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           </div>
           <div>
-            <p className="text-[10px] font-black text-slate-500 uppercase">Future Value</p>
-            <p className="text-xl font-mono font-black text-slate-900">
-              = ₹{(summary.finalCompoundBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
+            <p className="text-[11px] font-black text-slate-500 uppercase">− Payments Received</p>
+            <p className="text-lg font-mono font-bold text-emerald-700">₹{(summary.totalPaymentsReceived || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-black text-slate-500 uppercase">= Final Balance after CI</p>
+            <p className="text-xl font-mono font-black text-slate-900">₹{(summary.finalCompoundBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           </div>
         </div>
 

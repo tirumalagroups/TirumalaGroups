@@ -22,6 +22,7 @@ import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { exportToExcelMultiSheet } from '../../utils/excel';
+import { displayHeadName } from '../../utils/financeLabels';
 
 export interface PLHeadMetric {
   name: string;
@@ -530,7 +531,7 @@ const ProfitAndLoss: React.FC = () => {
     const plData = [
       ...incomeHeads.map(head => ({
         'Category': 'INCOME HEAD',
-        'Head of Account': head.name,
+        'Head of Account': displayHeadName(head.name),
         'Opening Balance': head.opening,
         'Current Period Amount': head.currentPeriod,
         'Total Amount': head.total,
@@ -540,7 +541,7 @@ const ProfitAndLoss: React.FC = () => {
       { 'Category': 'TOTAL INCOME', 'Head of Account': '', 'Opening Balance': 0, 'Current Period Amount': totalIncome, 'Total Amount': totalIncome, '% Share of Total Income': '100%', 'Ledger Count': 0 },
       ...expenseHeads.map(head => ({
         'Category': 'EXPENSE HEAD',
-        'Head of Account': head.name,
+        'Head of Account': displayHeadName(head.name),
         'Opening Balance': head.opening,
         'Current Period Amount': head.currentPeriod,
         'Total Amount': head.total,
@@ -557,7 +558,7 @@ const ProfitAndLoss: React.FC = () => {
       { 'Section': 'ASSETS', 'Account Name': 'Cash in Hand', 'Opening Balance': openingCash, 'Credit': '—', 'Debit': '—', 'Closing Balance / Outstanding': closingCash },
       ...bankAndOtherAssetAccounts.map(item => ({
         'Section': 'ASSETS',
-        'Account Name': item.accountName,
+        'Account Name': displayHeadName(item.accountName),
         'Opening Balance': Math.abs(item.opening),
         'Credit': item.credit,
         'Debit': item.debit,
@@ -566,7 +567,7 @@ const ProfitAndLoss: React.FC = () => {
       { 'Section': 'TOTAL ASSETS', 'Account Name': '', 'Opening Balance': 0, 'Credit': 0, 'Debit': 0, 'Closing Balance / Outstanding': totalAssets },
       ...capitalAccounts.map(item => ({
         'Section': 'LIABILITIES & CAPITAL',
-        'Account Name': item.accountName,
+        'Account Name': displayHeadName(item.accountName),
         'Opening Balance': item.opening,
         'Credit': item.credit,
         'Debit': item.debit,
@@ -574,7 +575,7 @@ const ProfitAndLoss: React.FC = () => {
       })),
       ...liabilityAccounts.map(item => ({
         'Section': 'LIABILITIES & CAPITAL',
-        'Account Name': item.accountName,
+        'Account Name': displayHeadName(item.accountName),
         'Opening Balance': Math.abs(item.opening),
         'Credit': item.credit,
         'Debit': item.debit,
@@ -963,7 +964,7 @@ const ProfitAndLoss: React.FC = () => {
                   {bankAndOtherAssetAccounts.map((acc, idx) => (
                     <div key={idx} className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex justify-between items-center">
                       <div>
-                        <div className="font-sans font-bold text-slate-900 uppercase">{acc.accountName}</div>
+                        <div className="font-sans font-bold text-slate-900 uppercase">{displayHeadName(acc.accountName)}</div>
                         <div className="text-[11px] text-slate-500 font-sans mt-0.5">Something we own</div>
                       </div>
                       <div className="text-right font-black text-slate-900 text-sm sm:text-base">
@@ -1024,7 +1025,7 @@ const ProfitAndLoss: React.FC = () => {
                   {liabilityAccounts.map((acc, idx) => (
                     <div key={idx} className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex justify-between items-center">
                       <div>
-                        <div className="font-sans font-bold text-slate-900 uppercase">{acc.accountName}</div>
+                        <div className="font-sans font-bold text-slate-900 uppercase">{displayHeadName(acc.accountName)}</div>
                         <div className="text-[11px] text-slate-500 font-sans mt-0.5">Something we owe</div>
                       </div>
                       <div className="text-right font-black text-slate-900 text-sm sm:text-base">
@@ -1080,7 +1081,7 @@ const ProfitAndLoss: React.FC = () => {
                         >
                           <td className="px-2 py-2 text-center text-slate-400 font-bold">{idx + 1}</td>
                           <td className="px-2 py-2 text-slate-900 font-sans font-bold uppercase break-words">
-                            {acc.accountName}
+                            {displayHeadName(acc.accountName)}
                           </td>
                           <td className="px-2 py-2 text-center">
                             <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-sans font-bold uppercase ${
@@ -1312,7 +1313,7 @@ const ProfitAndLoss: React.FC = () => {
                   {accountBalances.map((acc, idx) => (
                     <tr key={idx}>
                       <td className="ctr">{idx + 1}</td>
-                      <td>{acc.accountName}</td>
+                      <td>{displayHeadName(acc.accountName)}</td>
                       <td className="ctr">{acc.category}</td>
                       <td className="num">{fmtINR(Math.abs(acc.opening))} {acc.opening >= 0 ? 'Cr' : 'Dr'}</td>
                       <td className="num">{acc.credit > 0 ? fmtINR(acc.credit) : '—'}</td>

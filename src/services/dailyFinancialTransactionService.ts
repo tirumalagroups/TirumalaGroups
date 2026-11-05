@@ -114,6 +114,18 @@ export interface DailyFinancialTransaction {
   category?: string | null;
   loanCategory?: string | null;
   partnerName?: string | null;
+  /**
+   * NPA close grouping (Day Book shows one NPA CLOSE row with its parts under it):
+   *   npaGroupId   - same value on the parent and its children
+   *   npaRole      - 'PARENT' = the loss row (Debit, NPA WRITE-OFF / LOSS A/C)
+   *                  'CHILD'  = a part it clears (Credit: principal / interest / penalty)
+   *   npaComponent - which part a CHILD row is
+   *   displayType  - label to show instead of the head of account ('NPA CLOSE' on the parent)
+   */
+  npaGroupId?: string | null;
+  npaRole?: 'PARENT' | 'CHILD' | null;
+  npaComponent?: 'PRINCIPAL' | 'INTEREST' | 'PENALTY' | null;
+  displayType?: string | null;
 }
 
 export const dailyFinancialTransactionService = {
@@ -288,8 +300,16 @@ export const dailyFinancialTransactionService = {
 
     const normalizedList: DailyFinancialTransaction[] = [];
 
+    // Loans whose NPA close is already written in the CD ledger (new NPA close flow)
+    const npaLedgerLoanIds = new Set<string>();
+    (cdEntries || []).forEach((e: any) => {
+      if (e.entry_type === 'NPA_WRITEOFF' && e.loan_id) npaLedgerLoanIds.add(e.loan_id);
+    });
+
     if (cdEntries) {
       cdEntries.forEach((entry: any) => {
+        // Zero-amount NPA marker rows carry no money; skip them
+        if (entry.entry_type === 'NPA_CLOSE' && !(Number(entry.debit) > 0) && !(Number(entry.credit) > 0)) return;
         let head = entry.account_name || 'CD A/C';
         if (head === 'CD COMMISSION A/C') head = 'CD INTEREST';
         else if (head === 'CD A/C' || head === 'CD PRINCIPAL') head = 'CD DISBURSEMENT';
@@ -323,7 +343,17 @@ export const dailyFinancialTransactionService = {
           customerName: entry.customer?.name || null,
           partnerName: entry.loan?.partner_name || null,
           category: cat,
-          loanCategory: entry.loan?.loan_category || 'CD'
+          loanCategory: entry.loan?.loan_category || 'CD',
+          ...(entry.entry_type === 'NPA_WRITEOFF' ? (() => {
+            const isParent = Number(entry.debit) > 0;
+            const comp = String(entry.particulars || '').toUpperCase().match(/NPA CLOSE - (PRINCIPAL|INTEREST|PENALTY)/);
+            return {
+              npaGroupId: `NPA:${entry.loan_id}:${entry.receipt_no || transDate}`,
+              npaRole: (isParent ? 'PARENT' : 'CHILD') as 'PARENT' | 'CHILD',
+              npaComponent: (!isParent && comp ? comp[1] : null) as any,
+              displayType: isParent ? 'NPA CLOSE' : null
+            };
+          })() : {})
         });
       });
     }
@@ -473,27 +503,59 @@ export const dailyFinancialTransactionService = {
       });
     }
 
+    // CD numbers for the NPA register rows (the register stores only the loan's internal id)
+    const npaLoanInfo = new Map<string, { loan_id: string; loan_category: string | null }>();
+    const npaLoanIds = [...new Set((npaEntries || []).map((n: any) => n.loan_id).filter(Boolean))] as string[];
+    try {
+      for (let i = 0; i < npaLoanIds.length; i += 100) {
+        const { data: lrows } = await supabase
+          .from('finance_loans')
+          .select('id, loan_id, loan_category')
+          .in('id', npaLoanIds.slice(i, i + 100));
+        (lrows || []).forEach((l: any) => npaLoanInfo.set(l.id, { loan_id: l.loan_id, loan_category: l.loan_category }));
+      }
+    } catch (lookupErr) {
+      // Without the lookup the rows still show, just with the stored loan id
+      console.warn('Could not look up CD numbers for NPA records:', lookupErr);
+    }
+    // Loans that have an "NPA Closed Payment" collection in finance_transactions (that row already shows the cash)
+    const npaCashTxLoanIds = new Set<string>(
+      (ltEntries || [])
+        .filter((lt: any) => lt.loan_id && String(lt.remarks || '').toUpperCase().startsWith('NPA CLOSED PAYMENT'))
+        .map((lt: any) => lt.loan_id)
+    );
+
     if (npaEntries) {
-      npaEntries.forEach((npa: any) => {
+      // One register record per loan (retries after an error saved duplicates): use the earliest
+      const npaSorted = [...npaEntries].sort((a: any, b: any) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+      const npaSeenLoans = new Set<string>();
+      npaSorted.forEach((npa: any) => {
+        if (npa.loan_id) {
+          if (npaSeenLoans.has(npa.loan_id)) return;
+          npaSeenLoans.add(npa.loan_id);
+          // New NPA close flow: the CD ledger already holds the loss and its parts
+          if (npaLedgerLoanIds.has(npa.loan_id)) return;
+        }
         const matchedReceipt = npa.reason?.match(/RC\d+/i)?.[0] || null;
         if (matchedReceipt && cdReceiptSet.has(matchedReceipt.trim().toUpperCase())) return;
 
-        const alreadyListed = normalizedList.some(tx => 
-          (tx.sourceRecordId === npa.id) ||
-          (matchedReceipt && tx.receiptOrVoucherNo === matchedReceipt) ||
-          (tx.accountOrLoanNo === npa.loan_id && tx.particulars.includes('NPA'))
-        );
-        if (alreadyListed) return;
-
-        const lCat = npa.loan?.loan_category || npa.loan_type || 'CD';
+        const loanInfo = npaLoanInfo.get(npa.loan_id);
+        const lCat = loanInfo?.loan_category || npa.loan_type || 'CD';
         const head = `${lCat} DISBURSEMENT`;
         const normHead = normalizeHeadOfAccount(head);
         const amt = Number(npa.settlement_amount || npa.paid_amount) || 0;
         const waivedAmt = Number(npa.waived_amount) || 0;
         const closedDate = (npa.closed_at || npa.created_at || fromDateClean).split('T')[0];
-        const loanNo = npa.loan?.loan_id || npa.loan_id || lCat;
+        const loanNo = loanInfo?.loan_id || npa.loan_id || lCat;
 
-        if (amt > 0) {
+        // The cash part is skipped when the same money is already listed (collection row / same receipt)
+        const cashAlreadyListed = npaCashTxLoanIds.has(npa.loan_id) || normalizedList.some(tx =>
+          (tx.sourceRecordId === npa.id) ||
+          (matchedReceipt && tx.receiptOrVoucherNo === matchedReceipt) ||
+          (tx.accountOrLoanNo === loanNo && (tx.particulars || '').toUpperCase().includes('NPA'))
+        );
+
+        if (amt > 0 && !cashAlreadyListed) {
           normalizedList.push({
             id: `NPA_RECORD_CASH:${npa.id}`,
             sourceType: 'CD_LEDGER',
@@ -517,48 +579,66 @@ export const dailyFinancialTransactionService = {
         }
 
         if (waivedAmt > 0) {
-          const writeoffParticulars = `NPA CLOSURE / WRITE-OFF / WAIVER - ${loanNo} - ${npa.customer_name}\nTotal Outstanding: ₹${(Number(npa.total_liability) || (amt + waivedAmt)).toFixed(2)}\nActual Paid: ₹${amt.toFixed(2)}\nWaived / Written Off: ₹${waivedAmt.toFixed(2)}${npa.reason ? `\nReason: ${npa.reason}` : ''}`;
-          
-          normalizedList.push({
-            id: `NPA_RECORD_WO_DR:${npa.id}`,
-            sourceType: 'CD_LEDGER',
+          const r2 = (v: number) => Number((Number(v) || 0).toFixed(2));
+          // Which parts the write-off clears: any cash received first covers penalty, then interest, then principal
+          let cashLeft = Math.max(0, amt);
+          const penDue = Math.max(0, Number(npa.penalty_due) || 0);
+          const intDue = Math.max(0, Number(npa.interest_due) || 0);
+          const penCash = Math.min(cashLeft, penDue); cashLeft -= penCash;
+          const intCash = Math.min(cashLeft, intDue); cashLeft -= intCash;
+          let woPenalty = r2(Math.min(waivedAmt, penDue - penCash));
+          let woInterest = r2(Math.min(waivedAmt - woPenalty, intDue - intCash));
+          let woPrincipal = r2(waivedAmt - woPenalty - woInterest);
+          if (woPrincipal < 0) { woPrincipal = 0; woInterest = r2(waivedAmt - woPenalty); }
+
+          const groupId = `NPA:${npa.loan_id || npa.id}:${matchedReceipt || closedDate}`;
+          const writeoffParticulars = `NPA CLOSE - ${loanNo} - ${npa.customer_name}\nPrincipal: ₹${woPrincipal.toFixed(2)}  Interest: ₹${woInterest.toFixed(2)}  Penalty: ₹${woPenalty.toFixed(2)}\nWritten off as loss: ₹${waivedAmt.toFixed(2)}${amt > 0 ? ` (amount received: ₹${amt.toFixed(2)})` : ' (no amount received)'}${npa.reason ? `\nReason: ${npa.reason}` : ''}`;
+          const common = {
+            sourceType: 'CD_LEDGER' as const,
             sourceRecordId: npa.id,
             transactionDate: closedDate,
+            receiptOrVoucherNo: matchedReceipt ? `WO-${matchedReceipt}` : null,
+            accountOrLoanNo: loanNo,
+            userName: npa.closed_by || 'Staff',
+            entryTime: npa.closed_at || npa.created_at,
+            createdAt: npa.closed_at || npa.created_at,
+            customerName: npa.customer_name,
+            partnerName: npa.loan?.partner_name || null,
+            category: 'NPA CLOSED',
+            loanCategory: lCat,
+            npaGroupId: groupId
+          };
+
+          // Parent: the loss (Debit)
+          normalizedList.push({
+            ...common,
+            id: `NPA_RECORD_WO_DR:${npa.id}`,
             headOfAccount: 'NPA WRITE-OFF / LOSS A/C',
             particulars: writeoffParticulars,
-            receiptOrVoucherNo: matchedReceipt ? `WO-${matchedReceipt}` : null,
-            accountOrLoanNo: loanNo,
             debit: waivedAmt,
             credit: 0,
-            userName: npa.closed_by || 'Staff',
-            entryTime: npa.closed_at || npa.created_at,
-            createdAt: npa.closed_at || npa.created_at,
             reportClassification: 'PROFIT_AND_LOSS',
-            customerName: npa.customer_name,
-            partnerName: npa.loan?.partner_name || null,
-            category: 'NPA CLOSED',
-            loanCategory: lCat
+            npaRole: 'PARENT',
+            npaComponent: null,
+            displayType: 'NPA CLOSE'
           });
 
-          normalizedList.push({
-            id: `NPA_RECORD_WO_CR:${npa.id}`,
-            sourceType: 'CD_LEDGER',
-            sourceRecordId: npa.id,
-            transactionDate: closedDate,
-            headOfAccount: 'CD LOAN RECEIVABLE A/C',
-            particulars: writeoffParticulars,
-            receiptOrVoucherNo: matchedReceipt ? `WO-${matchedReceipt}` : null,
-            accountOrLoanNo: loanNo,
-            debit: 0,
-            credit: waivedAmt,
-            userName: npa.closed_by || 'Staff',
-            entryTime: npa.closed_at || npa.created_at,
-            createdAt: npa.closed_at || npa.created_at,
-            reportClassification: 'BALANCE_SHEET',
-            customerName: npa.customer_name,
-            partnerName: npa.loan?.partner_name || null,
-            category: 'NPA CLOSED',
-            loanCategory: lCat
+          // Children: the parts it clears (Credit) - together they equal the loss, so cash does not change
+          const parts: Array<['PRINCIPAL' | 'INTEREST' | 'PENALTY', number]> = [['PRINCIPAL', woPrincipal], ['INTEREST', woInterest], ['PENALTY', woPenalty]];
+          parts.forEach(([label, partAmt]) => {
+            if (!(partAmt > 0)) return;
+            normalizedList.push({
+              ...common,
+              id: `NPA_RECORD_WO_CR_${label}:${npa.id}`,
+              headOfAccount: 'CD LOAN RECEIVABLE A/C',
+              particulars: `NPA CLOSE - ${label} - ${loanNo} - ${npa.customer_name}`,
+              debit: 0,
+              credit: partAmt,
+              reportClassification: 'BALANCE_SHEET',
+              npaRole: 'CHILD',
+              npaComponent: label,
+              displayType: null
+            });
           });
         }
       });

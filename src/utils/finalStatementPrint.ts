@@ -1,3 +1,4 @@
+import { displayHeadName } from './financeLabels';
 /**
  * Final Statement – A4 portrait print document.
  *
@@ -53,9 +54,9 @@ export const buildFinalStatementHtml = (data: FinalStatementPrintData): string =
       const credit = r.side === 'CREDIT';
       return `<tr>
         <td class="sno">${i + 1}</td>
-        <td class="acc">${credit ? esc(r.account) : ''}</td>
+        <td class="acc">${credit ? esc(displayHeadName(r.account)) : ''}</td>
         <td class="amt cr">${credit ? money(r.amount) : ''}</td>
-        <td class="acc">${credit ? '' : esc(r.account)}</td>
+        <td class="acc">${credit ? '' : esc(displayHeadName(r.account))}</td>
         <td class="amt dr">${credit ? '' : money(r.amount)}</td>
       </tr>`;
     })

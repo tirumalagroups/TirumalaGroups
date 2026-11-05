@@ -4,7 +4,7 @@ import {
   Plus, 
   Search, 
   ChevronLeft, 
-  ChevronRight, 
+  ChevronRight, ChevronDown,
   RotateCcw, 
   Scale, 
   BookOpen, 
@@ -19,6 +19,7 @@ import { dailyFinancialTransactionService, DailyFinancialTransaction } from '../
 import { supabaseFinance, FinanceCashbookAccount } from '../../lib/supabaseFinance';
 import { clearFinanceCalendarCache, getAdjacentTransactionDate } from '../../services/financeCalendarService';
 import { useAuth } from '../../contexts/AuthContext';
+import { displayHeadName, displayHeadText } from '../../utils/financeLabels';
 
 export interface DaybookRowItem extends DailyFinancialTransaction {
   runningBalance: number;
@@ -122,6 +123,84 @@ const Daybook: React.FC = () => {
       .then(accs => setAccounts(accs))
       .catch(err => console.error('Error loading cashbook accounts:', err));
   }, []);
+
+  // Manage Heads of Account (Add / Edit) - admin users only
+  const isAdminUser = !!user?.is_admin;
+  const [headModal, setHeadModal] = useState<null | { mode: 'add' | 'edit'; id?: string }>(null);
+  const [headForm, setHeadForm] = useState({
+    account_name: '',
+    account_number: '',
+    report_section: 'PROFIT_AND_LOSS' as 'BALANCE_SHEET' | 'PROFIT_AND_LOSS',
+    category: 'Expense'
+  });
+  const [savingHead, setSavingHead] = useState(false);
+
+  const openAddHead = () => {
+    setHeadForm({ account_name: '', account_number: '', report_section: 'PROFIT_AND_LOSS', category: 'Expense' });
+    setHeadModal({ mode: 'add' });
+  };
+
+  const openEditHead = () => {
+    const acc = accounts.find(a => a.id === headOfAccount);
+    if (!acc) {
+      toast.error('Select a Head of Account first, then click Edit');
+      return;
+    }
+    const section = (acc.report_section || acc.report_classification || 'PROFIT_AND_LOSS') as 'BALANCE_SHEET' | 'PROFIT_AND_LOSS';
+    setHeadForm({
+      account_name: acc.account_name,
+      account_number: acc.account_number || '',
+      report_section: section,
+      category: acc.category || (section === 'BALANCE_SHEET' ? 'Other Asset' : 'Expense')
+    });
+    setHeadModal({ mode: 'edit', id: acc.id });
+  };
+
+  const saveHead = async () => {
+    const name = headForm.account_name.trim().toUpperCase();
+    if (!name) {
+      toast.error('Enter the Head of Account name');
+      return;
+    }
+    const duplicate = accounts.find(a => a.account_name.trim().toUpperCase() === name && a.id !== headModal?.id);
+    if (duplicate) {
+      toast.error('A Head of Account with this name already exists');
+      return;
+    }
+    setSavingHead(true);
+    try {
+      if (headModal?.mode === 'add') {
+        const created = await supabaseFinance.createCashbookAccount({
+          account_name: name,
+          account_number: headForm.account_number.trim() || null,
+          report_classification: headForm.report_section,
+          report_section: headForm.report_section,
+          category: headForm.category
+        });
+        if (!created) throw new Error('Could not create Head of Account');
+        toast.success(`Head of Account "${name}" added`);
+        setHeadOfAccount(created.id);
+      } else if (headModal?.mode === 'edit' && headModal.id) {
+        // Renaming also updates the name on past Day Book entries (done inside updateCashbookAccount)
+        const res = await supabaseFinance.updateCashbookAccount(headModal.id, {
+          account_name: name,
+          report_classification: headForm.report_section,
+          report_section: headForm.report_section,
+          category: headForm.category
+        });
+        if (!res.success) throw new Error(res.error || 'Could not update Head of Account');
+        toast.success(`Head of Account "${name}" updated`);
+      }
+      const accs = await supabaseFinance.getCashbookAccounts();
+      setAccounts(accs);
+      setHeadModal(null);
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to save Head of Account');
+    } finally {
+      setSavingHead(false);
+    }
+  };
 
   // Fetch Daybook Data when selectedDate, mode or refreshTrigger changes
   useEffect(() => {
@@ -241,6 +320,38 @@ const Daybook: React.FC = () => {
       });
   }, [allTransactions, openingBalance, typeFilter, operatorFilter, loanTypeFilter, searchQuery]);
 
+  // NPA close groups: one parent row (the loss, in Debit) with its principal / interest /
+  // penalty parts as child rows that open underneath it. Children still count in the totals.
+  const [expandedNpa, setExpandedNpa] = useState<Record<string, boolean>>({});
+  const displayRows = useMemo(() => {
+    const ordered = filteredRows.map((r, i) => ({ ...r, __order: i })) as any[];
+    const childrenByGroup = new Map<string, any[]>();
+    const parentGroups = new Set<string>();
+    ordered.forEach(r => {
+      if (r.npaGroupId && r.npaRole === 'PARENT') parentGroups.add(r.npaGroupId);
+    });
+    ordered.forEach(r => {
+      if (r.npaGroupId && r.npaRole === 'CHILD' && parentGroups.has(r.npaGroupId)) {
+        const list = childrenByGroup.get(r.npaGroupId) || [];
+        list.push(r);
+        childrenByGroup.set(r.npaGroupId, list);
+      }
+    });
+    const out: { row: any; children: any[]; index: number }[] = [];
+    let n = 0;
+    ordered.forEach(r => {
+      if (r.npaRole === 'CHILD' && r.npaGroupId && parentGroups.has(r.npaGroupId)) return;
+      const children = r.npaRole === 'PARENT' && r.npaGroupId ? (childrenByGroup.get(r.npaGroupId) || []) : [];
+      if (children.length) {
+        const last = [r, ...children].reduce((m, c) => (c.__order > m.__order ? c : m), r);
+        r.__groupBalance = last.runningBalance;
+      }
+      n += 1;
+      out.push({ row: r, children, index: n });
+    });
+    return out;
+  }, [filteredRows]);
+
   // Filtered Totals
   const filteredTotals = useMemo(() => {
     let inSum = 0;
@@ -305,11 +416,11 @@ const Daybook: React.FC = () => {
       return;
     }
     if (crVal <= 0 && drVal <= 0) {
-      toast.error('Please enter Cash In (Credit) or Cash Out (Debit) amount greater than 0');
+      toast.error('Please enter a Credit or Debit amount greater than 0');
       return;
     }
     if (crVal > 0 && drVal > 0) {
-      toast.error('Cannot enter both Cash In and Cash Out in a single entry');
+      toast.error('Cannot enter both Credit and Debit in a single entry');
       return;
     }
 
@@ -458,7 +569,7 @@ const Daybook: React.FC = () => {
         {/* Total Cash In (Credit) */}
         <div className="bg-emerald-50/80 border border-emerald-300 rounded-xl p-2.5 shadow-2xs flex flex-col justify-between min-h-[62px]">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-emerald-900 uppercase tracking-wider">Total Cash In (+)</span>
+            <span className="text-[10px] font-black text-emerald-900 uppercase tracking-wider">Total Credit (+)</span>
             <ArrowDownLeft className="w-4 h-4 text-emerald-700" />
           </div>
           <span className="text-emerald-800 text-[19px] font-black font-mono tracking-tight whitespace-nowrap mt-0.5">
@@ -469,7 +580,7 @@ const Daybook: React.FC = () => {
         {/* Total Cash Out (Debit) */}
         <div className="bg-rose-50/80 border border-rose-300 rounded-xl p-2.5 shadow-2xs flex flex-col justify-between min-h-[62px]">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-rose-900 uppercase tracking-wider">Total Cash Out (-)</span>
+            <span className="text-[10px] font-black text-rose-900 uppercase tracking-wider">Total Debit (-)</span>
             <ArrowUpRight className="w-4 h-4 text-rose-700" />
           </div>
           <span className="text-rose-800 text-[19px] font-black font-mono tracking-tight whitespace-nowrap mt-0.5">
@@ -531,7 +642,7 @@ const Daybook: React.FC = () => {
             >
               <option value="ALL">All Types</option>
               {filterOptions.types.map(t => (
-                <option key={t} value={t}>{t}</option>
+                <option key={t} value={t}>{displayHeadName(t)}</option>
               ))}
             </select>
           </div>
@@ -596,8 +707,8 @@ const Daybook: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-4 text-xs font-mono font-black text-slate-800">
-            <span>Filtered In: <strong className="text-emerald-700">{filteredTotals.inSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
-            <span>Filtered Out: <strong className="text-rose-700">{filteredTotals.outSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+            <span>Filtered Credit: <strong className="text-emerald-700">{filteredTotals.inSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+            <span>Filtered Debit: <strong className="text-rose-700">{filteredTotals.outSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
           </div>
         </div>
 
@@ -608,119 +719,124 @@ const Daybook: React.FC = () => {
         ) : (
           <>
             <div className="overflow-y-auto w-full" style={{ maxHeight: 'calc(100vh - 330px)' }}>
-              <table className="w-full table-fixed divide-y divide-slate-200">
+              <table className="fit-table w-full divide-y divide-slate-200">
               <thead className="sticky top-0 z-10 bg-slate-200 shadow-[inset_0_-2px_0_rgba(0,0,0,0.1)]">
-                <tr className="text-slate-950 uppercase font-black text-[10px] tracking-wider">
-                  <th className="w-[3%] px-1 py-2.5 text-center border-r border-slate-300 overflow-hidden">#</th>
-                  <th className="w-[8.5%] px-1.5 py-2.5 text-center border-r border-slate-300 overflow-hidden">Receipt</th>
-                  <th className="w-[7.5%] px-1.5 py-2.5 text-center border-r border-slate-300 overflow-hidden">Type</th>
-                  <th className="w-[8.5%] px-1.5 py-2.5 text-left border-r border-slate-300 overflow-hidden">Loan / Acc</th>
-                  <th className="w-[20%] px-2 py-2.5 text-left border-r border-slate-300 overflow-hidden">Customer Name</th>
-                  <th className="w-[9.5%] px-1.5 py-2.5 text-right border-r border-slate-300 text-emerald-950 bg-emerald-100/60 overflow-hidden">Cash In (Cr)</th>
-                  <th className="w-[9.5%] px-1.5 py-2.5 text-right border-r border-slate-300 text-rose-950 bg-rose-100/60 overflow-hidden">Cash Out (Dr)</th>
-                  <th className="w-[11%] px-1.5 py-2.5 text-right border-r border-slate-300 text-indigo-950 bg-indigo-100/60 overflow-hidden">Balance</th>
-                  <th className="w-[6.5%] px-1.5 py-2.5 text-left border-r border-slate-300 overflow-hidden">Operator</th>
-                  <th className="w-[8%] px-1.5 py-2.5 text-left border-r border-slate-300 overflow-hidden">Date</th>
-                  <th className="w-[8%] px-2 py-2.5 text-left overflow-hidden">Particulars / Remarks</th>
+                <tr className="text-slate-950 uppercase font-black tracking-wider">
+                  <th className="px-1 py-2.5 text-center border-r border-slate-300">#</th>
+                  <th className="px-1.5 py-2.5 text-center border-r border-slate-300">Receipt</th>
+                  <th className="px-1.5 py-2.5 text-center border-r border-slate-300">Type</th>
+                  <th className="px-1.5 py-2.5 text-left border-r border-slate-300">Loan / Acc</th>
+                  <th className="px-2 py-2.5 text-left border-r border-slate-300">Customer Name</th>
+                  <th className="px-1.5 py-2.5 text-right border-r border-slate-300 text-emerald-950 bg-emerald-100/60">Credit</th>
+                  <th className="px-1.5 py-2.5 text-right border-r border-slate-300 text-rose-950 bg-rose-100/60">Debit</th>
+                  <th className="px-1.5 py-2.5 text-right border-r border-slate-300 text-indigo-950 bg-indigo-100/60">Balance</th>
+                  <th className="px-1.5 py-2.5 text-left border-r border-slate-300">Operator</th>
+                  <th className="px-1.5 py-2.5 text-left border-r border-slate-300">Date</th>
+                  <th className="px-2 py-2.5 text-left">Particulars / Remarks</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-slate-200 text-[12px]">
-                {filteredRows.length === 0 ? (
+              <tbody className="bg-white divide-y divide-slate-200">
+                {displayRows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-3 py-12 text-center text-slate-500 font-sans text-xs font-extrabold">
+                    <td colSpan={11} className="px-3 py-12 text-center text-slate-500 font-sans font-extrabold">
                       No financial transactions match the selected date and filters.
                     </td>
                   </tr>
                 ) : (
-                  filteredRows.map((row, idx) => {
-                    const isCredit = row.credit > 0;
-                    const isDebit = row.debit > 0;
-
+                  displayRows.map(({ row, children, index }) => {
+                    const isNpaParent = row.npaRole === 'PARENT';
+                    const isOpen = isNpaParent && !!expandedNpa[row.npaGroupId || row.id];
+                    const renderRow = (r: any, opts: { child?: boolean; idxLabel?: string; groupBalance?: number }) => {
+                      const isCredit = r.credit > 0;
+                      const isDebit = r.debit > 0;
+                      const head = r.displayType || displayHeadName(r.headOfAccount);
+                      const balance = opts.groupBalance !== undefined ? opts.groupBalance : r.runningBalance;
+                      return (
+                        <tr key={r.id} className={`transition-colors ${opts.child ? 'bg-rose-50/40' : r.npaRole === 'PARENT' ? 'bg-rose-50 hover:bg-rose-100/60' : 'hover:bg-slate-50/90'}`}>
+                          {/* # */}
+                          <td className="fit-nowrap px-1 py-2 text-center border-r border-slate-100 text-slate-500 font-bold">
+                            {opts.child ? '' : (
+                              r.npaRole === 'PARENT' && children.length > 0 ? (
+                                <button type="button" onClick={() => setExpandedNpa(p => ({ ...p, [r.npaGroupId || r.id]: !p[r.npaGroupId || r.id] }))}
+                                  title={isOpen ? 'Hide the parts of this NPA close' : 'Show the parts of this NPA close'}
+                                  className="inline-flex items-center gap-0.5 text-rose-800 font-black">
+                                  {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}{opts.idxLabel}
+                                </button>
+                              ) : opts.idxLabel
+                            )}
+                          </td>
+                          {/* Receipt */}
+                          <td className="fit-nowrap px-1.5 py-2 border-r border-slate-100 text-center">
+                            {r.receiptOrVoucherNo ? (
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-950 border border-slate-300 font-mono font-black inline-block">
+                                {r.receiptOrVoucherNo}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-sans text-center block">—</span>
+                            )}
+                          </td>
+                          {/* Type */}
+                          <td className={`px-1 py-2 border-r border-slate-100 ${opts.child ? 'text-left pl-4' : 'text-center'}`}>
+                            <span className={`inline-block px-1.5 py-0.5 rounded border font-black uppercase tracking-tight text-center ${
+                              r.npaRole === 'PARENT'
+                                ? 'bg-rose-600 text-white border-rose-700'
+                                : opts.child
+                                ? 'bg-white text-rose-900 border-rose-300'
+                                : head.includes('INTEREST') || head.includes('COMMISSION')
+                                ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                                : head.includes('PRINCIPAL') || r.debit > 0
+                                ? 'bg-rose-50 text-rose-900 border-rose-300'
+                                : head.includes('CAPITAL')
+                                ? 'bg-amber-50 text-amber-950 border-amber-300'
+                                : 'bg-blue-50 text-blue-950 border-blue-300'
+                            }`}>
+                              {opts.child ? `↳ ${r.npaComponent || head}` : head}
+                            </span>
+                          </td>
+                          {/* Loan / Acc No */}
+                          <td className="fit-nowrap px-1.5 py-2 border-r border-slate-100 font-mono font-bold text-slate-900">
+                            {r.accountOrLoanNo || '—'}
+                          </td>
+                          {/* Customer */}
+                          <td className="fit-name px-2 py-2 border-r border-slate-100 font-sans font-extrabold text-slate-950 leading-snug">
+                            {r.customerName || '—'}
+                          </td>
+                          {/* Credit */}
+                          <td className="fit-nowrap px-1.5 py-2 border-r border-slate-100 text-right font-mono font-black text-emerald-700 bg-emerald-50/20 tabular-nums">
+                            {isCredit ? r.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
+                          </td>
+                          {/* Debit */}
+                          <td className="fit-nowrap px-1.5 py-2 border-r border-slate-100 text-right font-mono font-black text-rose-700 bg-rose-50/20 tabular-nums">
+                            {isDebit ? r.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
+                          </td>
+                          {/* Balance */}
+                          <td className="fit-nowrap px-1.5 py-2 border-r border-slate-100 text-right font-mono font-black text-indigo-950 bg-indigo-50/20 tabular-nums">
+                            {opts.child ? '' : balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          {/* Operator */}
+                          <td className="px-1.5 py-2 border-r border-slate-100 font-sans font-black text-slate-800 uppercase">
+                            {r.userName || 'Staff'}
+                          </td>
+                          {/* Date / time */}
+                          <td className="fit-nowrap px-1.5 py-1.5 border-r border-slate-100 text-left">
+                            <div className="flex flex-col leading-tight">
+                              <span className="font-mono font-bold text-slate-900">{formatRowDate(r.transactionDate || r.createdAt)}</span>
+                              <span className="font-mono font-medium text-slate-500">{formatRowTime(r.entryTime, r.createdAt)}</span>
+                            </div>
+                          </td>
+                          {/* Particulars */}
+                          <td className="fit-particulars px-2 py-2 font-sans font-semibold text-slate-800 leading-snug">
+                            {displayHeadText(r.particulars) || '—'}
+                          </td>
+                        </tr>
+                      );
+                    };
+                    const groupBalance = isNpaParent ? row.__groupBalance : undefined;
                     return (
-                      <tr key={row.id} className="hover:bg-slate-50/90 transition-colors">
-                        {/* # Index */}
-                        <td className="w-[3%] px-1 py-2 text-center border-r border-slate-100 text-slate-500 font-sans text-[11px] font-bold overflow-hidden">
-                          {idx + 1}
-                        </td>
-
-                        {/* Receipt */}
-                        <td className="w-[8.5%] px-1.5 py-2 border-r border-slate-100 text-center overflow-hidden">
-                          {row.receiptOrVoucherNo ? (
-                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-950 border border-slate-300 text-[11px] font-mono font-black inline-block truncate max-w-full" title={row.receiptOrVoucherNo}>
-                              {row.receiptOrVoucherNo}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 font-sans text-center block">—</span>
-                          )}
-                        </td>
-
-                        {/* Type */}
-                        <td className="w-[7.5%] px-1 py-2 border-r border-slate-100 text-center overflow-hidden">
-                          <span className={`inline-block px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-tight truncate max-w-full text-center ${
-                            row.headOfAccount.includes('INTEREST') || row.headOfAccount.includes('COMMISSION')
-                              ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                              : row.headOfAccount.includes('DISBURSEMENT') || row.debit > 0
-                              ? 'bg-rose-50 text-rose-900 border-rose-300'
-                              : row.headOfAccount.includes('CAPITAL')
-                              ? 'bg-amber-50 text-amber-950 border-amber-300'
-                              : 'bg-blue-50 text-blue-950 border-blue-300'
-                          }`} title={row.headOfAccount}>
-                            {row.headOfAccount}
-                          </span>
-                        </td>
-
-                        {/* Loan / Acc No */}
-                        <td className="w-[8.5%] px-1.5 py-2 border-r border-slate-100 font-mono font-bold text-slate-900 overflow-hidden text-ellipsis whitespace-nowrap" title={row.accountOrLoanNo || '—'}>
-                          {row.accountOrLoanNo || '—'}
-                        </td>
-
-                        {/* Customer Name */}
-                        <td className="w-[20%] px-2 py-2 border-r border-slate-100 font-sans font-extrabold text-slate-950 leading-snug overflow-hidden">
-                          <div className="line-clamp-2 break-words text-[12px] whitespace-normal" title={row.customerName || '—'}>
-                            {row.customerName || '—'}
-                          </div>
-                        </td>
-
-                        {/* Cash In (Credit) */}
-                        <td className="w-[9.5%] px-1.5 py-2 border-r border-slate-100 text-right font-mono font-black text-[12px] text-emerald-700 bg-emerald-50/20 overflow-hidden text-ellipsis whitespace-nowrap">
-                          {isCredit ? row.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
-                        </td>
-
-                        {/* Cash Out (Debit) */}
-                        <td className="w-[9.5%] px-1.5 py-2 border-r border-slate-100 text-right font-mono font-black text-[12px] text-rose-700 bg-rose-50/20 overflow-hidden text-ellipsis whitespace-nowrap">
-                          {isDebit ? row.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
-                        </td>
-
-                        {/* Running Balance */}
-                        <td className="w-[11%] px-1.5 py-2 border-r border-slate-100 text-right font-mono font-black text-[12px] text-indigo-950 bg-indigo-50/20 overflow-hidden text-ellipsis whitespace-nowrap">
-                          {row.runningBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-
-                        {/* Operator */}
-                        <td className="w-[6.5%] px-1.5 py-2 border-r border-slate-100 font-sans font-black text-slate-800 text-[11px] uppercase overflow-hidden text-ellipsis whitespace-nowrap" title={row.userName || 'Staff'}>
-                          {row.userName || 'Staff'}
-                        </td>
-
-                        {/* Date (Date on 1st line, Time on 2nd line) */}
-                        <td className="w-[8%] px-1.5 py-1.5 border-r border-slate-100 text-left overflow-hidden">
-                          <div className="flex flex-col leading-tight">
-                            <span className="font-mono font-bold text-slate-900 text-[11px] whitespace-nowrap">
-                              {formatRowDate(row.transactionDate || row.createdAt)}
-                            </span>
-                            <span className="font-mono font-medium text-slate-500 text-[10px] whitespace-nowrap">
-                              {formatRowTime(row.entryTime, row.createdAt)}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Particulars / Remarks */}
-                        <td className="w-[8%] px-2 py-2 font-sans text-[11px] font-semibold text-slate-800 leading-snug overflow-hidden">
-                          <div className="line-clamp-3 break-words whitespace-normal" title={row.particulars || '—'}>
-                            {row.particulars || '—'}
-                          </div>
-                        </td>
-
-                      </tr>
+                      <React.Fragment key={`grp-${row.id}`}>
+                        {renderRow(row, { idxLabel: String(index), groupBalance })}
+                        {isOpen && children.map(c => renderRow(c, { child: true }))}
+                      </React.Fragment>
                     );
                   })
                 )}
@@ -738,10 +854,12 @@ const Daybook: React.FC = () => {
             </div>
 
             {/* Head of Account */}
-            <div className="w-full sm:w-[220px] lg:w-[22%] shrink-0">
+            <div className="w-full sm:w-[280px] lg:w-[28%] shrink-0 flex items-center gap-1">
               <select
                 value={headOfAccount}
                 onChange={(e) => {
+                  if (e.target.value === '__add_head__') { openAddHead(); return; }
+                  if (e.target.value === '__edit_head__') { openEditHead(); return; }
                   setHeadOfAccount(e.target.value);
                   const selectedAcc = accounts.find(a => a.id === e.target.value);
                   if (selectedAcc?.account_number) setAccountNumber(selectedAcc.account_number);
@@ -755,7 +873,34 @@ const Daybook: React.FC = () => {
                     {acc.account_name} {acc.account_number ? `(${acc.account_number})` : ''}
                   </option>
                 ))}
+                {isAdminUser && (
+                  <optgroup label="Manage Heads (Admin)">
+                    <option value="__add_head__">+ Add new Head of Account</option>
+                    {headOfAccount && <option value="__edit_head__">✎ Edit selected Head of Account</option>}
+                  </optgroup>
+                )}
               </select>
+              {isAdminUser && (
+                <>
+                  <button
+                    type="button"
+                    onClick={openAddHead}
+                    title="Add a new Head of Account"
+                    className="h-8 px-2 shrink-0 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-bold hover:bg-emerald-100"
+                  >
+                    + Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openEditHead}
+                    disabled={!headOfAccount}
+                    title={headOfAccount ? 'Edit the selected Head of Account' : 'Select a Head of Account to edit'}
+                    className="h-8 px-2 shrink-0 rounded-lg border border-slate-300 bg-white text-slate-800 text-xs font-bold hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    Edit
+                  </button>
+                </>
+              )}
             </div>
 
             {/* Particulars / Description */}
@@ -776,7 +921,7 @@ const Daybook: React.FC = () => {
                 type="number"
                 step="0.01"
                 min="0"
-                placeholder="Cash In (Cr)"
+                placeholder="Credit"
                 value={credit}
                 onChange={(e) => {
                   setCredit(e.target.value);
@@ -792,7 +937,7 @@ const Daybook: React.FC = () => {
                 type="number"
                 step="0.01"
                 min="0"
-                placeholder="Cash Out (Dr)"
+                placeholder="Debit"
                 value={debit}
                 onChange={(e) => {
                   setDebit(e.target.value);
@@ -825,8 +970,8 @@ const Daybook: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
-              <span>Total In: <strong className="text-emerald-800 text-[12px] bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300 font-mono font-black">{filteredTotals.inSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
-              <span>Total Out: <strong className="text-rose-800 text-[12px] bg-rose-100/90 px-2 py-0.5 rounded border border-rose-300 font-mono font-black">{filteredTotals.outSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+              <span>Total Credit: <strong className="text-emerald-800 text-[12px] bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300 font-mono font-black">{filteredTotals.inSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+              <span>Total Debit: <strong className="text-rose-800 text-[12px] bg-rose-100/90 px-2 py-0.5 rounded border border-rose-300 font-mono font-black">{filteredTotals.outSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
               <span>Closing Balance: <strong className="text-indigo-950 text-[12px] bg-indigo-100/90 px-2 py-0.5 rounded border border-indigo-300 font-mono font-black">{daySummary.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
               <span className="text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-300">NET: {daySummary.netChange >= 0 ? '+' : ''}{daySummary.netChange.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
             </div>
@@ -850,11 +995,11 @@ const Daybook: React.FC = () => {
                 <span className="text-gray-900 font-mono font-black text-sm">{openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
               <div className="p-2.5 bg-green-50 rounded border border-green-200">
-                <span className="text-green-800 block uppercase font-bold text-[9px]">Total Cash In (+)</span>
+                <span className="text-green-800 block uppercase font-bold text-[9px]">Total Credit (+)</span>
                 <span className="text-green-900 font-mono font-black text-sm">{daySummary.cashIn.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
               <div className="p-2.5 bg-red-50 rounded border border-red-200">
-                <span className="text-red-800 block uppercase font-bold text-[9px]">Total Cash Out (-)</span>
+                <span className="text-red-800 block uppercase font-bold text-[9px]">Total Debit (-)</span>
                 <span className="text-red-900 font-mono font-black text-sm">{daySummary.cashOut.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
               <div className="p-2.5 bg-indigo-50 rounded border border-indigo-200">
@@ -870,8 +1015,8 @@ const Daybook: React.FC = () => {
                   <th className="px-2 py-2">Type</th>
                   <th className="px-2 py-2">Loan/Acc</th>
                   <th className="px-2 py-2">Customer</th>
-                  <th className="px-2 py-2 text-right">Cash In</th>
-                  <th className="px-2 py-2 text-right">Cash Out</th>
+                  <th className="px-2 py-2 text-right">Credit</th>
+                  <th className="px-2 py-2 text-right">Debit</th>
                   <th className="px-2 py-2 text-right">Balance</th>
                   <th className="px-2 py-2">Operator</th>
                   <th className="px-2 py-2">Date</th>
@@ -882,7 +1027,7 @@ const Daybook: React.FC = () => {
                 {filteredRows.map((r) => (
                   <tr key={r.id}>
                     <td className="px-2 py-1.5 font-bold">{r.receiptOrVoucherNo || '-'}</td>
-                    <td className="px-2 py-1.5">{r.headOfAccount}</td>
+                    <td className="px-2 py-1.5">{r.displayType || displayHeadName(r.headOfAccount)}</td>
                     <td className="px-2 py-1.5">{r.accountOrLoanNo || '-'}</td>
                     <td className="px-2 py-1.5">{r.customerName || '-'}</td>
                     <td className="px-2 py-1.5 text-right font-bold text-green-700">{r.credit > 0 ? r.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}</td>
@@ -912,6 +1057,79 @@ const Daybook: React.FC = () => {
           </div>
         )}
       </FinancePrintPreview>
+
+      {/* Add / Edit Head of Account (admin only) */}
+      {headModal && isAdminUser && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !savingHead && setHeadModal(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b border-slate-200">
+              <h3 className="text-[16px] font-black uppercase text-slate-900">
+                {headModal.mode === 'add' ? 'Add Head of Account' : 'Edit Head of Account'}
+              </h3>
+              {headModal.mode === 'edit' && (
+                <p className="text-[12px] text-slate-500 font-semibold mt-0.5">A new name is also shown on past Day Book entries of this head.</p>
+              )}
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <label className="block text-[12px] font-bold uppercase text-slate-700 mb-1">Head of Account Name *</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={headForm.account_name}
+                  onChange={(e) => setHeadForm(f => ({ ...f, account_name: e.target.value }))}
+                  placeholder="e.g. OFFICE EXPENSES A/C"
+                  className="w-full h-10 px-3 border border-slate-300 rounded-lg text-[14px] font-bold uppercase focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+              </div>
+              <div>
+                <label className="block text-[12px] font-bold uppercase text-slate-700 mb-1">Account No (optional)</label>
+                <input
+                  type="text"
+                  value={headForm.account_number}
+                  disabled={headModal.mode === 'edit'}
+                  onChange={(e) => setHeadForm(f => ({ ...f, account_number: e.target.value }))}
+                  className="w-full h-10 px-3 border border-slate-300 rounded-lg text-[14px] font-semibold disabled:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[12px] font-bold uppercase text-slate-700 mb-1">Report</label>
+                  <select
+                    value={headForm.report_section}
+                    onChange={(e) => {
+                      const v = e.target.value as 'BALANCE_SHEET' | 'PROFIT_AND_LOSS';
+                      setHeadForm(f => ({ ...f, report_section: v, category: v === 'BALANCE_SHEET' ? 'Other Asset' : 'Expense' }));
+                    }}
+                    className="w-full h-10 px-2 border border-slate-300 rounded-lg text-[14px] font-semibold"
+                  >
+                    <option value="PROFIT_AND_LOSS">Profit &amp; Loss</option>
+                    <option value="BALANCE_SHEET">Balance Sheet</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[12px] font-bold uppercase text-slate-700 mb-1">Category</label>
+                  <select
+                    value={headForm.category}
+                    onChange={(e) => setHeadForm(f => ({ ...f, category: e.target.value }))}
+                    className="w-full h-10 px-2 border border-slate-300 rounded-lg text-[14px] font-semibold"
+                  >
+                    {(headForm.report_section === 'PROFIT_AND_LOSS' ? ['Income', 'Expense'] : ['Other Asset', 'Liability', 'Capital'])
+                      .concat(headForm.category && !['Income', 'Expense', 'Other Asset', 'Liability', 'Capital'].includes(headForm.category) ? [headForm.category] : [])
+                      .map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
+              <button type="button" onClick={() => setHeadModal(null)} disabled={savingHead} className="h-9 px-4 rounded-lg border border-slate-300 text-[13px] font-bold uppercase">Cancel</button>
+              <button type="button" onClick={saveHead} disabled={savingHead} className="h-9 px-4 rounded-lg bg-slate-900 text-white text-[13px] font-bold uppercase disabled:opacity-50">
+                {savingHead ? 'Saving…' : headModal.mode === 'add' ? 'Add Head' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

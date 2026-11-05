@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
 import { useAuth } from '../../contexts/AuthContext';
 import VoiceRecorder from '../../components/finance/VoiceRecorder';
+import { normalizeCDLedgerEntries } from '../../utils/cdLedgerNormalize';
 import { convertTextToTelugu, hasEnglishLetters } from '../../utils/telugu';
 
 interface ActiveDueLoan {
@@ -458,8 +459,10 @@ const PaymentFollowUp: React.FC = () => {
       
       const [customersRes, ledgerRes, interestRes, loanRes, followupsRes] = await Promise.all([
         ids.length > 0 ? supabase.from('finance_customers').select('*').in('id', ids) : Promise.resolve({ data: [], error: null }),
-        supabase.from('finance_cd_ledger_entries').select('*').eq('loan_id', loan.id).order('created_at', { ascending: true }),
-        supabase.from('finance_cd_interest_details').select('*').eq('loan_id', loan.id),
+        // Same rows the CD Ledger uses (includes older loans whose disbursement / payments
+        // live in the older transactions table), so the numbers match the CD Ledger
+        supabaseFinance.getCDLedgerEntries(loan.id).then(rows => ({ data: normalizeCDLedgerEntries(rows), error: null })),
+        supabaseFinance.getCDInterestDetails(loan.id).then(rows => ({ data: rows, error: null })),
         supabase.from('finance_loans').select('*').eq('id', loan.id).single(),
         supabase.from('finance_loan_payment_followups').select('*').eq('loan_id', loan.id).order('followed_up_at', { ascending: false })
       ]);

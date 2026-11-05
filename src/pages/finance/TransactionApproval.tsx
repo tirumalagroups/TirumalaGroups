@@ -22,6 +22,7 @@ import {
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { dailyFinancialTransactionService } from '../../services/dailyFinancialTransactionService';
+import { displayHeadName } from '../../utils/financeLabels';
 
 const TransactionApproval: React.FC = () => {
   const { user } = useAuth();
@@ -1045,7 +1046,7 @@ const TransactionApproval: React.FC = () => {
                                       {details.map((detail: any, dIdx: number) => (
                                         <tr key={dIdx} className="hover:bg-slate-50/50 transition-colors">
                                           <td className="px-4 py-2 font-sans">{format(new Date(detail.date), 'dd/MM/yyyy')}</td>
-                                          <td className="px-4 py-2 font-sans font-black text-indigo-900">{detail.account_name}</td>
+                                          <td className="px-4 py-2 font-sans font-black text-indigo-900">{displayHeadName(detail.account_name)}</td>
                                           <td className="px-4 py-2 font-sans text-slate-500 font-bold">{detail.particulars}</td>
                                           <td className="px-4 py-2 text-right font-bold text-slate-900">{detail.credit > 0 ? formatCurrency(detail.credit) : '-'}</td>
                                           <td className="px-4 py-2 text-right font-bold text-slate-900">{detail.debit > 0 ? formatCurrency(detail.debit) : '-'}</td>

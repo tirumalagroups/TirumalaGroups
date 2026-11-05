@@ -8,6 +8,7 @@ import { Printer, RefreshCw, ArrowLeft, ChevronRight, ChevronDown, X, Search, Fi
 import toast from 'react-hot-toast';
 import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
 import { useNavigate } from 'react-router-dom';
+import { displayHeadName } from '../../utils/financeLabels';
 
 const formatDateOld = (dateStr?: string | null): string => {
   if (!dateStr) return '—';
@@ -281,7 +282,7 @@ const GeneralLedger: React.FC = () => {
     }
     const headers = ['Head of Account', 'Opening Balance', 'Credit (Cr)', 'Debit (Dr)', 'Net Movement', 'Closing Balance', 'Transaction Count'];
     const rows = summaryData.map(s => [
-      `"${s.head}"`,
+      `"${displayHeadName(s.head)}"`,
       `"${Math.abs(s.opening).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${s.opening >= 0 ? 'Cr' : 'Dr'}"`,
       s.credit,
       s.debit,
@@ -454,7 +455,7 @@ const GeneralLedger: React.FC = () => {
                                   {isExpanded ? <ChevronDown className="w-4 h-4 text-blue-600" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
                                 </button>
                               </td>
-                              <td className="fit-name px-4 py-3 font-bold text-slate-900 uppercase">{s.head}</td>
+                              <td className="fit-name px-4 py-3 font-bold text-slate-900 uppercase">{displayHeadName(s.head)}</td>
                               <td className={`fit-nowrap px-4 py-3 text-right font-mono font-bold whitespace-nowrap ${s.opening >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                                 {Math.abs(s.opening).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {s.opening >= 0 ? 'Cr' : 'Dr'}
                               </td>
@@ -492,7 +493,7 @@ const GeneralLedger: React.FC = () => {
                                         <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                                         TRANSACTION BREAKDOWN
                                       </span>
-                                      <span className="text-slate-500 font-normal">Head: <span className="font-bold text-slate-800">{s.head}</span></span>
+                                      <span className="text-slate-500 font-normal">Head: <span className="font-bold text-slate-800">{displayHeadName(s.head)}</span></span>
                                     </div>
                                     <div className="overflow-x-hidden max-h-[340px] overflow-y-auto scrollbar-thin">
                                       <table className="fit-table fit-dense w-full text-left border-collapse tabular-nums">
@@ -729,7 +730,7 @@ const GeneralLedger: React.FC = () => {
             <tbody className="divide-y divide-slate-200">
               {summaryData.map(s => (
                 <tr key={s.head}>
-                  <td className="py-1.5 px-2 font-bold uppercase">{s.head}</td>
+                  <td className="py-1.5 px-2 font-bold uppercase">{displayHeadName(s.head)}</td>
                   <td className="py-1.5 px-2 text-right">{Math.abs(s.opening).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {s.opening >= 0 ? 'Cr' : 'Dr'}</td>
                   <td className="py-1.5 px-2 text-right text-emerald-700 font-bold">{s.credit > 0 ? s.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}</td>
                   <td className="py-1.5 px-2 text-right text-rose-700 font-bold">{s.debit > 0 ? s.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}</td>

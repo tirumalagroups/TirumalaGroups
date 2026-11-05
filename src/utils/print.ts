@@ -876,6 +876,14 @@ export const printDailyReport = (data: any[], options: PrintOptions = {}) => {
  * Put this just before </head> of a preview document.
  */
 export const PREVIEW_FIT_HEAD = `<style>
+  /* The button bar is its own row above the page, so the enlarged page never covers it */
+  @media screen {
+    .toolbar {
+      position: static !important;
+      justify-content: flex-end;
+      margin: 0 0 10px 0 !important;
+    }
+  }
   @media print {
     .pv-fit { transform: none !important; margin: 0 !important; }
   }

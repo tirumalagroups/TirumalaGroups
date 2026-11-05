@@ -27,8 +27,11 @@ import {
   ChevronRight,
   ChevronDown,
   ArrowLeft,
-  List
+  List,
+  MoreVertical,
 } from 'lucide-react';
+import CustomerFullDetails from '../../components/finance/CustomerFullDetails';
+import { normalizeCDLedgerEntries } from '../../utils/cdLedgerNormalize';
 import toast from 'react-hot-toast';
 import { exportToExcel, exportToCSV } from '../../utils/excel';
 import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
@@ -42,50 +45,16 @@ import { cdCompoundInterestEngine, TOOLTIP_TEXT } from '../../services/cdCompoun
 
 const mapAccountName = (name: string): string => {
   const cleanName = (name || '').trim().toUpperCase();
-  if (cleanName === 'CD A/C') return 'CD Principal';
+  if (cleanName === 'CD A/C') return 'CD Principal Amount';
   if (cleanName === 'CD COMMISSION A/C') return 'CD Interest';
   if (cleanName === 'PENALTY A/C') return 'CD Penalty';
   if (cleanName === 'CD DOCUMENT CHARGES A/C') return 'CD Document Charges';
   if (cleanName === 'CD AMOUNT PAID') return 'CD Amount Paid';
-  return name || 'CD Principal';
+  if (cleanName === 'CD LOAN RECEIVABLE A/C') return 'NPA Pending';
+  if (cleanName === 'CD DISBURSEMENT') return 'CD Principal Amount';
+  return name || 'CD Principal Amount';
 };
-const normalizeCDLedgerEntries = (entries: any[]) => {
-  return entries.map((entry: any) => {
-    let entryType = entry.entry_type;
-    let particulars = entry.particulars || '';
-    const accountNameLower = (entry.account_name || '').toLowerCase();
-    const particularsLower = particulars.toLowerCase();
-
-    if (entry.account_name) {
-      if (accountNameLower === 'cd commission a/c') {
-        const isOpeningRow = entryType === 'opening_commission' || entryType === 'Commission'
-          || (!entry.receipt_no || entry.receipt_no === '-');
-        if (isOpeningRow && entryType !== 'interest_payment' && entryType !== 'penalty_payment') {
-          entryType = 'opening_commission';
-          particulars = 'Opening CD Commission Charged';
-        }
-      } else if (accountNameLower === 'cd document charges a/c') {
-        if (entryType !== 'document_charge') entryType = 'document_charge';
-      } else if (
-        particularsLower.includes('disbursement') ||
-        accountNameLower === 'disbursement' ||
-        entryType === 'original_loan' ||
-        (accountNameLower === 'cd a/c' && entry.debit > 0 && !entry.credit)
-      ) {
-        entryType = 'original_loan';
-        particulars = 'Original Loan Disbursement';
-      }
-      return { ...entry, entry_type: entryType, particulars };
-    }
-
-    if (particularsLower.includes('disbursement') || (entry.debit > 0 && !entry.credit)) {
-      entryType = 'original_loan';
-      particulars = 'Original Loan Disbursement';
-    }
-
-    return { ...entry, entry_type: entryType, particulars };
-  });
-};
+// Same row clean-up is shared with Payment Follow-up (src/utils/cdLedgerNormalize.ts)
 
 const formatCDCurrency = (val: number | undefined): string => {
   if (val === undefined || isNaN(val)) return '0.00';
@@ -106,6 +75,9 @@ const CDLedger: React.FC = () => {
 
   // UI / State
   const [loading, setLoading] = useState(true);
+  // Full details dialog opened from the ⋮ menu on the borrower / guarantor cards
+  const [fullDetailsCustomerId, setFullDetailsCustomerId] = useState<string | null>(null);
+  const [cardMenuOpen, setCardMenuOpen] = useState<string | null>(null);
   const [loansList, setLoansList] = useState<(FinanceLoan & { customer: FinanceCustomer; guarantor_1?: FinanceCustomer; guarantor_2?: FinanceCustomer })[]>([]);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'CLOSED' | 'NPA CLOSED'>('ACTIVE');
 
@@ -284,7 +256,6 @@ const CDLedger: React.FC = () => {
   // NPA Modal State
   const [showNpaModal, setShowNpaModal] = useState(false);
   const [npaReason, setNpaReason] = useState('');
-  const [npaSettlementAmount, setNpaSettlementAmount] = useState('');
   const [isNpaClosing, setIsNpaClosing] = useState(false);
 
   // Guarantor Full Objects for Display
@@ -1013,7 +984,12 @@ const CDLedger: React.FC = () => {
 
       const matchingInt = cdInterestDetails.find(d => d.receipt_no === receiptNo && (Number(d.renewed_days) > 0 || d.renewed_till_date));
 
-      if (isClose) {
+      const npaLossRow = entries.find(e => e.entry_type === 'NPA_WRITEOFF' && Number(e.debit) > 0);
+      if (npaLossRow) {
+        // NPA close: nothing received, the remaining amount is written off as loss
+        eventType = 'NPA';
+        remarks = `NPA Close - Loss ₹${Number(npaLossRow.debit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      } else if (isClose) {
         eventType = 'Closure';
         remarks = 'Account Closed & Settled';
       } else if (isRenewal || matchingInt) {
@@ -1423,7 +1399,7 @@ const CDLedger: React.FC = () => {
 
     // totalCredit = only real cash collected (interest, penalty, principal payments)
     // Must NOT include opening_commission or document_charge rows (not real collections)
-    const NON_COLLECTION_TYPES = new Set(['original_loan', 'Disbursement', 'opening_commission', 'Commission', 'Document Charges', 'document_charge', 'amount_paid']);
+    const NON_COLLECTION_TYPES = new Set(['original_loan', 'Disbursement', 'opening_commission', 'Commission', 'Document Charges', 'document_charge', 'amount_paid', 'NPA_WRITEOFF']);
     const totalCredit = displayedStatementEntries
       .filter(e => !NON_COLLECTION_TYPES.has(e.entry_type) && Number(e.credit) > 0)
       .reduce((sum, e) => sum + Number(e.credit || 0), 0);
@@ -1457,10 +1433,10 @@ const CDLedger: React.FC = () => {
   // Calculation bottom totals
   const bottomTotals = useMemo(() => {
     const totalCredit = displayedStatementEntries
-      .filter(e => e.entry_type !== 'amount_paid')
+      .filter(e => e.entry_type !== 'amount_paid' && e.entry_type !== 'NPA_WRITEOFF')
       .reduce((sum, e) => sum + Number(e.credit || 0), 0);
     const totalDebit = displayedStatementEntries
-      .filter(e => e.entry_type !== 'amount_paid')
+      .filter(e => e.entry_type !== 'amount_paid' && e.entry_type !== 'NPA_WRITEOFF')
       .reduce((sum, e) => sum + Number(e.debit || 0), 0);
     return {
       totalCredit,
@@ -1783,42 +1759,73 @@ const CDLedger: React.FC = () => {
 
   const handleNPACloseSubmit = async () => {
     if (!selectedLoan) return;
+    const cleanNpaReason = npaReason.trim().toUpperCase();
+    if (!cleanNpaReason) {
+      toast.error('Please enter the reason for NPA close');
+      return;
+    }
     setIsNpaClosing(true);
     try {
+      // NPA close = no money received. The whole "Total for Close" goes to loss.
       const npaClosedDate = new Date(paymentDate).toISOString();
       const entryDate = paymentDate.split('T')[0];
-      const npaClosedAmount = Number(npaSettlementAmount) || 0;
       const closedBy = (user?.username || 'Staff').toUpperCase();
       const npaReceiptNo = await supabaseFinance.getNextReceiptNumber();
-      const cleanNpaReason = npaReason.trim().toUpperCase();
 
-      const principal_balance = ledgerMetrics.principalBalance;
-      const interest_due = ledgerMetrics.pendingInterest;
-      const penalty_due = ledgerMetrics.pendingPenalty;
-      const docCharges_due = (ledgerMetrics as any).docChargesBalance || (selectedLoan as any).document_charges_due || 0;
-      const total_outstanding = principal_balance + interest_due + penalty_due + docCharges_due;
-
-      // Breakup allocation of actual settlement amount received
-      let remaining = npaClosedAmount;
-      const penaltyPaid = Number(Math.min(remaining, Math.max(0, penalty_due)).toFixed(2));
-      remaining = Number(Math.max(0, remaining - penaltyPaid).toFixed(2));
-
-      const interestPaid = Number(Math.min(remaining, Math.max(0, interest_due)).toFixed(2));
-      remaining = Number(Math.max(0, remaining - interestPaid).toFixed(2));
-
-      const docChargesPaid = Number(Math.min(remaining, Math.max(0, docCharges_due)).toFixed(2));
-      remaining = Number(Math.max(0, remaining - docChargesPaid).toFixed(2));
-
-      const principalPaid = remaining;
+      const r2 = (v: number) => Number((Number(v) || 0).toFixed(2));
+      const interest_due = Math.max(0, r2(ledgerMetrics.pendingInterest));
+      const penalty_due = Math.max(0, r2(ledgerMetrics.pendingPenalty));
+      // Loss = the TOTAL FOR CLOSE figure shown on this screen (principal + pending interest + penalty)
+      const total_for_close = Math.max(0, r2(ledgerMetrics.totalClose || (ledgerMetrics.principalBalance + interest_due + penalty_due)));
+      const principal_part = Math.max(0, r2(total_for_close - interest_due - penalty_due));
 
       const customerName = (selectedLoan.customer?.name || '').toUpperCase();
       const loanIdStr = selectedLoan.loan_id || 'CD';
 
-      const updatedRemarks = `${selectedLoan.remarks || ''}\n[NPA CLOSED AT ${npaClosedDate} BY ${closedBy} WITH SETTLEMENT AMOUNT: ${npaClosedAmount}]`.trim().toUpperCase();
+      // 1. Ledger rows first (loss debit + principal / interest / penalty credits). If this fails nothing else is changed.
+      const res = await supabaseFinance.postCdNpaWriteOff({
+        loanId: selectedLoan.id,
+        customerId: selectedLoan.customer_id,
+        customerName,
+        loanIdStr,
+        userName: closedBy,
+        principalPart: principal_part,
+        interestPart: interest_due,
+        penaltyPart: penalty_due,
+        paymentDate: entryDate,
+        receiptNo: npaReceiptNo,
+        reason: cleanNpaReason
+      });
+      if (!res.success) {
+        throw new Error(res.error || 'Failed to record NPA Close entry');
+      }
 
-      const waived_amount = Math.max(0, Number((total_outstanding - npaClosedAmount).toFixed(2)));
+      // 2. NPA registry record (nothing received; everything written off)
+      const npaRec = await supabaseFinance.addNPARecord({
+        loan_id: selectedLoan.id,
+        customer_id: selectedLoan.customer_id,
+        customer_name: customerName,
+        aadhaar: selectedLoan.customer?.aadhaar || '',
+        phone: selectedLoan.customer?.phone || '',
+        loan_type: selectedLoan.loan_category || 'CD',
+        loan_amount: r2(ledgerMetrics.principalBalance),
+        paid_amount: 0,
+        balance_amount: 0,
+        interest_due,
+        penalty_due,
+        settlement_amount: 0,
+        total_liability: total_for_close,
+        waived_amount: total_for_close,
+        reason: `${cleanNpaReason} [${npaReceiptNo}]`,
+        closed_by: closedBy,
+        closed_at: npaClosedDate
+      });
+      if (!npaRec) {
+        throw new Error('NPA entry was saved in the ledger but the NPA register could not be updated. Please refresh and check.');
+      }
 
-      // 1. Update loan status and balance (Outstanding becomes ₹0 upon NPA write-off)
+      // 3. Mark the loan NPA closed
+      const updatedRemarks = `${selectedLoan.remarks || ''}\n[NPA CLOSED AT ${npaClosedDate} BY ${closedBy} - LOSS: ${total_for_close} - ${npaReceiptNo}]`.trim().toUpperCase();
       const { error: loanError } = await supabase.from('finance_loans')
         .update({
           status: 'NPA_CLOSED',
@@ -1829,59 +1836,14 @@ const CDLedger: React.FC = () => {
         .eq('id', selectedLoan.id);
       if (loanError) throw loanError;
 
-      // 2. Add NPA Registry Record
-      await supabaseFinance.addNPARecord({
-        loan_id: selectedLoan.id,
-        customer_id: selectedLoan.customer_id,
-        customer_name: customerName,
-        aadhaar: selectedLoan.customer?.aadhaar || '',
-        phone: selectedLoan.customer?.phone || '',
-        loan_type: selectedLoan.loan_category || 'CD',
-        loan_amount: Number(selectedLoan.amount),
-        paid_amount: npaClosedAmount,
-        balance_amount: 0,
-        interest_due: interest_due,
-        penalty_due: penalty_due,
-        settlement_amount: npaClosedAmount,
-        total_liability: total_outstanding,
-        waived_amount: waived_amount,
-        reason: cleanNpaReason,
-        closed_by: closedBy,
-        closed_at: npaClosedDate
-      });
-
-      // 3. Post Day Book & CD Ledger financial transactions
-      const res = await supabaseFinance.postCdNpaClose({
-        loanId: selectedLoan.id,
-        customerId: selectedLoan.customer_id,
-        customerName,
-        loanIdStr,
-        userName: closedBy,
-        totalOutstanding: total_outstanding,
-        settlementAmount: npaClosedAmount,
-        waivedAmount: waived_amount,
-        principalPaid,
-        interestPaid,
-        penaltyPaid,
-        docChargesPaid,
-        paymentDate: entryDate,
-        receiptNo: npaReceiptNo,
-        reason: cleanNpaReason
-      });
-
-      if (!res.success) {
-        throw new Error(res.error || 'Failed to record NPA Close financial entry');
-      }
-
       clearFinanceCalendarCache();
       await refreshLoanData();
-      toast.success(`NPA Account closed. Day Book transaction recorded (Receipt: ${npaReceiptNo}).`);
+      toast.success(`NPA Account closed. Loss of ₹${total_for_close.toLocaleString('en-IN', { minimumFractionDigits: 2 })} recorded (Receipt: ${npaReceiptNo}).`);
       setShowNpaModal(false);
-      setNpaSettlementAmount('');
       setNpaReason('');
     } catch (e: any) {
-      console.error('Error settling NPA account:', e);
-      toast.error(e?.message || 'Error settling NPA account');
+      console.error('Error closing NPA account:', e);
+      toast.error(e?.message || 'Error closing NPA account');
     } finally {
       setIsNpaClosing(false);
     }
@@ -2234,31 +2196,49 @@ const CDLedger: React.FC = () => {
               const showG1 = !!selectedLoan.guarantor_1_id;
               const showG2 = !!selectedLoan.guarantor_2_id;
               const gridCols = showG1 && showG2 ? 'grid-cols-3' : showG1 || showG2 ? 'grid-cols-2' : 'grid-cols-1';
+              const cardMenu = (key: string, customerId?: string | null) => customerId ? (
+                <div className="relative">
+                  <button type="button" title="More options" onClick={() => setCardMenuOpen(cardMenuOpen === key ? null : key)}
+                    className="p-1 rounded hover:bg-slate-100 text-slate-500">
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+                  {cardMenuOpen === key && (
+                    <div className="absolute right-0 top-7 z-30 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[170px]">
+                      <button type="button" onClick={() => { setCardMenuOpen(null); setFullDetailsCustomerId(customerId); }}
+                        className="w-full text-left px-3 py-2 text-[14px] font-semibold text-slate-800 hover:bg-slate-50">View full details</button>
+                    </div>
+                  )}
+                </div>
+              ) : null;
 
               return (
-                <div className="bg-white border border-gray-100 rounded-2xl shadow-sm print:hidden overflow-hidden">
+                <div className="bg-white border border-gray-100 rounded-2xl shadow-sm print:hidden">
+                  {fullDetailsCustomerId && (
+                    <CustomerFullDetails customerId={fullDetailsCustomerId} onClose={() => setFullDetailsCustomerId(null)} />
+                  )}
                   <div className={`grid ${gridCols} divide-x divide-gray-100`}>
 
                     {/* BORROWER column */}
                     <div className="p-3">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-[13px] font-bold uppercase text-slate-500 tracking-wider">Borrower</span>
+                        {cardMenu('borrower', selectedLoan.customer_id)}
                       </div>
 
                       <div className="flex gap-2.5 items-start">
-                        <div className="w-12 h-14 shrink-0 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden flex items-center justify-center shadow-sm">
+                        <div className="w-[72px] h-[92px] shrink-0 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden flex items-center justify-center shadow-sm">
                           {borrowerPhotoUrl ? (
-                            <img src={borrowerPhotoUrl} alt="Borrower" className="w-full h-full object-cover" />
+                            <img src={borrowerPhotoUrl} alt="Borrower" className="w-full h-full object-contain" />
                           ) : (
                             <User className="w-5 h-5 text-gray-300" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-black text-[18px] text-slate-900 leading-tight truncate">{selectedLoan.customer?.name}</div>
+                          <div className="font-black text-[18px] text-slate-900 leading-tight break-words">{selectedLoan.customer?.name}</div>
                           <div className="text-[13px] text-slate-500 leading-tight truncate">{formatRelationship(selectedLoan.customer?.father_husband_name) || '—'}</div>
                           <div className="text-[15px] font-bold text-slate-800 mt-0.5">☎ {selectedLoan.customer?.phone || 'N/A'}{selectedLoan.customer?.phone2 ? ` / ${selectedLoan.customer.phone2}` : ''}</div>
-                          {selectedLoan.customer?.aadhaar && <div className="text-[13px] font-mono text-slate-600 mt-0.5">{selectedLoan.customer.aadhaar}</div>}
-                          {selectedLoan.customer?.address && <div className="text-[13px] text-slate-500 truncate" title={selectedLoan.customer.address}>{selectedLoan.customer.address}</div>}
+                          {selectedLoan.customer?.aadhaar && <div className="text-[14px] font-bold text-slate-700 mt-0.5">AADHAR NO : <span className="font-mono">{selectedLoan.customer.aadhaar}</span></div>}
+                          {selectedLoan.customer?.address && <div className="text-[13px] text-slate-500 break-words" title={selectedLoan.customer.address}>{selectedLoan.customer.address}</div>}
                         </div>
                       </div>
                     </div>
@@ -2266,21 +2246,24 @@ const CDLedger: React.FC = () => {
                     {/* GUARANTOR 1 column — only if exists */}
                     {showG1 && (
                       <div className="p-3">
-                        <div className="text-[13px] font-bold uppercase text-slate-500 tracking-wider mb-2">Guarantor 1</div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[13px] font-bold uppercase text-slate-500 tracking-wider">Guarantor 1</span>
+                          {cardMenu('g1', selectedLoan.guarantor_1_id)}
+                        </div>
                         {guarantor1 ? (
                           <div className="flex gap-2.5 items-start">
-                            <div className="w-12 h-14 shrink-0 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden flex items-center justify-center shadow-sm">
+                            <div className="w-[72px] h-[92px] shrink-0 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden flex items-center justify-center shadow-sm">
                               {guarantor1PhotoUrl ? (
-                                <img src={guarantor1PhotoUrl} alt="Guarantor 1" className="w-full h-full object-cover" />
+                                <img src={guarantor1PhotoUrl} alt="Guarantor 1" className="w-full h-full object-contain" />
                               ) : (
                                 <User className="w-5 h-5 text-gray-300" />
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="font-black text-[18px] text-slate-900 leading-tight truncate">{guarantor1.name}</div>
+                              <div className="font-black text-[18px] text-slate-900 leading-tight break-words">{guarantor1.name}</div>
                               <div className="text-[15px] font-bold text-slate-800 mt-0.5">☎ {guarantor1.phone || 'N/A'}</div>
-                              {guarantor1.aadhaar && <div className="text-[13px] font-mono text-slate-600 mt-0.5">{guarantor1.aadhaar}</div>}
-                              {guarantor1.address && <div className="text-[13px] text-slate-500 truncate" title={guarantor1.address}>{guarantor1.address}</div>}
+                              {guarantor1.aadhaar && <div className="text-[14px] font-bold text-slate-700 mt-0.5">AADHAR NO : <span className="font-mono">{guarantor1.aadhaar}</span></div>}
+                              {guarantor1.address && <div className="text-[13px] text-slate-500 break-words" title={guarantor1.address}>{guarantor1.address}</div>}
                             </div>
                           </div>
                         ) : (
@@ -2292,21 +2275,24 @@ const CDLedger: React.FC = () => {
                     {/* GUARANTOR 2 column — only if exists */}
                     {showG2 && (
                       <div className="p-3">
-                        <div className="text-[13px] font-bold uppercase text-slate-500 tracking-wider mb-2">Guarantor 2</div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[13px] font-bold uppercase text-slate-500 tracking-wider">Guarantor 2</span>
+                          {cardMenu('g2', selectedLoan.guarantor_2_id)}
+                        </div>
                         {guarantor2 ? (
                           <div className="flex gap-2.5 items-start">
-                            <div className="w-12 h-14 shrink-0 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden flex items-center justify-center shadow-sm">
+                            <div className="w-[72px] h-[92px] shrink-0 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden flex items-center justify-center shadow-sm">
                               {guarantor2PhotoUrl ? (
-                                <img src={guarantor2PhotoUrl} alt="Guarantor 2" className="w-full h-full object-cover" />
+                                <img src={guarantor2PhotoUrl} alt="Guarantor 2" className="w-full h-full object-contain" />
                               ) : (
                                 <User className="w-5 h-5 text-gray-300" />
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="font-black text-[18px] text-slate-900 leading-tight truncate">{guarantor2.name}</div>
+                              <div className="font-black text-[18px] text-slate-900 leading-tight break-words">{guarantor2.name}</div>
                               <div className="text-[15px] font-bold text-slate-800 mt-0.5">☎ {guarantor2.phone || 'N/A'}</div>
-                              {guarantor2.aadhaar && <div className="text-[13px] font-mono text-slate-600 mt-0.5">{guarantor2.aadhaar}</div>}
-                              {guarantor2.address && <div className="text-[13px] text-slate-500 truncate" title={guarantor2.address}>{guarantor2.address}</div>}
+                              {guarantor2.aadhaar && <div className="text-[14px] font-bold text-slate-700 mt-0.5">AADHAR NO : <span className="font-mono">{guarantor2.aadhaar}</span></div>}
+                              {guarantor2.address && <div className="text-[13px] text-slate-500 break-words" title={guarantor2.address}>{guarantor2.address}</div>}
                             </div>
                           </div>
                         ) : (
@@ -3207,49 +3193,7 @@ const CDLedger: React.FC = () => {
                   )}
                 </div>
 
-                {/* Divider */}
-                <div className="self-stretch w-px bg-slate-100 hidden sm:block" />
-
-                {/* Paid Dues */}
-                <div className="flex flex-col min-w-[90px]">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-none mb-1">
-                    Paid Dues
-                    {bottomTotals.totalDues > 0 && (
-                      <span className="ml-1 text-[8px] font-normal text-slate-300 normal-case">
-                        {Math.min(100, Math.round((bottomTotals.paidDues / bottomTotals.totalDues) * 100))}%
-                      </span>
-                    )}
-                  </span>
-                  <span className={`text-sm font-black font-mono tabular-nums transition-colors duration-300 ${bottomTotals.paidDues <= 0 ? 'text-slate-300'
-                    : bottomTotals.pendingDues <= 0 ? 'text-emerald-600'
-                      : 'text-emerald-700'
-                    }`}>
-                    {bottomTotals.paidDues.toLocaleString('en-IN')}
-                  </span>
-                </div>
-
-                {/* Divider */}
-                <div className="self-stretch w-px bg-slate-100 hidden sm:block" />
-
-                {/* Pending Dues */}
-                <div className="flex flex-col min-w-[90px]">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-none mb-1">Pending Dues</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-sm font-black font-mono tabular-nums transition-colors duration-300 ${bottomTotals.pendingDues > 0 ? 'text-red-600' : 'text-slate-300'}`}>
-                      {bottomTotals.pendingDues.toLocaleString('en-IN')}
-                    </span>
-                    {bottomTotals.pendingDues > 0 && (
-                      <span className="inline-flex items-center gap-1 bg-red-50 border border-red-100 rounded-full px-1.5 py-0.5">
-                        <span className="relative flex h-1.5 w-1.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
-                        </span>
-                        <span className="text-[8px] text-red-500 font-semibold">DUE</span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-
+                {/* Paid Dues / Pending Dues removed (not needed here) */}
                 {/* Divider */}
                 <div className="self-stretch w-px bg-slate-100 hidden sm:block" />
 
@@ -3753,22 +3697,18 @@ const CDLedger: React.FC = () => {
             </button>
             <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
               <ShieldAlert className="w-6 h-6 text-orange-600" />
-              NPA Settlement Close
+              NPA Close
             </h2>
             <div className="space-y-4">
-              <div className="p-4 bg-orange-50 text-orange-850 border border-orange-200 rounded-2xl text-xs leading-relaxed leading-normal">
-                <p className="font-semibold mb-1">Confirm NPA Close Action</p>
-                <p>Are you sure you want to close this account under NPA? This will mark the loan status as Closed with NPA designation and permanently record the settlement and waived amounts.</p>
-              </div>
-              <div>
-                <Input
-                  label="Settlement Amount Collected"
-                  type="number"
-                  value={npaSettlementAmount}
-                  onChange={setNpaSettlementAmount}
-                  placeholder="Enter settlement amount collected"
-                  required
-                />
+              <div className="p-4 bg-orange-50 text-orange-850 border border-orange-200 rounded-2xl text-sm leading-relaxed">
+                <p className="font-semibold mb-1">Confirm NPA Close</p>
+                <p>No amount is collected. The full Total for Close is written off as <strong>loss</strong>, and the loan is marked NPA closed.</p>
+                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 font-mono tabular-nums text-[14px]">
+                  <span className="font-sans">Principal</span><span className="text-right">{Math.max(0, Number(((ledgerMetrics.totalClose || 0) - Math.max(0, ledgerMetrics.pendingInterest) - Math.max(0, ledgerMetrics.pendingPenalty)).toFixed(2))).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  <span className="font-sans">Interest</span><span className="text-right">{Math.max(0, ledgerMetrics.pendingInterest).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  <span className="font-sans">Penalty</span><span className="text-right">{Math.max(0, ledgerMetrics.pendingPenalty).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  <span className="font-sans font-bold border-t border-orange-200 pt-1">Loss (Total for Close)</span><span className="text-right font-bold border-t border-orange-200 pt-1">{Math.max(0, ledgerMetrics.totalClose || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                </div>
               </div>
               <div>
                 <Input

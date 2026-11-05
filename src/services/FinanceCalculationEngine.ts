@@ -369,8 +369,10 @@ export class FinanceCalculationEngine {
         const isOverdue = due.presentDue > 0 || due.pendingInterest > 0 || due.penalty > 0 || due.dueDays > 0 || due.currentPrincipal > 0;
         if (!isActive || !isOverdue || isNpaClosed) return false;
       } else if (activeReport === 'TOTAL DUE LIST') {
-        // Active accounts
+        // Active accounts that actually have something due today
+        // (no negative / zero due days, nothing paid in advance)
         if (due.status !== 'Active' || isNpaClosed) return false;
+        if (!(due.dueDays > 0) || !(due.presentDue > 0)) return false;
       } else if (activeReport === 'CD DUE LIST') {
         const isActive = due.status === 'Active';
         if (due.loanType !== 'CD' || !isActive || isNpaClosed) return false;

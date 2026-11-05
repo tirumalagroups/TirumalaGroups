@@ -399,7 +399,7 @@ const DuesLedger: React.FC = () => {
               </thead>
               <tbody className="bg-white divide-y divide-slate-100 font-sans tabular-nums text-[12px] min-[1500px]:text-[13px] min-[1600px]:text-[14px]">
                 {filteredDues.map((due, idx) => (
-                  <tr key={due.id} className={`hover:bg-slate-50/40 transition-colors ${due.isNPA ? 'bg-red-50/20' : ''}`}>
+                  <tr key={due.id} className={`transition-colors ${activeReport === 'NPA LIST' ? 'npa-loss-row bg-red-50 hover:bg-red-100/60' : `hover:bg-slate-50/40 ${due.isNPA ? 'bg-red-50/20' : ''}`}`}>
                     <td className="px-1.5 py-1.5 align-top border-r border-slate-100 text-slate-500 font-sans text-center font-bold">{idx + 1}</td>
                     <td className="px-1.5 py-1.5 align-top border-r border-slate-100 font-black text-blue-650 whitespace-nowrap">{due.loanId}</td>
                     <td className="px-1.5 py-1.5 align-top border-r border-slate-100 text-slate-905 font-sans font-bold">

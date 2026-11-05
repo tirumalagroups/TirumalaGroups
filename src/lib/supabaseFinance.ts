@@ -1101,10 +1101,9 @@ class SupabaseFinance {
           receipt_no: receiptNo,
           particulars: npaPaymentParticulars,
           user_name: params.userName,
-          entry_type: 'NPA_CLOSE',
-          principal_paid: params.principalPaid,
-          interest_paid: params.interestPaid,
-          penalty_paid: params.penaltyPaid
+          // (finance_cd_ledger_entries has no principal_paid / interest_paid / penalty_paid
+          //  columns - sending them made every NPA close fail; the split is in the particulars)
+          entry_type: 'NPA_CLOSE'
         });
 
         // Audit row for amount paid
@@ -1146,9 +1145,6 @@ class SupabaseFinance {
           particulars: writeoffParticulars,
           user_name: params.userName,
           entry_type: 'NPA_WRITEOFF',
-          principal_paid: 0,
-          interest_paid: 0,
-          penalty_paid: 0
         });
 
         // Credit side: CD LOAN RECEIVABLE A/C (Balance Sheet Asset Reduction)
@@ -1163,9 +1159,6 @@ class SupabaseFinance {
           particulars: writeoffParticulars,
           user_name: params.userName,
           entry_type: 'NPA_WRITEOFF',
-          principal_paid: 0,
-          interest_paid: 0,
-          penalty_paid: 0
         });
 
         // Log audit waiver
@@ -1192,15 +1185,108 @@ class SupabaseFinance {
           particulars: `NPA Closed - ${params.loanIdStr} - ${params.customerName}${params.reason ? ` (${params.reason})` : ''}`,
           user_name: params.userName,
           entry_type: 'NPA_CLOSE',
-          principal_paid: 0,
-          interest_paid: 0,
-          penalty_paid: 0
         });
       }
 
       return { success: true, receiptNo };
     } catch (e: any) {
       console.error('Error posting CD NPA close:', e);
+      return { success: false, error: e?.message || String(e) };
+    }
+  }
+
+  /**
+   * NPA close with NO money received: the whole "Total for Close" is written off as loss.
+   * Ledger rows (one receipt, all entry_type 'NPA_WRITEOFF'):
+   *   - Debit  NPA WRITE-OFF / LOSS A/C  = loss (total for close)            -> P&L expense
+   *   - Credit CD LOAN RECEIVABLE A/C    = principal part  ("NPA CLOSE - PRINCIPAL")
+   *   - Credit CD LOAN RECEIVABLE A/C    = interest part   ("NPA CLOSE - INTEREST")
+   *   - Credit CD LOAN RECEIVABLE A/C    = penalty part    ("NPA CLOSE - PENALTY")
+   * Debit = sum of credits, so the cash balance does not change (no cash moved).
+   * The Day Book groups these rows by receipt: debit row = parent, credit rows = children.
+   */
+  async postCdNpaWriteOff(params: {
+    loanId: string;
+    customerId: string;
+    customerName: string;
+    loanIdStr: string;
+    userName: string;
+    principalPart: number;
+    interestPart: number;
+    penaltyPart: number;
+    paymentDate: string;
+    receiptNo: string;
+    reason: string;
+  }): Promise<{ success: boolean; error?: string; receiptNo?: string; loss?: number }> {
+    const r2 = (v: number) => Number((Number(v) || 0).toFixed(2));
+    const fmt = (v: number) => `₹${r2(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const inserted: string[] = [];
+    try {
+      const entryDate = params.paymentDate.split('T')[0];
+      const receiptNo = params.receiptNo || await this.getNextReceiptNumber();
+      const principal = Math.max(0, r2(params.principalPart));
+      const interest = Math.max(0, r2(params.interestPart));
+      const penalty = Math.max(0, r2(params.penaltyPart));
+      const loss = r2(principal + interest + penalty);
+      const head = `${params.loanIdStr} - ${params.customerName}`;
+      const summary = [
+        `NPA CLOSE - ${head}`,
+        `Principal: ${fmt(principal)}  Interest: ${fmt(interest)}  Penalty: ${fmt(penalty)}`,
+        `Written off as loss: ${fmt(loss)} (no amount received)`,
+        `Receipt: ${receiptNo}`,
+        ...(params.reason ? [`Reason: ${params.reason}`] : [])
+      ].join('\n');
+
+      const base = {
+        loan_id: params.loanId,
+        customer_id: params.customerId,
+        entry_date: entryDate,
+        receipt_no: receiptNo,
+        user_name: params.userName,
+        entry_type: 'NPA_WRITEOFF'
+      };
+
+      if (loss > 0) {
+        const dr = await this.addCDLedgerEntry({ ...base, account_name: 'NPA WRITE-OFF / LOSS A/C', credit: 0, debit: loss, particulars: summary });
+        inserted.push(dr.id);
+        const parts: Array<[string, number]> = [['PRINCIPAL', principal], ['INTEREST', interest], ['PENALTY', penalty]];
+        for (const [label, amt] of parts) {
+          if (amt <= 0) continue;
+          const cr = await this.addCDLedgerEntry({
+            ...base,
+            account_name: 'CD LOAN RECEIVABLE A/C',
+            credit: amt,
+            debit: 0,
+            particulars: `NPA CLOSE - ${label} - ${head}${params.reason ? ` (Reason: ${params.reason})` : ''}`,
+            // the ledger table's own split columns
+            ...(label === 'PRINCIPAL' ? { principal_part: amt } : label === 'INTEREST' ? { interest_part: amt } : { penalty_part: amt })
+          } as any);
+          inserted.push(cr.id);
+        }
+      } else {
+        // Nothing outstanding: keep a zero marker row so the ledger shows when the NPA close happened
+        const mk = await this.addCDLedgerEntry({ ...base, account_name: 'CD A/C', credit: 0, debit: 0, entry_type: 'NPA_CLOSE', particulars: summary });
+        inserted.push(mk.id);
+      }
+
+      this.addWaiverAudit({
+        loan_id: params.loanId,
+        waived_date: entryDate,
+        waived_by: params.userName,
+        waiver_reason: params.reason ? `NPA Closure Write-off: ${params.reason}` : 'NPA Closure Write-off',
+        waived_interest: interest,
+        waived_penalty: penalty,
+        waived_commission: 0,
+        receipt_no: receiptNo
+      }).catch(err => console.error('Error logging NPA waiver audit:', err));
+
+      return { success: true, receiptNo, loss };
+    } catch (e: any) {
+      console.error('Error posting CD NPA write-off:', e);
+      // Undo the rows already written so a retry does not leave half an entry behind
+      if (inserted.length > 0) {
+        await supabase.from('finance_cd_ledger_entries').delete().in('id', inserted);
+      }
       return { success: false, error: e?.message || String(e) };
     }
   }
