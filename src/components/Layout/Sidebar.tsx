@@ -1,7 +1,8 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTableMode } from '../../contexts/TableModeContext';
+import { Menu } from 'lucide-react';
 import {
   Home,
   Edit,
@@ -42,6 +43,7 @@ interface MenuItem {
 const Sidebar: React.FC = () => {
   const { user, logout } = useAuth();
   const { isFinanceMode, mode: tableMode } = useTableMode();
+  const navigate = useNavigate();
   const [activeRemindersCount, setActiveRemindersCount] = React.useState<number>(0);
 
   React.useEffect(() => {
@@ -219,11 +221,19 @@ const Sidebar: React.FC = () => {
       {/* Top: Logo/Brand and User Info */}
       <div className='flex flex-col gap-0'>
         {/* Logo/Brand */}
-        <div className={`p-4 border-b shadow-sm flex flex-col items-center ${
+        <div className={`relative p-4 border-b shadow-sm flex flex-col items-center ${
           isFinanceMode
             ? 'border-green-200 bg-gradient-to-br from-green-50 to-emerald-50'
             : 'border-blue-200 bg-gradient-to-br from-orange-50 to-red-50'
         }`}>
+          <button
+            type="button"
+            onClick={() => navigate('/mode-selection')}
+            title="Back to Mode Selection"
+            className="absolute left-3 top-1/2 -translate-y-1/2 p-1 rounded text-gray-600 hover:text-gray-900 hover:bg-white/70 transition-colors"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
           <h1 className="text-gray-900 finance-brand">
             Thirumala Group {isFinanceMode ? 'Finance' : ''}
           </h1>

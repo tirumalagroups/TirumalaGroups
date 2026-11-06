@@ -79,7 +79,7 @@ const CDLedger: React.FC = () => {
   const [fullDetailsCustomerId, setFullDetailsCustomerId] = useState<string | null>(null);
   const [cardMenuOpen, setCardMenuOpen] = useState<string | null>(null);
   const [loansList, setLoansList] = useState<(FinanceLoan & { customer: FinanceCustomer; guarantor_1?: FinanceCustomer; guarantor_2?: FinanceCustomer })[]>([]);
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'CLOSED' | 'NPA CLOSED'>('ACTIVE');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'CLOSED' | 'NPA CLOSED'>('ALL');
 
   const filteredLoansList = useMemo(() => {
     return loansList.filter(loan => {
@@ -2473,8 +2473,8 @@ const CDLedger: React.FC = () => {
                           title={TOOLTIP_TEXT}
                           className="px-2.5 py-1.5 hover:bg-slate-100 group cursor-pointer transition-colors"
                         >
-                          <span className="text-[13px] text-slate-500 font-bold uppercase block tracking-wider leading-none mb-0.5">CI</span>
-                          <span className="text-[16px] font-bold text-slate-900 group-hover:underline underline-offset-2">{Math.round(compoundInterestData.summary?.compoundInterestEarned || 0).toLocaleString('en-IN')}</span>
+                          <span className="text-[13px] text-slate-500 font-bold uppercase block tracking-wider leading-none mb-0.5">Compound Interest</span>
+                          <span className="text-[16px] font-bold text-slate-900 group-hover:underline underline-offset-2">{Math.round(compoundInterestData.summary?.finalCompoundBalance || 0).toLocaleString('en-IN')}</span>
                         </div>
                       </div>
                       <div className="col-span-2 border border-slate-200 rounded-lg bg-slate-50/80 px-2.5 py-1.5 shadow-sm">
@@ -3412,7 +3412,7 @@ const CDLedger: React.FC = () => {
                 const details: Array<[string, string]> = [
                   ['Loan Amount', money(originalLoanAmount)],
                   ['Rate / Penalty', `${Number(selectedLoan.interest_rate).toFixed(2)}% / ${Number(selectedLoan.penalty_percent || 0.75).toFixed(2)}%`],
-                  ['Compound Interest (CI)', Math.round(compoundInterestData.summary?.compoundInterestEarned || 0).toLocaleString('en-IN')],
+                  ['Compound Interest', Math.round(compoundInterestData.summary?.finalCompoundBalance || 0).toLocaleString('en-IN')],
                   ['Loan Date', formatDateOld(originalLoanDate || selectedLoan.date) || '—'],
                   ['Last Payment', renewCalculations?.error ? '—' : (formatDateOld(renewCalculations?.lastPaymentDate) || '—')],
                   ['Current Due Date', renewCalculations?.error ? '—' : (formatDateOld(renewCalculations?.currentDueDate) || '—')],

@@ -238,7 +238,7 @@ const FINANCE: HelpMap = {
   'PENALTY DUE': 'Late-payment penalty that is due and not yet paid.',
   'PENALTY PAID': 'Late-payment penalty already collected.',
   'RATE / PENALTY': 'Monthly interest rate / late-payment penalty rate.',
-  'CI': 'Compound interest earned so far. Click to see how it is worked out.',
+  'Compound Interest': 'Final balance after compound interest. Click to see how it is worked out.',
   'ACCRUED INTEREST': 'Interest built up till today that is not yet paid.',
   'ACCRUED PENALTY': 'Late-payment penalty built up till today that is not yet paid.',
   'TODAY DUE': 'Amount the customer has to pay today to be up to date.',

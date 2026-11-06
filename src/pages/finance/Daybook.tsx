@@ -746,21 +746,21 @@ const Daybook: React.FC = () => {
                   displayRows.map(({ row, children, index }) => {
                     const isNpaParent = row.npaRole === 'PARENT';
                     const isOpen = isNpaParent && !!expandedNpa[row.npaGroupId || row.id];
-                    const renderRow = (r: any, opts: { child?: boolean; idxLabel?: string; groupBalance?: number }) => {
+                    const renderRow = (r: any, opts: { child?: boolean; pendingRow?: boolean; idxLabel?: string; groupBalance?: number }) => {
                       const isCredit = r.credit > 0;
                       const isDebit = r.debit > 0;
                       const head = r.displayType || displayHeadName(r.headOfAccount);
                       const balance = opts.groupBalance !== undefined ? opts.groupBalance : r.runningBalance;
                       return (
-                        <tr key={r.id} className={`transition-colors ${opts.child ? 'bg-rose-50/40' : r.npaRole === 'PARENT' ? 'bg-rose-50 hover:bg-rose-100/60' : 'hover:bg-slate-50/90'}`}>
+                        <tr key={r.id} className={`transition-colors ${opts.child ? 'bg-rose-50/40' : opts.pendingRow ? 'bg-amber-50/70' : r.npaRole === 'PARENT' ? 'bg-rose-50 hover:bg-rose-100/60' : 'hover:bg-slate-50/90'}`}>
                           {/* # */}
                           <td className="fit-nowrap px-1 py-2 text-center border-r border-slate-100 text-slate-500 font-bold">
                             {opts.child ? '' : (
-                              r.npaRole === 'PARENT' && children.length > 0 ? (
+                              opts.pendingRow ? (
                                 <button type="button" onClick={() => setExpandedNpa(p => ({ ...p, [r.npaGroupId || r.id]: !p[r.npaGroupId || r.id] }))}
-                                  title={isOpen ? 'Hide the parts of this NPA close' : 'Show the parts of this NPA close'}
+                                  title={isOpen ? 'Hide principal, interest and penalty' : 'Show principal, interest and penalty'}
                                   className="inline-flex items-center gap-0.5 text-rose-800 font-black">
-                                  {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}{opts.idxLabel}
+                                  {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                                 </button>
                               ) : opts.idxLabel
                             )}
@@ -778,7 +778,9 @@ const Daybook: React.FC = () => {
                           {/* Type */}
                           <td className={`px-1 py-2 border-r border-slate-100 ${opts.child ? 'text-left pl-4' : 'text-center'}`}>
                             <span className={`inline-block px-1.5 py-0.5 rounded border font-black uppercase tracking-tight text-center ${
-                              r.npaRole === 'PARENT'
+                              opts.pendingRow
+                                ? 'bg-amber-100 text-amber-950 border-amber-400'
+                                : r.npaRole === 'PARENT'
                                 ? 'bg-rose-600 text-white border-rose-700'
                                 : opts.child
                                 ? 'bg-white text-rose-900 border-rose-300'
@@ -831,10 +833,24 @@ const Daybook: React.FC = () => {
                         </tr>
                       );
                     };
-                    const groupBalance = isNpaParent ? row.__groupBalance : undefined;
+                    // NPA CLOSE takes the loss off the balance, NPA PENDING puts the same amount back:
+                    // no cash moved, so the balance after both rows is unchanged
+                    const pendingAmount = children.reduce((sum: number, c: any) => sum + (Number(c.credit) || 0), 0);
+                    const hasPending = isNpaParent && children.length > 0;
+                    const groupBalance = hasPending ? row.__groupBalance - pendingAmount : undefined;
+                    const pendingRow = hasPending ? {
+                      ...row,
+                      id: `${row.id}-npa-pending`,
+                      npaRole: 'PENDING',
+                      displayType: 'NPA PENDING',
+                      credit: pendingAmount,
+                      debit: 0,
+                      particulars: `NPA Pending - ${row.accountOrLoanNo || ''} - ${row.customerName || ''}`,
+                    } : null;
                     return (
                       <React.Fragment key={`grp-${row.id}`}>
                         {renderRow(row, { idxLabel: String(index), groupBalance })}
+                        {pendingRow && renderRow(pendingRow, { pendingRow: true, groupBalance: row.__groupBalance })}
                         {isOpen && children.map(c => renderRow(c, { child: true }))}
                       </React.Fragment>
                     );
@@ -1092,7 +1108,7 @@ const Daybook: React.FC = () => {
                   className="w-full h-10 px-3 border border-slate-300 rounded-lg text-[14px] font-semibold disabled:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div>
                 <div>
                   <label className="block text-[12px] font-bold uppercase text-slate-700 mb-1">Report</label>
                   <select
@@ -1105,18 +1121,6 @@ const Daybook: React.FC = () => {
                   >
                     <option value="PROFIT_AND_LOSS">Profit &amp; Loss</option>
                     <option value="BALANCE_SHEET">Balance Sheet</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[12px] font-bold uppercase text-slate-700 mb-1">Category</label>
-                  <select
-                    value={headForm.category}
-                    onChange={(e) => setHeadForm(f => ({ ...f, category: e.target.value }))}
-                    className="w-full h-10 px-2 border border-slate-300 rounded-lg text-[14px] font-semibold"
-                  >
-                    {(headForm.report_section === 'PROFIT_AND_LOSS' ? ['Income', 'Expense'] : ['Other Asset', 'Liability', 'Capital'])
-                      .concat(headForm.category && !['Income', 'Expense', 'Other Asset', 'Liability', 'Capital'].includes(headForm.category) ? [headForm.category] : [])
-                      .map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               </div>

@@ -52,7 +52,7 @@ const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({
   const printableContent = (
     <div className="p-8 bg-white text-slate-900 font-sans">
       <div className="text-center border-b-2 border-slate-800 pb-4 mb-6">
-        <h2 className="text-2xl font-black uppercase tracking-widest">CI Calculation Report</h2>
+        <h2 className="text-2xl font-black uppercase tracking-widest">Compound Interest Calculation Report</h2>
       </div>
 
       <div className="mb-8">
@@ -99,7 +99,7 @@ const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({
             <p className="text-lg font-mono font-bold text-emerald-700">₹{(summary.totalPaymentsReceived || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           </div>
           <div>
-            <p className="text-[11px] font-black text-slate-500 uppercase">= Final Balance after CI</p>
+            <p className="text-[11px] font-black text-slate-500 uppercase">= Final Balance after Compound Interest</p>
             <p className="text-xl font-mono font-black text-slate-900">₹{(summary.finalCompoundBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           </div>
         </div>
@@ -174,7 +174,7 @@ const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({
                 <Calculator className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-black text-slate-800 uppercase tracking-wide">CI Calculation Report</h3>
+                <h3 className="text-base font-black text-slate-800 uppercase tracking-wide">Compound Interest Calculation Report</h3>
                 <p className="text-[11px] font-bold text-slate-500 uppercase mt-0.5 tracking-wider">A/C: {cdNumber} | {customerName}</p>
               </div>
             </div>
@@ -205,7 +205,7 @@ const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({
       <FinancePrintPreview
         isOpen={isPrinting}
         onClose={() => setIsPrinting(false)}
-        title="CI Calculation Report"
+        title="Compound Interest Calculation Report"
         documentTitle={`Compound_Interest_${cdNumber}`}
       >
         {printableContent}
