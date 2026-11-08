@@ -14,7 +14,6 @@ import {
   monthDates,
   MonthSummaryRow,
   SalaryChange,
-  SALARY_DIVISOR,
   STATUS_LABEL,
 } from '../../utils/attendanceCalc';
 import { AttendanceLock, getRecords, lockMonth, unlockMonth } from '../../services/attendanceService';
@@ -74,7 +73,7 @@ const buildPrintHtml = (month: string, rows: MonthSummaryRow[], locked: boolean)
         </tr>
       </tbody>
     </table>
-    <div class="note">Salary = Salary / ${SALARY_DIVISOR} x Paid Days. Paid Days = ${SALARY_DIVISOR} - Absent - (Half Days x 0.5). Sundays and holidays are paid week offs.</div>
+    <div class="note">Payable = Salary / ${daysInMonth(month)} days x Paid Days. Paid Days = Present + (Half Days x 0.5) + Week Off. Sundays and holidays are paid week offs.</div>
     <div class="note">Printed on ${format(new Date(), 'dd/MM/yyyy HH:mm')}</div>
   </div></body></html>`;
 };
@@ -130,7 +129,7 @@ const PersonCalendar: React.FC<{
         })}
       </div>
       <div className='mt-4 p-3 rounded-lg bg-gray-50 text-sm font-semibold'>
-        Paid days {fmtDays(row.paid_days)} x {fmtMoney(row.salary)} / {SALARY_DIVISOR} ={' '}
+        {fmtMoney(row.salary)} / {dates.length} days x {fmtDays(row.paid_days)} paid days ={' '}
         <span className='text-blue-700'>{fmtMoney(row.payable)}</span>
       </div>
       {withReason.length > 0 && (
@@ -300,7 +299,7 @@ const SummaryTab: React.FC<{
       )}
       {!lock && totals.unmarked > 0 && (
         <div className='p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-sm font-semibold'>
-          Provisional: days not marked are not deducted yet, so Payable can still go down.
+          Provisional: days not marked earn nothing yet, so Payable goes up as they are marked.
         </div>
       )}
 

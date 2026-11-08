@@ -70,18 +70,27 @@ describe('calendar', () => {
   });
 });
 
-describe('the examples agreed with the owner (salary 15000)', () => {
-  it('February, never absent: full 15000', () => {
-    const r = row(staff(), '2026-02', markMonth('2026-02'));
-    expect(r.paid_days).toBe(30);
-    expect(r.payable).toBe(15000);
-    expect(r.unmarked).toBe(0);
+describe('salary / days in the month x paid days (salary 15000)', () => {
+  it('nothing marked in February pays only the 4 Sundays, not the full salary', () => {
+    const r = row(staff(), '2026-02', []);
+    expect(r.week_off).toBe(4);
+    expect(r.unmarked).toBe(24);
+    expect(r.paid_days).toBe(4);
+    expect(r.payable).toBe(2143); // 15000 / 28 x 4 = 2142.86
   });
 
-  it('31-day month, never absent: full 15000, not 15500', () => {
-    const r = row(staff(), '2026-12', markMonth('2026-12'));
-    expect(r.paid_days).toBe(30);
-    expect(r.payable).toBe(15000);
+  it('never absent pays the full salary in every month length', () => {
+    for (const month of ['2026-02', '2028-02', '2026-11', '2026-12']) {
+      const r = row(staff(), month, markMonth(month));
+      expect(r.paid_days).toBe(monthDates(month).length);
+      expect(r.payable).toBe(15000);
+    }
+  });
+
+  it('one absent day costs a day of that month', () => {
+    expect(row(staff(), '2026-02', markMonth('2026-02', { '2026-02-02': 'absent' })).payable).toBe(14464); // 27/28
+    expect(row(staff(), '2026-11', markMonth('2026-11', { '2026-11-02': 'absent' })).payable).toBe(14500); // 29/30
+    expect(row(staff(), '2026-12', markMonth('2026-12', { '2026-12-01': 'absent' })).payable).toBe(14516); // 30/31
   });
 
   it('30-day month, 2 half days and 4 absent: 25 days, 12500', () => {
@@ -97,15 +106,13 @@ describe('the examples agreed with the owner (salary 15000)', () => {
         '2026-11-07': 'absent',
       })
     );
-    expect([r.half_day, r.absent]).toEqual([2, 4]);
+    expect([r.present, r.half_day, r.absent, r.week_off]).toEqual([19, 2, 4, 5]);
     expect(r.paid_days).toBe(25);
     expect(r.payable).toBe(12500);
   });
 
-  it('31-day month, 1 absent: 29 days, 14500', () => {
-    const r = row(staff(), '2026-12', markMonth('2026-12', { '2026-12-01': 'absent' }));
-    expect(r.paid_days).toBe(29);
-    expect(r.payable).toBe(14500);
+  it('a half day counts as half a paid day', () => {
+    expect(paidDays(10, 3, 4)).toBe(15.5);
   });
 });
 
@@ -117,7 +124,7 @@ describe('week offs', () => {
     expect(r.present + r.week_off).toBe(30);
   });
 
-  it('counts a holiday as week off and does not deduct it', () => {
+  it('counts a holiday as a paid week off', () => {
     const h = ['2026-11-09'];
     const r = row(staff(), '2026-11', markMonth('2026-11', {}, 's1', h), h);
     expect(r.week_off).toBe(6);
@@ -137,17 +144,18 @@ describe('week offs', () => {
 });
 
 describe('days not marked', () => {
-  it('are counted and shown, and not deducted', () => {
+  it('earn nothing, and Payable goes up as days are marked', () => {
     const records = markMonth('2026-11').slice(0, 10);
     const r = row(staff(), '2026-11', records);
     expect(r.present).toBe(10);
     expect(r.unmarked).toBe(15);
-    expect(r.payable).toBe(15000);
+    expect(r.paid_days).toBe(15); // 10 present + 5 Sundays
+    expect(r.payable).toBe(7500);
   });
 });
 
 describe('joining and leaving during a month', () => {
-  it('joining on the 16th of a 30-day month pays 15 days', () => {
+  it('joining on the 16th of a 30-day month pays those 15 days', () => {
     const r = row(staff({ joining_date: '2026-11-16' }), '2026-11', markMonth('2026-11'));
     expect(r.employed_days).toBe(15);
     expect(r.paid_days).toBe(15);
@@ -163,6 +171,12 @@ describe('joining and leaving during a month', () => {
     expect(r.employed_days).toBe(10);
     expect(r.paid_days).toBe(9);
     expect(r.payable).toBe(4500);
+  });
+
+  it('divides by the days in the month, not the days employed', () => {
+    const r = row(staff({ salary: 10000, joining_date: '2026-10-16' }), '2026-10', markMonth('2026-10'));
+    expect(r.paid_days).toBe(16);
+    expect(r.payable).toBe(5161); // 10000 / 31 x 16 = 5161.29
   });
 
   it('ignores absences outside the employed dates', () => {
@@ -191,10 +205,6 @@ describe('joining and leaving during a month', () => {
     ];
     const rows = calculateMonth(list, '2026-11', markMonth('2026-11'), [], []);
     expect(rows.map(r => r.staff_id)).toEqual(['s1']);
-  });
-
-  it('never goes below zero paid days', () => {
-    expect(paidDays(2, 30, 5, 5)).toBe(0);
   });
 });
 
@@ -234,10 +244,10 @@ describe('salary changes', () => {
 
 describe('rounding and totals', () => {
   it('rounds to the nearest rupee', () => {
-    expect(payableSalary(10000, 29)).toBe(9667); // 9666.67
-    expect(payableSalary(10000, 28.5)).toBe(9500);
-    expect(payableSalary(10001, 15)).toBe(5001); // 5000.5
-    expect(payableSalary(0, 30)).toBe(0);
+    expect(payableSalary(10000, 29, 30)).toBe(9667); // 9666.67
+    expect(payableSalary(10000, 28.5, 30)).toBe(9500);
+    expect(payableSalary(10001, 15, 30)).toBe(5001); // 5000.5
+    expect(payableSalary(0, 30, 30)).toBe(0);
   });
 
   it('does not mix up two people', () => {

@@ -1,13 +1,10 @@
 // Attendance salary rules. No database or screen code here, so every rule can be tested.
 //
-// Salary = salary / 30 x paid days
-// Paid days = 30 - absent days - (half days x 0.5)
+// Salary = salary / days in the month x paid days
+// Paid days = present days + (half days x 0.5) + week offs
 //
-// Sundays and holidays are paid week offs and are never deducted.
-// Someone who joins or leaves during the month starts from the days they were employed
-// instead of 30.
-
-export const SALARY_DIVISOR = 30;
+// Sundays and holidays are paid week offs. Days not marked and days outside the person's
+// joining and leaving dates earn nothing.
 
 export type AttendanceStatus = 'present' | 'half_day' | 'absent';
 export type DayKind = AttendanceStatus | 'week_off' | 'unmarked' | 'not_employed';
@@ -117,18 +114,11 @@ export const salaryForMonth = (
   return Number((inForce ?? own[0]).salary) || 0;
 };
 
-export const paidDays = (
-  employedDays: number,
-  monthLength: number,
-  absent: number,
-  halfDays: number
-): number => {
-  const start = employedDays >= monthLength ? SALARY_DIVISOR : Math.min(employedDays, SALARY_DIVISOR);
-  return Math.max(0, start - absent - halfDays * 0.5);
-};
+export const paidDays = (present: number, halfDays: number, weekOffs: number): number =>
+  present + halfDays * 0.5 + weekOffs;
 
-export const payableSalary = (salary: number, paid: number): number =>
-  Math.round((salary * paid) / SALARY_DIVISOR);
+export const payableSalary = (salary: number, paid: number, monthLength: number): number =>
+  Math.round((salary * paid) / monthLength);
 
 /** One summary row for one person, or null if they were not employed in that month. */
 export const calculateStaffMonth = (
@@ -152,7 +142,7 @@ export const calculateStaffMonth = (
   if (employedDays === 0) return null;
 
   const salary = salaryForMonth(staff, month, history);
-  const paid = paidDays(employedDays, daysInMonth(month), counts.absent, counts.half_day);
+  const paid = paidDays(counts.present, counts.half_day, counts.week_off);
   return {
     staff_id: staff.id,
     sno: staff.sno,
@@ -163,7 +153,7 @@ export const calculateStaffMonth = (
     ...counts,
     employed_days: employedDays,
     paid_days: paid,
-    payable: payableSalary(salary, paid),
+    payable: payableSalary(salary, paid, daysInMonth(month)),
   };
 };
 
