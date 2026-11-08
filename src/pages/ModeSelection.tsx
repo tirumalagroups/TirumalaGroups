@@ -4,6 +4,7 @@ import { useTableMode } from '../contexts/TableModeContext';
 import { useAuth } from '../contexts/AuthContext';
 import Button from '../components/UI/Button';
 import { FileCheck, Briefcase, Wallet } from 'lucide-react';
+import loginImage from '../assets/login-image.jpg';
 
 const ModeSelection: React.FC = () => {
   const navigate = useNavigate();
@@ -61,9 +62,9 @@ const ModeSelection: React.FC = () => {
         {/* Logo/Image and Title */}
         <div className='flex flex-col items-center justify-center px-8 pt-8 pb-6'>
           <img
-            src=''
-            alt='Thirumala Group'
-            className='w-48 h-48 object-contain mb-4 rounded-xl shadow'
+            src={loginImage}
+            alt='Lord Venkateswara'
+            className='w-64 h-64 object-cover object-[50%_18%] mb-4 rounded-xl shadow'
           />
           <h1 className='text-3xl font-bold text-gray-900 text-center'>
             Thirumala Group

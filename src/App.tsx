@@ -66,7 +66,7 @@ import NewCustomers from './pages/finance/NewCustomers';
 import PhoneNumberEditor from './pages/finance/PhoneNumberEditor';
 import AadhaarSearch from './pages/finance/AadhaarSearch';
 import EditedDeletedLogs from './pages/finance/EditedDeletedLogs';
-import UserAccessManagement from './pages/finance/UserAccessManagement';
+import FinanceUserManagement from './pages/finance/FinanceUserManagement';
 import OldDataEntry from './pages/finance/OldDataEntry';
 import NewCustomer from './pages/finance/NewCustomer';
 import Customers from './pages/finance/Customers';
@@ -76,7 +76,8 @@ import NewPartner from './pages/finance/NewPartner';
 import CashBook from './pages/finance/CashBook';
 import LedgerSettings from './pages/finance/LedgerSettings';
 import PaymentFollowUp from './pages/finance/PaymentFollowUp';
-import TransactionApproval from './pages/finance/TransactionApproval';
+import FinanceApproveRecords from './pages/finance/FinanceApproveRecords';
+import FinanceEditEntry from './pages/finance/FinanceEditEntry';
 import CallHistory from './pages/finance/CallHistory';
 
 // Error Boundary Component
@@ -312,7 +313,7 @@ const AppContent: React.FC = () => {
           <Route path='finance/phone-editor' element={<OfflineGuard><PhoneNumberEditor /></OfflineGuard>} />
           <Route path='finance/aadhaar-search' element={<OfflineGuard><AadhaarSearch /></OfflineGuard>} />
           <Route path='finance/logs' element={<OfflineGuard><EditedDeletedLogs /></OfflineGuard>} />
-          <Route path='finance/user-access-management' element={<OfflineGuard><UserAccessManagement /></OfflineGuard>} />
+          <Route path='finance/user-access-management' element={<OfflineGuard><FinanceUserManagement /></OfflineGuard>} />
           <Route path='finance/old-data-entry' element={<OfflineGuard><OldDataEntry /></OfflineGuard>} />
           <Route path='finance/new-customer' element={<OfflineGuard><NewCustomer /></OfflineGuard>} />
           <Route path='finance/customers' element={<OfflineGuard><Customers /></OfflineGuard>} />
@@ -321,7 +322,8 @@ const AppContent: React.FC = () => {
           <Route path='finance/new-partner' element={<OfflineGuard><NewPartner /></OfflineGuard>} />
           <Route path='finance/cash-book' element={<OfflineGuard><CashBook /></OfflineGuard>} />
           <Route path='finance/ledger-settings' element={<OfflineGuard><LedgerSettings /></OfflineGuard>} />
-          <Route path='finance/transaction-approval' element={<OfflineGuard><TransactionApproval /></OfflineGuard>} />
+          <Route path='finance/transaction-approval' element={<OfflineGuard><FinanceApproveRecords /></OfflineGuard>} />
+          <Route path='finance/edit-entry' element={<OfflineGuard><FinanceEditEntry /></OfflineGuard>} />
         </Route>
       </Routes>
     </Router>

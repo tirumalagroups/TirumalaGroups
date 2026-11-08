@@ -752,7 +752,7 @@ const Daybook: React.FC = () => {
                       const head = r.displayType || displayHeadName(r.headOfAccount);
                       const balance = opts.groupBalance !== undefined ? opts.groupBalance : r.runningBalance;
                       return (
-                        <tr key={r.id} className={`transition-colors ${opts.child ? 'bg-rose-50/40' : opts.pendingRow ? 'bg-amber-50/70' : r.npaRole === 'PARENT' ? 'bg-rose-50 hover:bg-rose-100/60' : 'hover:bg-slate-50/90'}`}>
+                        <tr key={r.id} className={`transition-colors ${opts.child ? 'bg-rose-50/40' : opts.pendingRow ? 'bg-sky-50' : r.npaRole === 'PARENT' ? 'bg-rose-50 hover:bg-rose-100/60' : 'hover:bg-slate-50/90'}`}>
                           {/* # */}
                           <td className="fit-nowrap px-1 py-2 text-center border-r border-slate-100 text-slate-500 font-bold">
                             {opts.child ? '' : (
@@ -779,7 +779,7 @@ const Daybook: React.FC = () => {
                           <td className={`px-1 py-2 border-r border-slate-100 ${opts.child ? 'text-left pl-4' : 'text-center'}`}>
                             <span className={`inline-block px-1.5 py-0.5 rounded border font-black uppercase tracking-tight text-center ${
                               opts.pendingRow
-                                ? 'bg-amber-100 text-amber-950 border-amber-400'
+                                ? 'bg-sky-100 text-sky-900 border-sky-300'
                                 : r.npaRole === 'PARENT'
                                 ? 'bg-rose-600 text-white border-rose-700'
                                 : opts.child

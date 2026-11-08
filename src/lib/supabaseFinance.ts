@@ -3483,6 +3483,12 @@ class SupabaseFinance {
         .eq('id', logId);
       if (logDeleteError) throw logDeleteError;
 
+      // A restored loan payment must flow back through the ledger and every report
+      if (tableName === 'finance_transactions' && oldValues?.type === 'Collection' && oldValues?.loan_id) {
+        const rebuilt = await cdLedgerRebuildService.rebuildCDLoanLifecycle(oldValues.loan_id, 'FULL_RECALCULATE');
+        if (!rebuilt.success) throw new Error(rebuilt.error || 'Recalculation after restore failed');
+      }
+
       return true;
     } catch (error) {
       console.error('Error restoring deleted record:', error);
@@ -3944,9 +3950,16 @@ class SupabaseFinance {
         }
       }
       
-      const { data, error } = await query.order('created_at', { ascending: false });
-      if (error) throw error;
-      
+      // The API returns at most 1000 rows per request, so read page by page
+      const ordered = query.order('created_at', { ascending: false });
+      let data: any[] = [];
+      for (let page = 0; page < 200; page++) {
+        const { data: chunk, error } = await ordered.range(page * 1000, page * 1000 + 999);
+        if (error) throw error;
+        data = data.concat(chunk || []);
+        if (!chunk || chunk.length < 1000) break;
+      }
+
       let result = data || [];
       if (filters?.accountNo) {
         const search = filters.accountNo.toLowerCase();

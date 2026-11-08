@@ -38,7 +38,8 @@ const ROUTE_PERMISSION_MAP: Record<string, string> = {
   '/finance/logs': 'logs',
   '/finance/user-access-management': 'user_access_management',
   '/finance/ledger-settings': 'ledger_settings',
-  '/finance/transaction-approval': 'user_access_management',
+  '/finance/transaction-approval': 'finance_approve_records',
+  '/finance/edit-entry': 'finance_edit_entry',
 };
 
 const Layout: React.FC = () => {

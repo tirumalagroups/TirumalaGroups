@@ -6,6 +6,7 @@ import Button from '../components/UI/Button';
 import Input from '../components/UI/Input';
 import toast, { Toaster } from 'react-hot-toast';
 import { Eye, EyeOff } from 'lucide-react';
+import loginImage from '../assets/login-image.jpg';
 
 const Login: React.FC = () => {
   const [username, setUsername] = useState('');
@@ -52,9 +53,9 @@ const Login: React.FC = () => {
         {/* Logo/Image and Title */}
         <div className='flex flex-col items-center justify-center px-8 pt-8 pb-4'>
           <img
-            src=''
-            alt='Login Illustration'
-            className='w-48 h-48 object-contain mb-4 rounded-xl shadow'
+            src={loginImage}
+            alt='Lord Venkateswara'
+            className='w-64 h-64 object-cover object-[50%_18%] mb-4 rounded-xl shadow'
           />
           <h1 className='text-2xl font-bold text-gray-900 text-center'>
             Thirumala Group

@@ -186,6 +186,8 @@ export const mapTableName = (table: string): string => {
       return 'CAPITAL ENTRIES';
     case 'finance_cashbook_entries':
       return 'CASHBOOK ENTRIES';
+    case 'finance_transactions':
+      return 'LOAN RECEIPTS';
     default:
       return table.toUpperCase();
   }
@@ -615,6 +617,8 @@ const EditedDeletedLogs: React.FC = () => {
         return `CUSTOMER: ${vals.name || '-'}`;
       case 'finance_guarantors':
         return `GUARANTOR: ${vals.name || '-'}`;
+      case 'finance_transactions':
+        return `RECEIPT: ${vals.receipt_no || '-'} (${Number(vals.amount || 0).toLocaleString('en-IN')})`;
       case 'finance_loans_collateral':
         return `COLLATERAL FOR LOAN UUID: ${vals.loan_id || '-'}`;
       default:

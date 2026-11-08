@@ -74,6 +74,7 @@ const FinanceSidebar: React.FC = () => {
       items: [
         { icon: PlusCircle, label: 'New Loan', path: '/finance/loan-entry', key: 'loan_entry' },
         { icon: Edit, label: 'Edit Loan', path: '/finance/edit-loan-entry', key: 'edit_loan_entry' },
+        { icon: Edit, label: 'Edit Entry', path: '/finance/edit-entry', key: 'finance_edit_entry' },
         { icon: UserPlus, label: 'New Customer', path: '/finance/new-customer', key: 'new_customers' },
         { icon: Users, label: 'Customers', path: '/finance/customers', key: 'new_customers' },
         { icon: UserPlus, label: 'New Partner', path: '/finance/new-partner', key: 'partners' },
@@ -114,17 +115,16 @@ const FinanceSidebar: React.FC = () => {
         { icon: History, label: 'Edited / Deleted Logs', path: '/finance/logs', key: 'logs' },
         {
           icon: Shield,
-          label: 'User Access Management',
+          label: 'User Management',
           path: '/finance/user-access-management',
           key: 'user_access_management',
           adminOnly: true,
         },
         {
           icon: FileCheck,
-          label: 'Transaction Approval',
+          label: 'Approve Records',
           path: '/finance/transaction-approval',
-          key: 'user_access_management',
-          adminOnly: true,
+          key: 'finance_approve_records',
         },
       ],
     },
@@ -180,7 +180,7 @@ const FinanceSidebar: React.FC = () => {
                             <item.icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                             <span>{item.label}</span>
                           </div>
-                          {item.label === 'Transaction Approval' && pendingCount > 0 && (
+                          {item.label === 'Approve Records' && pendingCount > 0 && (
                             <span className="bg-red-500 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full shadow-sm animate-pulse min-w-[18px] text-center leading-none">
                               {pendingCount}
                             </span>

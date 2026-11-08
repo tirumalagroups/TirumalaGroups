@@ -8,7 +8,7 @@ import { formatRelationship } from '../../utils/relationship';
 /**
  * Aadhaar Search
  * Search by Aadhaar number only, or pick an existing customer from the "Select Customer" dropdown.
- * Shows 4 tables: Running Loans, All Loans, As Guarantor 1, As Guarantor 2.
+ * Shows 4 tables: Running Loans, Closed Loans, As Guarantor 1, As Guarantor 2.
  * All figures come from the same calculation the Dues List uses (getDuesLedgerSummary).
  */
 
@@ -55,7 +55,7 @@ const CUSTOMER_FIELDS =
 const statusInfo = (status: string): { label: string; badge: string; row: string } => {
   const s = (status || '').trim().toUpperCase();
   if (s === 'ACTIVE') return { label: 'Running', badge: 'bg-emerald-100 text-emerald-800 border-emerald-300', row: 'bg-emerald-50/60' };
-  if (s === 'CLOSED') return { label: 'Closed', badge: 'bg-slate-200 text-slate-700 border-slate-300', row: 'bg-slate-100/80 text-slate-600' };
+  if (s === 'CLOSED') return { label: 'Closed', badge: 'bg-red-100 text-red-800 border-red-300', row: 'bg-red-50/70' };
   if (s === 'NPA_CLOSED' || s === 'NPA CLOSED' || s === 'NPA') return { label: 'NPA Closed', badge: 'bg-rose-100 text-rose-800 border-rose-300', row: 'bg-rose-50/70' };
   return { label: status || '—', badge: 'bg-amber-100 text-amber-800 border-amber-300', row: 'bg-amber-50/60' };
 };
@@ -251,6 +251,7 @@ const AadhaarSearch: React.FC = () => {
   };
 
   const runningLoans = useMemo(() => ownLoans.filter(l => l.isRunning), [ownLoans]);
+  const closedLoans = useMemo(() => ownLoans.filter(l => !l.isRunning), [ownLoans]);
 
   const listKeys = (
     e: React.KeyboardEvent<HTMLInputElement>,
@@ -406,7 +407,7 @@ const AadhaarSearch: React.FC = () => {
           <div className="flex flex-wrap items-center gap-3 text-[12px] font-bold uppercase text-slate-600 px-1">
             <span>Colours:</span>
             <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-emerald-200 border border-emerald-400" /> Running</span>
-            <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-slate-200 border border-slate-400" /> Closed</span>
+            <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-200 border border-red-400" /> Closed</span>
             <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-rose-200 border border-rose-400" /> NPA Closed</span>
             <span className="text-slate-400 normal-case font-semibold">Closed loans show "—" for amounts still due.</span>
           </div>
@@ -417,8 +418,8 @@ const AadhaarSearch: React.FC = () => {
             </div>
           ) : (
             <>
-              <LoanTable title="1. Running Loans" rows={runningLoans} mode="own" />
-              <LoanTable title="2. All Loans (Running + Closed)" rows={ownLoans} mode="own" showStatus />
+              <LoanTable title="1. Running Loans" titleClass="bg-emerald-100 text-emerald-900 border-emerald-300" rows={runningLoans} mode="own" />
+              <LoanTable title="2. Closed Loans (Closed + NPA Closed)" titleClass="bg-red-100 text-red-900 border-red-300" rows={closedLoans} mode="own" showStatus />
               <LoanTable title="3. As Guarantor 1" rows={g1Loans} mode="guarantor" showStatus />
               <LoanTable title="4. As Guarantor 2" rows={g2Loans} mode="guarantor" showStatus />
             </>
@@ -436,7 +437,7 @@ const Info: React.FC<{ label: string; value: string; mono?: boolean }> = ({ labe
   </div>
 );
 
-const LoanTable: React.FC<{ title: string; rows: LoanRow[]; mode: 'own' | 'guarantor'; showStatus?: boolean }> = ({ title, rows, mode, showStatus }) => {
+const LoanTable: React.FC<{ title: string; titleClass?: string; rows: LoanRow[]; mode: 'own' | 'guarantor'; showStatus?: boolean }> = ({ title, titleClass, rows, mode, showStatus }) => {
   const totals = useMemo(() => {
     const sum = (pick: (r: LoanRow) => number | null) => rows.reduce((s, r) => s + (pick(r) ?? 0), 0);
     return {
@@ -456,9 +457,9 @@ const LoanTable: React.FC<{ title: string; rows: LoanRow[]; mode: 'own' | 'guara
 
   return (
     <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
-        <h2 className="text-[15px] font-bold uppercase text-slate-900">{title}</h2>
-        <span className="text-[12px] font-bold uppercase text-slate-500">{rows.length} loan{rows.length === 1 ? '' : 's'}</span>
+      <div className={`flex items-center justify-between px-3 py-2 border-b ${titleClass || 'bg-slate-50 border-slate-200 text-slate-900'}`}>
+        <h2 className="text-[15px] font-bold uppercase">{title}</h2>
+        <span className="text-[12px] font-bold uppercase opacity-70">{rows.length} loan{rows.length === 1 ? '' : 's'}</span>
       </div>
       {rows.length === 0 ? (
         <div className="px-3 py-4 text-[13px] font-bold uppercase text-slate-400">No loans</div>

@@ -75,6 +75,9 @@ const ADMIN_FEATURES = [
   'aadhaar_search',
   'logs',
   'user_access_management',
+  'finance_edit_entry',
+  'finance_delete_entry',
+  'finance_approve_records',
   'book_management',
 ];
 const getFeaturesForMode = (
