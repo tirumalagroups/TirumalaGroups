@@ -1,9 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Edit, Eye, RefreshCw, Trash2 } from 'lucide-react';
+import { Edit, Eye, FileEdit, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import Card from '../../components/UI/Card';
-import Button from '../../components/UI/Button';
 import Input from '../../components/UI/Input';
 import SearchableSelect from '../../components/UI/SearchableSelect';
 import { FinanceSmartCalendar } from '../../components/finance/FinanceSmartCalendar';
@@ -50,10 +48,21 @@ const KIND_NOTE: Record<EntryKind, string> = {
   OTHER: 'View only',
 };
 
+// Same look as the Day Book screen
+const BTN_BASE = 'inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold uppercase shadow-2xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
+const BTN_DARK = `${BTN_BASE} bg-slate-900 hover:bg-slate-800 text-white`;
+const BTN_LIGHT = `${BTN_BASE} bg-slate-100 hover:bg-slate-200 text-slate-800`;
+const LABEL = 'block text-[12px] font-bold uppercase text-slate-700 mb-1';
+const OVERLAY = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50';
+const PANEL = 'bg-white rounded-xl w-full flex flex-col shadow-lg border border-slate-200';
+const DIALOG_HEAD = 'px-5 py-3 border-b border-slate-200 flex items-center justify-between gap-3';
+const DIALOG_TITLE = 'text-[15px] font-black uppercase text-slate-900 tracking-wide';
+const DIALOG_FOOT = 'px-5 py-3 border-t border-slate-200 flex justify-end gap-2';
+
 const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <div>
-    <div className='text-xs font-medium text-gray-500'>{label}</div>
-    <div className='text-sm font-semibold text-gray-900 break-words'>{value || '—'}</div>
+    <div className='text-[10px] font-black uppercase tracking-wider text-slate-500'>{label}</div>
+    <div className='text-sm font-bold text-slate-900 break-words mt-0.5'>{value || '—'}</div>
   </div>
 );
 
@@ -172,6 +181,11 @@ const FinanceEditEntry: React.FC = () => {
       return true;
     });
   }, [rows, fDate, fCustomer, fHead, fLoan, fOperator, fParticulars, fCredit, fDebit, fSearch, fStatus]);
+
+  const filteredTotals = useMemo(
+    () => filtered.reduce((t, r) => ({ credit: t.credit + (r.credit || 0), debit: t.debit + (r.debit || 0) }), { credit: 0, debit: 0 }),
+    [filtered]
+  );
 
   useEffect(() => { setVisible(PAGE_SIZE); }, [filtered.length]);
 
@@ -315,114 +329,138 @@ const FinanceEditEntry: React.FC = () => {
   const shown = filtered.slice(0, visible);
 
   return (
-    <div className='w-full'>
-      <div className='flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6'>
-        <div>
-          <h1 className='text-3xl font-bold text-gray-900'>Edit Form</h1>
-          <p className='text-gray-600 mt-1'>Edit and manage all finance entries, with complete history tracking</p>
+    <div className='flex flex-col gap-2 w-full max-w-[100%] mx-auto px-2 pt-1 pb-3'>
+      {/* Page header */}
+      <div className='flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-slate-200'>
+        <div className='flex items-center gap-2.5'>
+          <div className='w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center shadow-xs'>
+            <FileEdit className='w-4 h-4 text-amber-400' />
+          </div>
+          <div>
+            <h1 className='text-[16px] font-black uppercase text-slate-900 tracking-wide leading-none'>Edit Entry</h1>
+            <p className='text-[11px] text-slate-600 font-semibold mt-0.5'>Edit and manage all finance entries, with complete history tracking</p>
+          </div>
         </div>
-        <Button variant='secondary' onClick={async () => { await load(); toast.success('Data refreshed!'); }}>Refresh</Button>
+        <button type='button' className={BTN_DARK} onClick={async () => { await load(); toast.success('Data refreshed!'); }}>
+          <RefreshCw className='w-4 h-4' /> Refresh
+        </button>
       </div>
 
       {/* Filters */}
-      <Card className='bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 p-6 mb-6'>
-        <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 w-full'>
-          <div className='col-span-1'>
-            <label className='block text-xs font-medium text-gray-700 mb-1'>Date</label>
+      <div className='bg-white border border-slate-200 rounded-xl p-2 shadow-2xs'>
+        <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 w-full'>
+          <div>
+            <label className={LABEL}>Date</label>
             <FinanceSmartCalendar value={fDate} onChange={setFDate} module='DAY_BOOK' placeholder='dd/MM/yyyy' allowClear />
           </div>
-          <div className='col-span-1'><SearchableSelect label='Customer' value={fCustomer} onChange={setFCustomer} options={options.customers} placeholder='All' /></div>
-          <div className='col-span-1'><SearchableSelect label='Head of Account' value={fHead} onChange={setFHead} options={options.heads} placeholder='All' /></div>
-          <div className='col-span-1'><SearchableSelect label='CD / Loan No' value={fLoan} onChange={setFLoan} options={options.loans} placeholder='All' /></div>
-          <div className='col-span-1'><SearchableSelect label='Operator' value={fOperator} onChange={setFOperator} options={options.operators} placeholder='All' /></div>
-          <div className='col-span-1'><SearchableSelect label='Particulars' value={fParticulars} onChange={setFParticulars} options={options.particulars} placeholder='All' /></div>
-          <div className='col-span-1'><SearchableSelect label='Credit' value={fCredit} onChange={setFCredit} options={options.credits} placeholder='All' /></div>
-          <div className='col-span-1'><SearchableSelect label='Debit' value={fDebit} onChange={setFDebit} options={options.debits} placeholder='All' /></div>
-          <div className='col-span-1'><Input label='Search' value={fSearch} onChange={setFSearch} placeholder='Search entries...' /></div>
-          <div className='col-span-1'>
-            <SearchableSelect
-              label='Status Filter'
-              value={fStatus}
-              onChange={setFStatus}
-              options={[
-                { value: '', label: 'All' },
-                { value: 'Running', label: 'Running Loans' },
-                { value: 'Closed', label: 'Closed Loans' },
-                { value: 'NPA Closed', label: 'NPA Closed' },
-                { value: 'DAYBOOK', label: 'Day Book Entries' },
-                { value: 'CAPITAL', label: 'Capital Entries' },
-              ]}
-              placeholder='All'
-            />
-          </div>
-          <div className='col-span-1 flex items-end'>
-            <Button onClick={clearFilters} variant='secondary' className='w-full'>Clear Filters</Button>
-          </div>
-          <div className='col-span-1 flex items-end'>
-            <div className='w-full text-center text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg py-2'>
-              {filtered.length.toLocaleString('en-IN')} entries found
+          <div><label className={LABEL}>Customer</label><SearchableSelect value={fCustomer} onChange={setFCustomer} options={options.customers} placeholder='All' /></div>
+          <div><label className={LABEL}>Head of Account</label><SearchableSelect value={fHead} onChange={setFHead} options={options.heads} placeholder='All' /></div>
+          <div><label className={LABEL}>CD / Loan No</label><SearchableSelect value={fLoan} onChange={setFLoan} options={options.loans} placeholder='All' /></div>
+          <div><label className={LABEL}>Operator</label><SearchableSelect value={fOperator} onChange={setFOperator} options={options.operators} placeholder='All' /></div>
+          <div><label className={LABEL}>Particulars</label><SearchableSelect value={fParticulars} onChange={setFParticulars} options={options.particulars} placeholder='All' /></div>
+          <div><label className={LABEL}>Credit</label><SearchableSelect value={fCredit} onChange={setFCredit} options={options.credits} placeholder='All' /></div>
+          <div><label className={LABEL}>Debit</label><SearchableSelect value={fDebit} onChange={setFDebit} options={options.debits} placeholder='All' /></div>
+          <div><label className={LABEL}>Status</label><SearchableSelect
+            value={fStatus}
+            onChange={setFStatus}
+            options={[
+              { value: '', label: 'All' },
+              { value: 'Running', label: 'Running Loans' },
+              { value: 'Closed', label: 'Closed Loans' },
+              { value: 'NPA Closed', label: 'NPA Closed' },
+              { value: 'DAYBOOK', label: 'Day Book Entries' },
+              { value: 'CAPITAL', label: 'Capital Entries' },
+            ]}
+            placeholder='All'
+          /></div>
+          <div className='flex items-end gap-2'>
+            <div className='relative flex-1 min-w-0'>
+              <Search className='w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400' />
+              <input
+                type='text'
+                placeholder='Search entries...'
+                aria-label='Search entries'
+                value={fSearch}
+                onChange={e => setFSearch(e.target.value)}
+                className='w-full pl-8 pr-2.5 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white'
+              />
             </div>
-          </div>
-          <div className='col-span-1 flex items-end'>
-            <Button variant='secondary' icon={RefreshCw} onClick={load}>Refresh</Button>
+            <button type='button' className={`${BTN_LIGHT} shrink-0`} onClick={clearFilters}>
+              <RotateCcw className='w-3.5 h-3.5' /> Clear
+            </button>
           </div>
         </div>
-      </Card>
+      </div>
 
       {/* Table */}
-      <Card title='Finance Entries' subtitle='Manage and edit your finance transaction records' className='p-0'>
+      <div className='bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden'>
+        <div className='px-3 py-2 border-b border-slate-200 bg-slate-100/90 flex flex-wrap items-center justify-between gap-2'>
+          <div className='flex items-center gap-2'>
+            <span className='text-xs font-black uppercase text-slate-900 tracking-wider'>Finance Entries</span>
+            <span className='text-[10px] font-black uppercase px-2 py-0.5 bg-slate-900 text-white rounded font-mono'>
+              {filtered.length.toLocaleString('en-IN')} {filtered.length === 1 ? 'Record' : 'Records'}
+            </span>
+          </div>
+          <div className='flex items-center gap-4 text-xs font-mono font-black text-slate-800'>
+            <span>Filtered Credit: <strong className='text-emerald-700'>{fmt2(filteredTotals.credit)}</strong></span>
+            <span>Filtered Debit: <strong className='text-rose-700'>{fmt2(filteredTotals.debit)}</strong></span>
+          </div>
+        </div>
+
         {loading ? (
-          <div className='text-center py-10 text-gray-500'>Loading entries…</div>
+          <div className='flex justify-center py-16 bg-white'>
+            <div className='animate-spin rounded-full h-8 w-8 border-t-2 border-slate-900' />
+          </div>
         ) : shown.length === 0 ? (
-          <div className='text-center py-8 text-gray-500'>No entries found matching your criteria.</div>
+          <div className='px-3 py-12 text-center text-slate-500 font-extrabold'>No entries found matching your criteria.</div>
         ) : (
-          <div className='w-full'>
-            <table className='fit-table'>
-              <thead className='bg-gray-50 border-b border-gray-200'>
-                <tr>
-                  <th className='py-1 text-left font-medium text-gray-700'>S.No</th>
-                  <th className='py-1 text-left font-medium text-gray-700'>Date</th>
-                  <th className='py-1 text-left font-medium text-gray-700'>Customer</th>
-                  <th className='py-1 text-left font-medium text-gray-700'>Head of Account</th>
-                  <th className='py-1 text-left font-medium text-gray-700'>CD / Loan No</th>
-                  <th className='py-1 text-left font-medium text-gray-700'>Particulars</th>
-                  <th className='py-1 text-right font-medium text-gray-700'>Credit</th>
-                  <th className='py-1 text-right font-medium text-gray-700'>Debit</th>
-                  <th className='py-1 text-left font-medium text-gray-700'>Operator</th>
-                  <th className='py-1 text-left font-medium text-gray-700'>Entry Date and Time</th>
-                  <th className='py-1 text-center font-medium text-gray-700'>Actions</th>
+          <div className='overflow-y-auto w-full' style={{ maxHeight: 'calc(100vh - 340px)', minHeight: 320 }}>
+            <table className='fit-table w-full divide-y divide-slate-200'>
+              <thead className='sticky top-0 z-10 bg-slate-200 shadow-[inset_0_-2px_0_rgba(0,0,0,0.1)]'>
+                <tr className='text-slate-950 uppercase font-black tracking-wider'>
+                  <th className='px-1 py-2.5 text-center border-r border-slate-300'>#</th>
+                  <th className='px-1.5 py-2.5 text-left border-r border-slate-300'>Date</th>
+                  <th className='px-2 py-2.5 text-left border-r border-slate-300'>Customer</th>
+                  <th className='px-1.5 py-2.5 text-left border-r border-slate-300'>Head of Account</th>
+                  <th className='px-1.5 py-2.5 text-left border-r border-slate-300'>CD / Loan No</th>
+                  <th className='px-2 py-2.5 text-left border-r border-slate-300'>Particulars</th>
+                  <th className='px-1.5 py-2.5 text-right border-r border-slate-300 text-emerald-950 bg-emerald-100/60'>Credit</th>
+                  <th className='px-1.5 py-2.5 text-right border-r border-slate-300 text-rose-950 bg-rose-100/60'>Debit</th>
+                  <th className='px-1.5 py-2.5 text-left border-r border-slate-300'>Operator</th>
+                  <th className='px-1.5 py-2.5 text-left border-r border-slate-300'>Entry Date and Time</th>
+                  <th className='px-1.5 py-2.5 text-center'>Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className='bg-white divide-y divide-slate-200'>
                 {shown.map((r, i) => (
-                  <tr key={r.id} className={`border-b hover:bg-gray-50 transition-colors ${r.kind === 'NPA' ? 'bg-red-50' : ''}`}>
-                    <td className='py-1 font-bold fit-nowrap'>{i + 1}</td>
-                    <td className='py-1 font-bold fit-nowrap'>{dmy(r.transactionDate)}</td>
-                    <td className='py-1 font-bold text-blue-600 fit-name'>{r.customerName || '—'}</td>
-                    <td className='py-1 font-bold'>{r.displayType || displayHeadName(r.headOfAccount)}</td>
-                    <td className='py-1 font-bold fit-nowrap'>{r.loanUuid ? r.accountOrLoanNo : (r.accountOrLoanNo && r.accountOrLoanNo !== '—' ? r.accountOrLoanNo : '—')}</td>
-                    <td className='py-1 font-bold fit-particulars'>{displayHeadText(r.particulars) || '—'}</td>
-                    <td className='py-1 text-right font-bold text-green-600 fit-nowrap tabular-nums'>{r.credit > 0 ? fmt(r.credit) : '-'}</td>
-                    <td className='py-1 text-right font-bold text-red-600 fit-nowrap tabular-nums'>{r.debit > 0 ? fmt(r.debit) : '-'}</td>
-                    <td className='py-1 font-bold'>{r.userName || '-'}</td>
-                    <td className='py-1 text-left fit-nowrap'>
-                      <div className='font-bold'>{dmy(r.entryTime || r.createdAt || r.transactionDate)}</div>
-                      <div className='text-gray-500 font-bold'>{timeOf(r.entryTime || r.createdAt)}</div>
+                  <tr key={r.id} className={`transition-colors ${r.kind === 'NPA' ? 'bg-rose-50 hover:bg-rose-100/60' : 'hover:bg-slate-50/90'}`}>
+                    <td className='fit-nowrap px-1 py-2 text-center border-r border-slate-100 text-slate-500 font-bold'>{i + 1}</td>
+                    <td className='fit-nowrap px-1.5 py-2 border-r border-slate-100 font-bold text-slate-900'>{dmy(r.transactionDate)}</td>
+                    <td className='fit-name px-2 py-2 border-r border-slate-100 font-black text-slate-950'>{r.customerName || '—'}</td>
+                    <td className='px-1.5 py-2 border-r border-slate-100 font-bold text-slate-800'>{r.displayType || displayHeadName(r.headOfAccount)}</td>
+                    <td className='fit-nowrap px-1.5 py-2 border-r border-slate-100 font-mono font-black text-slate-900'>{r.loanUuid ? r.accountOrLoanNo : (r.accountOrLoanNo && r.accountOrLoanNo !== '—' ? r.accountOrLoanNo : '—')}</td>
+                    <td className='fit-particulars px-2 py-2 border-r border-slate-100 font-semibold text-slate-700'>{displayHeadText(r.particulars) || '—'}</td>
+                    <td className='fit-nowrap px-1.5 py-2 text-right border-r border-slate-100 font-mono font-black text-emerald-700 tabular-nums'>{r.credit > 0 ? fmt(r.credit) : '-'}</td>
+                    <td className='fit-nowrap px-1.5 py-2 text-right border-r border-slate-100 font-mono font-black text-rose-700 tabular-nums'>{r.debit > 0 ? fmt(r.debit) : '-'}</td>
+                    <td className='px-1.5 py-2 border-r border-slate-100 font-bold text-slate-700'>{r.userName || '-'}</td>
+                    <td className='fit-nowrap px-1.5 py-2 border-r border-slate-100'>
+                      <div className='font-bold text-slate-900'>{dmy(r.entryTime || r.createdAt || r.transactionDate)}</div>
+                      <div className='text-slate-500 font-bold'>{timeOf(r.entryTime || r.createdAt)}</div>
                     </td>
-                    <td className='py-1 text-center fit-nowrap'>
+                    <td className='fit-nowrap px-1.5 py-2 text-center'>
                       <div className='inline-flex gap-1 justify-center items-center'>
-                        <Button variant='secondary' onClick={() => setViewRow(r)} title='View Record'>
-                          <Eye className='text-gray-700' />
-                        </Button>
+                        <button type='button' className='rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300' onClick={() => setViewRow(r)} title='View Record' aria-label='View Record'>
+                          <Eye />
+                        </button>
                         {canEditRow(r) && (
-                          <Button onClick={() => openEdit(r)} title={r.kind === 'LOAN_ISSUE' ? 'Open in Edit Loan' : 'Edit Record'}>
-                            <Edit className='text-white' />
-                          </Button>
+                          <button type='button' className='rounded bg-slate-900 hover:bg-slate-800 text-white border border-slate-900' onClick={() => openEdit(r)} title={r.kind === 'LOAN_ISSUE' ? 'Open in Edit Loan' : 'Edit Record'} aria-label='Edit Record'>
+                            <Edit />
+                          </button>
                         )}
                         {canDeleteRow(r) && (
-                          <Button variant='danger' onClick={() => openDelete(r)} title='Delete Record'>
-                            <Trash2 className='text-white' />
-                          </Button>
+                          <button type='button' className='rounded bg-rose-600 hover:bg-rose-700 text-white border border-rose-600' onClick={() => openDelete(r)} title='Delete Record' aria-label='Delete Record'>
+                            <Trash2 />
+                          </button>
                         )}
                       </div>
                     </td>
@@ -431,28 +469,28 @@ const FinanceEditEntry: React.FC = () => {
               </tbody>
             </table>
             {filtered.length > visible && (
-              <div className='text-center py-4'>
-                <Button variant='secondary' onClick={() => setVisible(v => v + PAGE_SIZE)}>
+              <div className='text-center py-3 border-t border-slate-200'>
+                <button type='button' className={BTN_LIGHT} onClick={() => setVisible(v => v + PAGE_SIZE)}>
                   Load More ({(filtered.length - visible).toLocaleString('en-IN')} more)
-                </Button>
+                </button>
               </div>
             )}
           </div>
         )}
-      </Card>
+      </div>
 
       {/* View dialog */}
       {viewRow && (
-        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
-          <div className='bg-white rounded-lg max-w-4xl w-full max-h-[90vh] flex flex-col shadow-lg'>
-            <div className='p-6 border-b border-gray-200 flex items-center justify-between'>
-              <h3 className='text-lg font-semibold'>View Entry</h3>
+        <div className={OVERLAY}>
+          <div className={`${PANEL} max-w-4xl max-h-[90vh]`}>
+            <div className={DIALOG_HEAD}>
+              <h3 className={DIALOG_TITLE}>View Entry</h3>
               <div className='flex items-center gap-2'>
-                {canEditRow(viewRow) && <Button size='sm' icon={Edit} onClick={() => openEdit(viewRow)}>Edit</Button>}
-                <Button size='sm' variant='secondary' onClick={() => setViewRow(null)}>Close</Button>
+                {canEditRow(viewRow) && <button type='button' className={BTN_DARK} onClick={() => openEdit(viewRow)}><Edit className='w-4 h-4' /> Edit</button>}
+                <button type='button' className={BTN_LIGHT} onClick={() => setViewRow(null)}>Close</button>
               </div>
             </div>
-            <div className='p-6 overflow-y-auto grid grid-cols-2 md:grid-cols-3 gap-4'>
+            <div className='p-5 overflow-y-auto grid grid-cols-2 md:grid-cols-3 gap-4'>
               <Field label='Date' value={dmy(viewRow.transactionDate)} />
               <Field label='Customer' value={viewRow.customerName} />
               <Field label='Head of Account' value={viewRow.displayType || displayHeadName(viewRow.headOfAccount)} />
@@ -472,15 +510,15 @@ const FinanceEditEntry: React.FC = () => {
 
       {/* Day Book / Capital edit dialog */}
       {formRow && (
-        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
-          <div className='bg-white rounded-lg max-w-3xl w-full max-h-[90vh] flex flex-col shadow-lg'>
-            <div className='p-6 border-b border-gray-200 flex items-center justify-between'>
-              <h3 className='text-lg font-semibold'>Edit {formRow.kind === 'CASHBOOK' ? 'Day Book' : 'Capital'} Entry</h3>
-              <Button size='sm' variant='secondary' onClick={() => setFormRow(null)}>Close</Button>
+        <div className={OVERLAY}>
+          <div className={`${PANEL} max-w-3xl max-h-[90vh]`}>
+            <div className={DIALOG_HEAD}>
+              <h3 className={DIALOG_TITLE}>Edit {formRow.kind === 'CASHBOOK' ? 'Day Book' : 'Capital'} Entry</h3>
+              <button type='button' className={BTN_LIGHT} onClick={() => setFormRow(null)}>Close</button>
             </div>
-            <div className='p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4'>
+            <div className='p-5 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4'>
               <div>
-                <label className='block text-xs font-medium text-gray-700 mb-1'>Date</label>
+                <label className={LABEL}>Date</label>
                 <FinanceSmartCalendar value={form.date} onChange={v => setForm(f => ({ ...f, date: v }))} module='DAY_BOOK' />
               </div>
               {formRow.kind === 'CASHBOOK' ? (
@@ -500,9 +538,9 @@ const FinanceEditEntry: React.FC = () => {
                 <Input label='Particulars' value={form.particulars} onChange={v => setForm(f => ({ ...f, particulars: v }))} />
               </div>
             </div>
-            <div className='p-4 border-t border-gray-200 flex justify-end gap-2'>
-              <Button variant='secondary' onClick={() => setFormRow(null)}>Cancel</Button>
-              <Button onClick={saveForm} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</Button>
+            <div className={DIALOG_FOOT}>
+              <button type='button' className={BTN_LIGHT} onClick={() => setFormRow(null)}>Cancel</button>
+              <button type='button' className={BTN_DARK} onClick={saveForm} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
             </div>
           </div>
         </div>
@@ -510,38 +548,38 @@ const FinanceEditEntry: React.FC = () => {
 
       {/* Receipt edit dialog */}
       {receiptRow && receiptTx && (
-        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
-          <div className='bg-white rounded-lg max-w-4xl w-full max-h-[92vh] flex flex-col shadow-lg'>
-            <div className='p-6 border-b border-gray-200 flex items-center justify-between'>
+        <div className={OVERLAY}>
+          <div className={`${PANEL} max-w-4xl max-h-[92vh]`}>
+            <div className={DIALOG_HEAD}>
               <div>
-                <h3 className='text-lg font-semibold'>Edit Receipt {receiptTx.receipt_no}</h3>
-                <p className='text-sm text-gray-600'>{receiptRow.accountOrLoanNo} · {receiptRow.customerName}</p>
+                <h3 className={DIALOG_TITLE}>Edit Receipt {receiptTx.receipt_no}</h3>
+                <p className='text-[12px] text-slate-500 font-semibold mt-0.5'>{receiptRow.accountOrLoanNo} · {receiptRow.customerName}</p>
               </div>
-              <Button size='sm' variant='secondary' onClick={() => { setReceiptRow(null); setReceiptTx(null); }}>Close</Button>
+              <button type='button' className={BTN_LIGHT} onClick={() => { setReceiptRow(null); setReceiptTx(null); }}>Close</button>
             </div>
-            <div className='p-6 overflow-y-auto space-y-4'>
+            <div className='p-5 overflow-y-auto space-y-4'>
               <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
                 <Input label='Total Amount Paid' value={rcForm.amount} onChange={v => setRcForm(f => ({ ...f, amount: v }))} inputMode='decimal' />
                 <div>
-                  <label className='block text-xs font-medium text-gray-700 mb-1'>Payment Date</label>
+                  <label className={LABEL}>Payment Date</label>
                   <FinanceSmartCalendar value={rcForm.date} onChange={v => setRcForm(f => ({ ...f, date: v }))} module='DAY_BOOK' />
                 </div>
                 <Input label='Receipt No' value={rcForm.receiptNo} onChange={v => setRcForm(f => ({ ...f, receiptNo: v }))} />
               </div>
-              <p className='text-sm text-gray-600'>
+              <p className='text-[13px] text-slate-600 font-semibold'>
                 Penalty, interest and principal are worked out from the amount by the same rules as a new payment,
                 and the whole loan is recalculated.
               </p>
 
-              <table className='w-full text-sm border border-gray-200'>
-                <thead className='bg-gray-50'>
+              <table className='w-full text-sm border border-slate-200'>
+                <thead className='bg-slate-200 text-slate-950 uppercase'>
                   <tr>
-                    <th className='px-3 py-2 text-left'>Part</th>
-                    <th className='px-3 py-2 text-right'>Now</th>
-                    <th className='px-3 py-2 text-right'>After this change</th>
+                    <th className='px-3 py-2 text-left font-black'>Part</th>
+                    <th className='px-3 py-2 text-right font-black'>Now</th>
+                    <th className='px-3 py-2 text-right font-black'>After this change</th>
                   </tr>
                 </thead>
-                <tbody className='tabular-nums'>
+                <tbody className='tabular-nums font-mono'>
                   {([
                     ['Penalty', preview?.before?.penaltyPaid, preview?.after?.penaltyPaid],
                     ['Interest', preview?.before?.interestPaid, preview?.after?.interestPaid],
@@ -551,10 +589,10 @@ const FinanceEditEntry: React.FC = () => {
                   ] as [string, number | undefined, number | undefined][]).map(([label, b, a]) => {
                     const changed = preview?.ok && b !== undefined && a !== undefined && Math.abs(a - b) > 0.005;
                     return (
-                      <tr key={label} className={`border-t ${label === 'Total' ? 'font-bold' : ''}`}>
-                        <td className='px-3 py-1.5'>{label}</td>
+                      <tr key={label} className={`border-t border-slate-200 ${label === 'Total' ? 'font-black' : 'font-semibold'}`}>
+                        <td className='px-3 py-1.5 font-sans'>{label}</td>
                         <td className='px-3 py-1.5 text-right'>{b === undefined ? '—' : fmt2(b)}</td>
-                        <td className={`px-3 py-1.5 text-right ${changed ? 'font-bold text-blue-700' : ''}`}>{previewing || !preview?.ok || a === undefined ? '—' : fmt2(a)}</td>
+                        <td className={`px-3 py-1.5 text-right ${changed ? 'font-black text-emerald-700' : ''}`}>{previewing || !preview?.ok || a === undefined ? '—' : fmt2(a)}</td>
                       </tr>
                     );
                   })}
@@ -562,28 +600,28 @@ const FinanceEditEntry: React.FC = () => {
               </table>
 
               {preview && preview.blockers.length > 0 && (
-                <div className='border border-red-200 bg-red-50 text-red-800 rounded-lg p-3 text-sm font-medium space-y-1'>
+                <div className='border border-rose-300 bg-rose-50 text-rose-900 rounded-lg p-3 text-sm font-bold space-y-1'>
                   {preview.blockers.map((b, i) => <div key={i}>{b}</div>)}
                 </div>
               )}
               {preview && preview.ok && preview.warnings.length > 0 && (
-                <div className='border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-3 text-sm font-medium space-y-1'>
+                <div className='border border-amber-300 bg-amber-50 text-amber-900 rounded-lg p-3 text-sm font-bold space-y-1'>
                   {preview.warnings.map((w, i) => <div key={i}>{w}</div>)}
                 </div>
               )}
               {preview?.ok && preview.laterChanged.length > 0 && (
-                <table className='w-full text-sm border border-gray-200'>
-                  <thead className='bg-gray-50'>
+                <table className='w-full text-sm border border-slate-200'>
+                  <thead className='bg-slate-200 text-slate-950 uppercase'>
                     <tr>
-                      <th className='px-3 py-2 text-left'>Later receipt</th>
-                      <th className='px-3 py-2 text-right'>Interest + penalty now → after</th>
-                      <th className='px-3 py-2 text-right'>Principal now → after</th>
+                      <th className='px-3 py-2 text-left font-black'>Later receipt</th>
+                      <th className='px-3 py-2 text-right font-black'>Interest + penalty now → after</th>
+                      <th className='px-3 py-2 text-right font-black'>Principal now → after</th>
                     </tr>
                   </thead>
-                  <tbody className='tabular-nums'>
+                  <tbody className='tabular-nums font-mono font-semibold'>
                     {preview.laterChanged.map(c => (
-                      <tr key={c.receiptNo} className='border-t'>
-                        <td className='px-3 py-1.5 font-medium'>{c.receiptNo}</td>
+                      <tr key={c.receiptNo} className='border-t border-slate-200'>
+                        <td className='px-3 py-1.5 font-black'>{c.receiptNo}</td>
                         <td className='px-3 py-1.5 text-right'>{fmt2(c.before.interestPaid + c.before.penaltyPaid)} → {fmt2(c.after.interestPaid + c.after.penaltyPaid)}</td>
                         <td className='px-3 py-1.5 text-right'>{fmt2(c.before.principalPaid)} → {fmt2(c.after.principalPaid)}</td>
                       </tr>
@@ -594,11 +632,11 @@ const FinanceEditEntry: React.FC = () => {
 
               <Input label='Reason for this change *' value={rcForm.reason} onChange={v => setRcForm(f => ({ ...f, reason: v }))} />
             </div>
-            <div className='p-4 border-t border-gray-200 flex justify-end gap-2'>
-              <Button variant='secondary' onClick={() => { setReceiptRow(null); setReceiptTx(null); }}>Cancel</Button>
-              <Button onClick={saveReceipt} disabled={saving || previewing || !preview?.ok || !rcForm.reason.trim()}>
+            <div className={DIALOG_FOOT}>
+              <button type='button' className={BTN_LIGHT} onClick={() => { setReceiptRow(null); setReceiptTx(null); }}>Cancel</button>
+              <button type='button' className={BTN_DARK} onClick={saveReceipt} disabled={saving || previewing || !preview?.ok || !rcForm.reason.trim()}>
                 {saving ? 'Saving…' : 'Save and Recalculate'}
-              </Button>
+              </button>
             </div>
           </div>
         </div>
@@ -606,25 +644,25 @@ const FinanceEditEntry: React.FC = () => {
 
       {/* Delete dialog */}
       {deleteRow && (
-        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
-          <div className='bg-white rounded-lg max-w-xl w-full max-h-[90vh] flex flex-col shadow-lg'>
-            <div className='p-6 border-b border-gray-200'>
-              <h3 className='text-lg font-semibold'>
+        <div className={OVERLAY}>
+          <div className={`${PANEL} max-w-xl max-h-[90vh]`}>
+            <div className='px-5 py-3 border-b border-slate-200'>
+              <h3 className={DIALOG_TITLE}>
                 {deleteRow.kind === 'RECEIPT' ? `Delete whole receipt ${deleteTx?.receipt_no}` : 'Delete Entry'}
               </h3>
-              <p className='text-sm text-gray-600'>{deleteRow.accountOrLoanNo} · {deleteRow.customerName || displayHeadName(deleteRow.headOfAccount)}</p>
+              <p className='text-[12px] text-slate-500 font-semibold mt-0.5'>{deleteRow.accountOrLoanNo} · {deleteRow.customerName || displayHeadName(deleteRow.headOfAccount)}</p>
             </div>
-            <div className='p-6 overflow-y-auto space-y-3 text-sm'>
+            <div className='p-5 overflow-y-auto space-y-3 text-sm font-semibold text-slate-800'>
               {deleteRow.kind === 'RECEIPT' ? (
                 <>
                   <p>This removes the full payment of <strong>{fmt2(Number(deleteTx?.amount))}</strong> and recalculates the whole loan. It can be restored from Edited / Deleted Logs.</p>
                   {deletePreview && deletePreview.blockers.length > 0 && (
-                    <div className='border border-red-200 bg-red-50 text-red-800 rounded-lg p-3 font-medium space-y-1'>
+                    <div className='border border-rose-300 bg-rose-50 text-rose-900 rounded-lg p-3 font-bold space-y-1'>
                       {deletePreview.blockers.map((b, i) => <div key={i}>{b}</div>)}
                     </div>
                   )}
                   {deletePreview?.ok && (
-                    <div className='border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-3 font-medium space-y-1'>
+                    <div className='border border-amber-300 bg-amber-50 text-amber-900 rounded-lg p-3 font-bold space-y-1'>
                       <div>Principal balance: {fmt2(deletePreview.beforePrincipal)} → {fmt2(deletePreview.afterPrincipal)}</div>
                       {deletePreview.warnings.map((w, i) => <div key={i}>{w}</div>)}
                     </div>
@@ -635,15 +673,16 @@ const FinanceEditEntry: React.FC = () => {
                 <p>Delete this entry of <strong>{fmt2(Math.max(deleteRow.credit, deleteRow.debit))}</strong>? It can be restored from Edited / Deleted Logs.</p>
               )}
             </div>
-            <div className='p-4 border-t border-gray-200 flex justify-end gap-2'>
-              <Button variant='secondary' onClick={() => setDeleteRow(null)}>Cancel</Button>
-              <Button
-                variant='danger'
+            <div className={DIALOG_FOOT}>
+              <button type='button' className={BTN_LIGHT} onClick={() => setDeleteRow(null)}>Cancel</button>
+              <button
+                type='button'
+                className='inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-extrabold uppercase shadow-2xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
                 onClick={confirmDelete}
                 disabled={saving || (deleteRow.kind === 'RECEIPT' && (!deletePreview?.ok || !deleteReason.trim()))}
               >
                 {saving ? 'Deleting…' : 'Delete'}
-              </Button>
+              </button>
             </div>
           </div>
         </div>

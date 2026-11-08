@@ -1,1128 +1,1126 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { rawSupabase } from '../lib/supabase';
 import { supabaseDB } from '../lib/supabaseDatabase';
 import Button from '../components/UI/Button';
 import Input from '../components/UI/Input';
 import Card from '../components/UI/Card';
 import toast from 'react-hot-toast';
 import bcrypt from 'bcryptjs';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTableMode } from '../contexts/TableModeContext';
-import ModeLabel from '../components/UI/ModeLabel';
-import { format } from 'date-fns';
 import {
   UserIcon,
   Shield,
-  X,
   Save,
-  Edit,
   ChevronDown,
   ChevronUp,
   FileCheck,
   Briefcase,
   Clock,
+  Landmark,
+  Key,
+  Lock,
+  Unlock,
+  Ban,
+  RotateCcw,
+  X,
 } from 'lucide-react';
 
-type ModeKey = 'regular' | 'itr';
-const MODE_VALUES: ModeKey[] = ['regular', 'itr'];
-const MODE_LABELS: Record<ModeKey, string> = {
-  regular: 'Regular Mode',
-  itr: 'ITR Mode',
-};
-const MODE_BADGES: Record<
-  ModeKey,
-  { badge: string; text: string; gradient: string }
-> = {
-  regular: {
-    badge: 'bg-blue-100 text-blue-800 border-blue-300',
-    text: 'text-blue-700',
-    gradient: 'from-blue-500 to-blue-600',
-  },
-  itr: {
-    badge: 'bg-orange-100 text-orange-800 border-orange-300',
-    text: 'text-orange-700',
-    gradient: 'from-orange-500 to-red-600',
-  },
-};
-const USER_ACCESS_MODE_SQL =
-  "ALTER TABLE user_access ADD COLUMN mode TEXT CHECK (mode IN ('regular','itr')) DEFAULT 'regular';";
-const isUserAccessModeError = (error?: { message?: string; code?: string }) => {
-  if (!error) return false;
-  const msg = error.message?.toLowerCase() ?? '';
-  return (
-    msg.includes('column "mode"') ||
-    msg.includes('mode') ||
-    msg.includes('does not exist') ||
-    error.code === '42703'
-  );
-};
+/**
+ * One User Management screen for Regular, ITR and Finance.
+ * An admin can create users and give permissions for any module from any mode.
+ * Permissions stay in their existing tables, so nobody loses access:
+ *   Regular / ITR -> public.user_access (feature_key + mode)
+ *   Finance       -> public.user_permissions (feature_key)
+ */
 
-const emptyModeFeatures = (): Record<ModeKey, string[]> => ({
-  regular: [],
-  itr: [],
-});
-const normalizeFeatures = (items?: string[]) =>
-  [...new Set((items || []).map(item => item?.trim()).filter(Boolean))] as string[];
-const mapFeaturesByMode = (featuresByMode: Record<ModeKey, string[]>) =>
-  MODE_VALUES.map(mode => ({
-    mode,
-    features: normalizeFeatures(featuresByMode?.[mode] || []),
-  }));
-
+type ModeKey = 'regular' | 'itr' | 'finance';
+type TabKey = 'profile' | 'permissions' | 'activity' | 'login_history' | 'audit';
+type ModeFeatures = Record<ModeKey, string[]>;
 
 interface Feature {
   key: string;
   name: string;
 }
 
+const MODE_VALUES: ModeKey[] = ['regular', 'itr', 'finance'];
+const MODE_BADGE: Record<ModeKey, { pill: string; dot: string }> = {
+  regular: { pill: 'bg-blue-100 text-blue-800 border-blue-200', dot: 'bg-blue-500' },
+  itr: { pill: 'bg-orange-100 text-orange-800 border-orange-200', dot: 'bg-orange-500' },
+  finance: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
+};
+const MODE_LABELS: Record<ModeKey, string> = {
+  regular: 'Regular Mode',
+  itr: 'ITR Mode',
+  finance: 'Finance Mode',
+};
+const MODE_GRADIENT: Record<ModeKey, string> = {
+  regular: 'from-blue-500 to-blue-600',
+  itr: 'from-orange-500 to-red-600',
+  finance: 'from-emerald-500 to-teal-600',
+};
+
+const REGULAR_FEATURES: Feature[] = [
+  { key: 'dashboard', name: 'Dashboard' },
+  { key: 'new_entry', name: 'New Entry' },
+  { key: 'edit_entry', name: 'Edit Entry' },
+  { key: 'delete_entry', name: 'Delete Entry' },
+  { key: 'daily_report', name: 'Daily Report' },
+  { key: 'detailed_ledger', name: 'Detailed Ledger' },
+  { key: 'ledger_summary', name: 'Ledger Summary' },
+  { key: 'approve_records', name: 'Approve Records' },
+  { key: 'edited_records', name: 'Edited Records' },
+  { key: 'deleted_records', name: 'Deleted Records' },
+  { key: 'replace_form', name: 'Replace Form' },
+  { key: 'export', name: 'Export' },
+  { key: 'csv_upload', name: 'CSV Upload' },
+  { key: 'balance_sheet', name: 'Balance Sheet' },
+  { key: 'vehicles', name: 'Vehicles' },
+  { key: 'reminders', name: 'Reminders' },
+  { key: 'sync_center', name: 'Sync Center' },
+  { key: 'bank_guarantees', name: 'Bank Guarantees' },
+  { key: 'drivers', name: 'Drivers' },
+  { key: 'book_management', name: 'Book Management' },
+];
+
+const FINANCE_FEATURES: Feature[] = [
+  { key: 'finance_dashboard', name: 'Dashboard' },
+  { key: 'sync_center', name: 'Sync Center' },
+  { key: 'loan_entry', name: 'New Loan' },
+  { key: 'edit_loan_entry', name: 'Edit Loan' },
+  { key: 'finance_edit_entry', name: 'Edit Entry' },
+  { key: 'finance_delete_entry', name: 'Delete Entry' },
+  { key: 'finance_approve_records', name: 'Approve Records' },
+  { key: 'new_customers', name: 'New Customer & Customers' },
+  { key: 'partners', name: 'New Partner & Partners' },
+  { key: 'daybook', name: 'Day Book Entry' },
+  { key: 'capital_entry', name: 'Capital Entry' },
+  { key: 'calculator', name: 'Calculator' },
+  { key: 'search', name: 'Aadhaar Search' },
+  { key: 'aadhaar_search', name: 'Aadhaar Search (old link)' },
+  { key: 'camera', name: 'Camera' },
+  { key: 'phone_editor', name: 'Phone Number Editor' },
+  { key: 'cd_ledger', name: 'CD Ledger' },
+  { key: 'hp_ledger', name: 'HP Ledger' },
+  { key: 'stbd_ledger', name: 'STBD Ledger' },
+  { key: 'tbd_ledger', name: 'TBD Ledger' },
+  { key: 'daily_report', name: 'Daily Report' },
+  { key: 'detailed_ledger', name: 'Detailed Ledger' },
+  { key: 'general_ledger', name: 'General Ledger' },
+  { key: 'dues_ledger', name: 'Dues List' },
+  { key: 'payment_followup', name: 'Payment Follow-up & Call History' },
+  { key: 'pl', name: 'P&L / Balance Sheet' },
+  { key: 'final_statement', name: 'Final Statement' },
+  { key: 'business_report', name: 'Business Details' },
+  { key: 'partner_performance', name: 'Partner Performance' },
+  { key: 'logs', name: 'Edited / Deleted Logs' },
+  { key: 'ledger_settings', name: 'Ledger Settings' },
+  { key: 'user_access_management', name: 'User Management' },
+];
+
+const FEATURES_BY_MODE: Record<ModeKey, Feature[]> = {
+  regular: REGULAR_FEATURES,
+  itr: REGULAR_FEATURES,
+  finance: FINANCE_FEATURES,
+};
+
+// Giving Edit Entry also gives Delete Entry (same rule as Regular / ITR)
+const EDIT_DELETE_PAIR: Record<ModeKey, [string, string]> = {
+  regular: ['edit_entry', 'delete_entry'],
+  itr: ['edit_entry', 'delete_entry'],
+  finance: ['finance_edit_entry', 'finance_delete_entry'],
+};
+
+const FINANCE_KEYS = new Set(FINANCE_FEATURES.map(f => f.key));
+const emptyFeatures = (): ModeFeatures => ({ regular: [], itr: [], finance: [] });
+const unique = (items: string[]) => [...new Set(items.filter(Boolean))];
+const sameSet = (a: string[], b: string[]) => {
+  const x = new Set(a);
+  return x.size === new Set(b).size && b.every(k => x.has(k));
+};
+
+const getStaffName = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem('thirumala_user') || '{}').username || 'Admin';
+  } catch {
+    return 'Admin';
+  }
+};
+
+const fmtDateTime = (v?: string | null) => (v ? new Date(v).toLocaleString('en-IN') : '-');
+
+const isRecentlyCreated = (createdAt?: string | null) => {
+  if (!createdAt) return false;
+  return (Date.now() - new Date(createdAt).getTime()) / 86400000 <= 7;
+};
+
+const db = () => rawSupabase.schema('public');
+
 interface UserRow {
+  raw: any;
   id: string;
   username: string;
+  userType: string;
+  userTypeId: string;
   is_admin: boolean;
-  features: string[];
-  featuresByMode?: Record<ModeKey, string[]>;
-  mode?: 'regular' | 'itr' | null;
-  created_at?: string;
-  address?: string;
-  aadhaar_number?: string;
-  phone?: string;
-  email?: string;
-  full_name?: string;
-  date_of_birth?: string;
-  other_details?: string;
+  status: string;
+  created_at: string | null;
+  features: ModeFeatures;
+  /** Keys saved by the old Finance screen that no menu uses; kept when saving so nothing is lost */
+  oldFinanceKeys: string[];
 }
 
-interface NewUserFormState {
-  username: string;
-  password: string;
-  is_admin: boolean;
-  mode: ModeKey;
-  featuresByMode: Record<ModeKey, string[]>;
-  address?: string;
-  aadhaar_number?: string;
-  phone?: string;
-  email?: string;
-  full_name?: string;
-  date_of_birth?: string;
-  other_details?: string;
+interface ProfileForm {
+  full_name: string;
+  phone: string;
+  email: string;
+  address: string;
+  aadhaar_number: string;
+  date_of_birth: string;
+  other_details: string;
+  branch: string;
+  employee_id: string;
+  designation: string;
+  user_type_id: string;
 }
+
+const emptyProfile = (): ProfileForm => ({
+  full_name: '',
+  phone: '',
+  email: '',
+  address: '',
+  aadhaar_number: '',
+  date_of_birth: '',
+  other_details: '',
+  branch: '',
+  employee_id: '',
+  designation: '',
+  user_type_id: '',
+});
+
+const emptyNewUser = () => ({
+  ...emptyProfile(),
+  username: '',
+  password: '',
+  is_admin: false,
+  features: emptyFeatures(),
+});
+
+// ─── Permission picker: Regular / ITR / Finance tabs ─────────────────────────
+
+const PermissionPicker: React.FC<{
+  value: ModeFeatures;
+  onToggle: (mode: ModeKey, key: string) => void;
+  disabled?: boolean;
+}> = ({ value, onToggle, disabled }) => {
+  const { mode: currentMode } = useTableMode();
+  const [mode, setMode] = useState<ModeKey>((currentMode as ModeKey) || 'regular');
+  const selected = value[mode] || [];
+  return (
+    <div>
+      <div className='flex flex-wrap gap-2 mb-3'>
+        {MODE_VALUES.map(m => (
+          <button
+            key={m}
+            type='button'
+            onClick={() => setMode(m)}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors ${
+              mode === m
+                ? `text-white border-transparent bg-gradient-to-r ${MODE_GRADIENT[m]}`
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            {MODE_LABELS[m]} ({(value[m] || []).length})
+          </button>
+        ))}
+      </div>
+      <div className='border border-gray-200 rounded-2xl shadow-sm overflow-hidden'>
+        <div className={`px-4 py-3 flex items-center justify-between text-white bg-gradient-to-r ${MODE_GRADIENT[mode]}`}>
+          <div className='flex items-center gap-2 text-base font-semibold'>
+            {mode === 'itr' ? <FileCheck className='w-5 h-5' /> : mode === 'finance' ? <Landmark className='w-5 h-5' /> : <Briefcase className='w-5 h-5' />}
+            {MODE_LABELS[mode]}
+          </div>
+          <span className='text-sm font-medium bg-white/20 px-3 py-1 rounded-full'>{selected.length} selected</span>
+        </div>
+        <div className='p-4'>
+          <div className='flex flex-wrap gap-2 sm:gap-3'>
+            {FEATURES_BY_MODE[mode].map(f => {
+              const isSelected = selected.includes(f.key);
+              return (
+                <label
+                  key={`${mode}-${f.key}`}
+                  className={`flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full shadow border-2 transition-all select-none text-xs sm:text-sm font-medium ${
+                    disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
+                  } ${
+                    isSelected
+                      ? 'bg-gradient-to-r from-blue-200 to-indigo-200 text-blue-900 border-blue-400'
+                      : 'bg-blue-50 text-blue-800 border-blue-100 hover:border-blue-300 hover:bg-blue-100'
+                  }`}
+                >
+                  <input
+                    type='checkbox'
+                    checked={isSelected}
+                    disabled={disabled}
+                    onChange={() => onToggle(mode, f.key)}
+                    className='accent-blue-600 w-5 h-5'
+                  />
+                  <span>{f.name}</span>
+                </label>
+              );
+            })}
+          </div>
+          <p className='mt-3 text-xs text-gray-500'>
+            Select the features this user should have in {MODE_LABELS[mode]}. They will only see these options when using this mode.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const toggleFeature = (current: ModeFeatures, mode: ModeKey, key: string): ModeFeatures => {
+  const list = current[mode] || [];
+  const turningOn = !list.includes(key);
+  let next = turningOn ? [...list, key] : list.filter(k => k !== key);
+  const [editKey, deleteKey] = EDIT_DELETE_PAIR[mode];
+  if (turningOn && key === editKey && !next.includes(deleteKey)) next = [...next, deleteKey];
+  return { ...current, [mode]: next };
+};
+
+// ─── Main page ───────────────────────────────────────────────────────────────
 
 const UserManagement: React.FC = () => {
   const { user } = useAuth();
-  const { mode: rawMode } = useTableMode();
-  const currentMode: ModeKey = rawMode === 'itr' ? 'itr' : 'regular';
+  const { mode: currentMode } = useTableMode();
+  const pageMode = ((currentMode as ModeKey) || 'regular') as ModeKey;
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [features, setFeatures] = useState<Feature[]>([]);
-  const [newUser, setNewUser] = useState<NewUserFormState>(() => ({
-    username: '',
-    password: '',
-    is_admin: false,
-    featuresByMode: emptyModeFeatures(),
-    mode: currentMode,
-    address: '',
-    aadhaar_number: '',
-    phone: '',
-    email: '',
-    full_name: '',
-    date_of_birth: '',
-    other_details: '',
-  }));
+  const [roles, setRoles] = useState<{ id: string; user_type: string }[]>([]);
+  const [modeColumn, setModeColumn] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
-  const formRef = useRef<HTMLFormElement>(null);
-  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [editFeaturesByMode, setEditFeaturesByMode] = useState<Record<ModeKey, string[]>>(emptyModeFeatures());
-  const [userAccessModeSupported, setUserAccessModeSupported] = useState<boolean | null>(null);
-  const [modeWarningShown, setModeWarningShown] = useState(false);
+  const [newUser, setNewUser] = useState(emptyNewUser);
 
-  // Check if user was created recently (within last 7 days)
-  const isRecentlyCreated = (createdAt: string | null | undefined): boolean => {
-    if (!createdAt) return false;
-    const createdDate = new Date(createdAt);
-    const now = new Date();
-    const daysDiff = (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24);
-    return daysDiff <= 7;
-  };
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabKey>('profile');
+  const [profile, setProfile] = useState<ProfileForm>(emptyProfile);
+  const [editFeatures, setEditFeatures] = useState<ModeFeatures>(emptyFeatures);
+  const [tabRows, setTabRows] = useState<any[]>([]);
+  const [tabLoading, setTabLoading] = useState(false);
+  const [copyFromId, setCopyFromId] = useState('');
 
-  useEffect(() => {
-    loadUsers();
-    loadFeatures();
+  // Every change asks for a reason, which goes into the audit log
+  const [reasonPrompt, setReasonPrompt] = useState<{ title: string; run: (reason: string) => Promise<void> } | null>(null);
+  const [reasonText, setReasonText] = useState('');
+  const [passwordFor, setPasswordFor] = useState<UserRow | null>(null);
+  const [passwordText, setPasswordText] = useState('');
+
+  const loadUsers = useCallback(async () => {
+    try {
+      const { data: roleRows } = await db().from('user_types').select('id, user_type').order('user_type');
+      setRoles(roleRows || []);
+
+      const { data: dbUsers, error: usersErr } = await db()
+        .from('users')
+        .select('*, user_types(user_type)')
+        .order('created_at', { ascending: false });
+      if (usersErr) throw usersErr;
+
+      let accessRows: any[] = [];
+      let hasMode = true;
+      const accessRes = await db().from('user_access').select('user_id, feature_key, mode');
+      if (accessRes.error) {
+        hasMode = false;
+        const fallback = await db().from('user_access').select('user_id, feature_key');
+        accessRows = fallback.data || [];
+      } else {
+        accessRows = accessRes.data || [];
+      }
+      setModeColumn(hasMode);
+
+      const { data: permRows, error: permErr } = await db().from('user_permissions').select('user_id, feature_key');
+      if (permErr) console.warn('Could not load finance permissions:', permErr);
+
+      const rows: UserRow[] = (dbUsers || []).map((u: any) => {
+        const features = emptyFeatures();
+        accessRows
+          .filter(a => a.user_id === u.id && a.feature_key)
+          .forEach(a => {
+            const m: ModeKey = a.mode === 'itr' ? 'itr' : 'regular';
+            if (!features[m].includes(a.feature_key)) features[m].push(a.feature_key);
+          });
+        const financeKeys = unique((permRows || []).filter((p: any) => p.user_id === u.id).map((p: any) => p.feature_key));
+        features.finance = financeKeys.filter(k => FINANCE_KEYS.has(k));
+        const userType = u.user_types?.user_type || 'Operator';
+        return {
+          raw: u,
+          id: u.id,
+          username: u.username,
+          userType,
+          userTypeId: u.user_type_id || '',
+          is_admin: userType === 'Admin',
+          status: u.status || (u.is_active === false ? 'Disabled' : 'Active'),
+          created_at: u.created_at || null,
+          features,
+          oldFinanceKeys: financeKeys.filter(k => !FINANCE_KEYS.has(k)),
+        };
+      });
+      setUsers(rows);
+      return rows;
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Failed to load users');
+      return [];
+    }
   }, []);
 
   useEffect(() => {
     loadUsers();
-  }, [currentMode]);
+  }, [loadUsers]);
 
-useEffect(() => {
-  setEditFeaturesByMode(emptyModeFeatures());
-  setNewUser(prev => ({ ...prev, mode: currentMode }));
-}, [currentMode]);
+  const expanded = useMemo(() => users.find(u => u.id === expandedId) || null, [users, expandedId]);
 
-
-  // Debug: Log when features are loaded
-  useEffect(() => {
-    console.log('📋 Features state updated:', {
-      featuresCount: features.length,
-      features: features
+  const hydrate = (u: UserRow) => {
+    const r = u.raw;
+    setProfile({
+      full_name: r.full_name || '',
+      phone: r.phone || '',
+      email: r.email || '',
+      address: r.address || '',
+      aadhaar_number: r.aadhaar_number || '',
+      date_of_birth: r.date_of_birth || '',
+      other_details: r.other_details || '',
+      branch: r.branch || '',
+      employee_id: r.employee_id || '',
+      designation: r.designation || '',
+      user_type_id: u.userTypeId,
     });
-  }, [features]);
+    setEditFeatures({ ...u.features });
+    setCopyFromId('');
+  };
 
-  // Debug: Log when newUser state changes
+  const toggleCard = (u: UserRow) => {
+    if (expandedId === u.id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(u.id);
+    setTab('profile');
+    hydrate(u);
+  };
+
+  // Activity / login history / audit are loaded when their tab opens
   useEffect(() => {
-    console.log('👤 New user state:', {
-      username: newUser.username,
-      is_admin: newUser.is_admin,
-      featuresByMode: newUser.featuresByMode,
-    });
-  }, [newUser]);
+    if (!expandedId || !['activity', 'login_history', 'audit'].includes(tab)) return;
+    let alive = true;
+    const load = async () => {
+      setTabLoading(true);
+      setTabRows([]);
+      try {
+        const query =
+          tab === 'activity'
+            ? db().from('user_activities').select('*').eq('user_id', expandedId).order('created_at', { ascending: false }).limit(50)
+            : tab === 'login_history'
+            ? db().from('login_history').select('*').eq('user_id', expandedId).order('login_time', { ascending: false }).limit(50)
+            : db().from('audit_logs').select('*').eq('target_user_id', expandedId).order('created_at', { ascending: false }).limit(50);
+        const { data } = await query;
+        if (alive) setTabRows(data || []);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (alive) setTabLoading(false);
+      }
+    };
+    load();
+    return () => {
+      alive = false;
+    };
+  }, [expandedId, tab]);
 
-  const loadUsers = async () => {
-    // Migration: Enable delete_entry by default for existing users who have edit_entry
+  const logAudit = async (target: { id: string; username: string }, field: string, oldVal: string | null, newVal: string | null, reason: string) => {
     try {
-      const { data: featRecord } = await supabase
-        .from('features')
-        .select('key')
-        .eq('key', 'delete_entry')
-        .maybeSingle();
-      
-      if (!featRecord) {
-        console.log('🔄 First-time run: Migrating delete_entry features for existing users...');
-        const supportsMode = await ensureUserAccessModeSupport();
-        
-        let query = supabase.from('user_access').select('user_id, feature_key' + (supportsMode ? ', mode' : ''));
-        const { data: allAccess } = await query as any;
-        
-        if (allAccess) {
-          const editAccessRows = allAccess.filter((row: any) => row.feature_key === 'edit_entry');
-          const deleteAccessRows = allAccess.filter((row: any) => row.feature_key === 'delete_entry');
-          
-          const insertsToMake: any[] = [];
-          
-          for (const editRow of editAccessRows) {
-            const hasDelete = deleteAccessRows.some(
-              (delRow: any) => delRow.user_id === editRow.user_id && (!supportsMode || delRow.mode === editRow.mode)
-            );
-            if (!hasDelete) {
-              const payload: any = {
-                user_id: editRow.user_id,
-                feature_key: 'delete_entry'
-              };
-              if (supportsMode) {
-                payload.mode = editRow.mode || 'regular';
-              }
-              insertsToMake.push(payload);
-            }
-          }
-          
-          if (insertsToMake.length > 0) {
-            console.log(`Inserting ${insertsToMake.length} delete_entry records...`, insertsToMake);
-            await supabase.from('user_access').insert(insertsToMake);
-          }
-        }
-        
-        // Ensure delete_entry exists in features table to flag migration as done
-        await supabase.from('features').upsert({
-          key: 'delete_entry',
-          name: 'Delete Entry'
-        }, { onConflict: 'key' });
-        console.log('✅ delete_entry migration finished');
-      }
-    } catch (migError) {
-      console.error('Error running delete_entry migration:', migError);
+      await db().from('audit_logs').insert({
+        changed_by: getStaffName(),
+        target_user_id: target.id,
+        target_username: target.username,
+        field,
+        old_value: oldVal,
+        new_value: newVal,
+        reason,
+      });
+      await db().from('user_activities').insert({
+        user_id: target.id,
+        username: target.username,
+        activity_type: 'Profile Update',
+        description: `Field '${field}' modified from '${oldVal}' to '${newVal}'`,
+      });
+    } catch (e) {
+      console.error('Audit failed:', e);
     }
+  };
 
-    // Try to select mode column - if it doesn't exist, we'll handle it
-    let userRows: any[] = [];
-    let hasModeColumn = true;
-    
-    // Start with minimal required fields - try without join first
-    let { data: dataBase, error: errorBase } = await supabase
-      .from('users')
-      .select('id, username, created_at, user_type_id')
-      .order('created_at', { ascending: false });
-    
-    if (errorBase) {
-      console.error('Error loading users:', errorBase);
-      toast.error(`Error loading users: ${errorBase.message || 'Unknown error'}`);
-      setUsers([]);
+  const askReason = (title: string, run: (reason: string) => Promise<void>) => {
+    setReasonText('');
+    setReasonPrompt({ title, run });
+  };
+
+  const confirmReason = async () => {
+    if (!reasonText.trim()) {
+      toast.error('Reason is required');
       return;
     }
-    
-    if (!dataBase || dataBase.length === 0) {
-      console.log('No users found in database');
-      setUsers([]);
+    const pending = reasonPrompt;
+    setReasonPrompt(null);
+    if (!pending) return;
+    setLoading(true);
+    try {
+      await pending.run(reasonText.trim());
+    } catch (e: any) {
+      toast.error(e.message || 'Save failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshExpanded = async (id: string) => {
+    const rows = await loadUsers();
+    const fresh = rows.find(r => r.id === id);
+    if (fresh) hydrate(fresh);
+  };
+
+  // ─── Permissions ───────────────────────────────────────────────────────────
+
+  const writePermissions = async (target: { id: string; username: string }, before: ModeFeatures, after: ModeFeatures, oldFinanceKeys: string[], reason: string) => {
+    const regularChanged = !sameSet(before.regular, after.regular) || !sameSet(before.itr, after.itr);
+    const financeChanged = !sameSet(before.finance, after.finance);
+
+    if (regularChanged) {
+      const keys = unique([...after.regular, ...after.itr]);
+      for (const key of keys) {
+        const def = REGULAR_FEATURES.find(f => f.key === key);
+        if (def) await db().from('features').upsert({ key: def.key, name: def.name }, { onConflict: 'key' });
+      }
+      const { error: delErr } = await db().from('user_access').delete().eq('user_id', target.id);
+      if (delErr) throw delErr;
+      const rows: any[] = modeColumn
+        ? [
+            ...unique(after.regular).map(k => ({ user_id: target.id, feature_key: k, mode: 'regular' })),
+            ...unique(after.itr).map(k => ({ user_id: target.id, feature_key: k, mode: 'itr' })),
+          ]
+        : keys.map(k => ({ user_id: target.id, feature_key: k }));
+      if (rows.length > 0) {
+        const { error: insErr } = await db().from('user_access').insert(rows);
+        if (insErr) throw insErr;
+      }
+    }
+
+    if (financeChanged) {
+      const { error: delErr } = await db().from('user_permissions').delete().eq('user_id', target.id);
+      if (delErr) throw delErr;
+      const rows = unique([...after.finance, ...oldFinanceKeys]).map(k => ({ user_id: target.id, feature_key: k }));
+      if (rows.length > 0) {
+        const { error: insErr } = await db().from('user_permissions').insert(rows);
+        if (insErr) throw insErr;
+      }
+    }
+
+    for (const m of MODE_VALUES) {
+      if (!sameSet(before[m], after[m])) {
+        await logAudit(target, `permissions (${MODE_LABELS[m]})`, JSON.stringify(before[m]), JSON.stringify(after[m]), reason);
+      }
+    }
+  };
+
+  const savePermissions = (u: UserRow) => {
+    const after = editFeatures;
+    if (MODE_VALUES.every(m => sameSet(u.features[m], after[m]))) {
+      toast('No permission changes to save');
       return;
     }
-    
-    // Get all unique user_type_ids
-    const userTypeIds = [...new Set(dataBase.map((u: any) => u.user_type_id).filter(Boolean))];
-    
-    // Load all user_types at once
-    const { data: allUserTypes } = await supabase
-      .from('user_types')
-      .select('id, user_type')
-      .in('id', userTypeIds);
-    
-    // Create a map for quick lookup
-    const userTypesMap = new Map((allUserTypes || []).map((ut: any) => [ut.id, ut.user_type]));
-    
-    // Now merge user_types with users
-    const usersWithTypes = dataBase.map((user: any) => {
-      const userType = user.user_type_id ? userTypesMap.get(user.user_type_id) : null;
-      return {
-        ...user,
-        user_types: userType ? { user_type: userType } : null,
-      };
+    askReason(`Save permissions for ${u.username}`, async reason => {
+      await writePermissions(u, u.features, after, u.oldFinanceKeys, reason);
+      toast.success('Feature access updated');
+      await refreshExpanded(u.id);
     });
-    
-    // Try to load optional fields - handle gracefully if columns don't exist
-    const userIds = usersWithTypes.map((u: any) => u.id);
-    let dataWithOptionalFields: any[] = [];
-    
-    if (userIds.length > 0) {
-      // Try to load optional fields, but don't fail if they don't exist
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, mode, email, address, aadhaar_number, phone, full_name, date_of_birth, other_details')
-        .in('id', userIds);
-      
-      // Only use data if no error or if error is just about missing columns
-      if (!error || (error.code !== '42703' && !error.message?.includes('does not exist'))) {
-        dataWithOptionalFields = data || [];
-      }
+  };
+
+  const copyPermissions = () => {
+    const from = users.find(x => x.id === copyFromId);
+    if (!from) {
+      toast.error('Select a user to copy from');
+      return;
     }
-    
-    // Merge optional fields
-    const mergedUsers = usersWithTypes.map((user: any) => {
-      const optionalFields = dataWithOptionalFields?.find((u: any) => u.id === user.id);
-      return {
-        ...user,
-        mode: optionalFields?.mode || null,
-        email: optionalFields?.email || '',
-        address: optionalFields?.address || '',
-        aadhaar_number: optionalFields?.aadhaar_number || '',
-        phone: optionalFields?.phone || '',
-        full_name: optionalFields?.full_name || '',
-        date_of_birth: optionalFields?.date_of_birth || '',
-        other_details: optionalFields?.other_details || '',
-      };
-    });
-    
-    userRows = mergedUsers;
-    hasModeColumn = dataWithOptionalFields && dataWithOptionalFields.some((u: any) => u.mode !== undefined);
-    
-    console.log(`✅ Loaded ${userRows.length} users from database`);
-
-    // Load features for each user from user_access table
-    const usersWithFeatures = await Promise.all(
-      userRows.map(async (u: any) => {
-        const isAdmin = u.user_types?.user_type === 'Admin';
-        
-        // If admin, they have all features (handled in AuthContext)
-        // If not admin, load their features from user_access table
-        let features: string[] = [];
-        let featuresByMode = emptyModeFeatures();
-        if (!isAdmin) {
-          const { data: accessData, error: accessError } = await supabase
-            .from('user_access')
-            .select('feature_key, mode')
-            .eq('user_id', u.id);
-
-          let rows = accessData || [];
-          if (accessError && isUserAccessModeError(accessError)) {
-            const { data: fallbackData } = await supabase
-              .from('user_access')
-              .select('feature_key')
-              .eq('user_id', u.id);
-            rows =
-              fallbackData?.map(item => ({
-                feature_key: item.feature_key,
-                mode: 'regular',
-              })) || [];
-          }
-
-          const grouped = emptyModeFeatures();
-          rows.forEach(item => {
-            const key = item?.feature_key;
-            if (!key) return;
-            const modeKey: ModeKey = item?.mode === 'itr' ? 'itr' : 'regular';
-            if (!grouped[modeKey].includes(key)) {
-              grouped[modeKey].push(key);
-            }
-          });
-          featuresByMode = grouped;
-          features = grouped[currentMode] || [];
-        }
-
-
-        return {
-          id: u.id,
-          username: u.username,
-          is_admin: isAdmin,
-          features,
-          featuresByMode,
-          mode: hasModeColumn ? (u.mode || null) : null,
-          created_at: u.created_at || null,
-          email: u.email || '',
-          address: u.address || '',
-          aadhaar_number: u.aadhaar_number || '',
-          phone: u.phone || '',
-          full_name: u.full_name || '',
-          date_of_birth: u.date_of_birth || '',
-          other_details: u.other_details || '',
-        };
-      })
-    );
-    
-    // Sort by created_at (most recent first)
-    usersWithFeatures.sort((a, b) => {
-      if (!a.created_at && !b.created_at) return 0;
-      if (!a.created_at) return 1;
-      if (!b.created_at) return -1;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
-    
-    setUsers(usersWithFeatures);
+    setEditFeatures({ ...from.features });
+    toast.success(`Copied from ${from.username}. Click Save to apply.`);
   };
 
-  const ensureUserAccessModeSupport = async () => {
-    if (userAccessModeSupported !== null) return userAccessModeSupported;
-    const { error } = await supabase.from('user_access').select('mode').limit(1);
-    if (error && isUserAccessModeError(error)) {
-      if (!modeWarningShown) {
-        toast.error(
-          `User access table is missing the mode column. Please run:\n${USER_ACCESS_MODE_SQL}`,
-          { duration: 12000 }
-        );
-        setModeWarningShown(true);
+  // ─── Profile, password, status ─────────────────────────────────────────────
+
+  const saveProfile = (u: UserRow) => {
+    const updates: Record<string, any> = {};
+    const changes: { field: string; old: string | null; next: string | null }[] = [];
+    (Object.keys(profile) as (keyof ProfileForm)[]).forEach(key => {
+      if (key === 'user_type_id') return;
+      if (!(key in u.raw)) return; // column not in this database
+      const oldVal = u.raw[key] || '';
+      const nextVal = profile[key].trim();
+      if (oldVal !== nextVal) {
+        updates[key] = nextVal || null;
+        changes.push({ field: key, old: oldVal || null, next: nextVal || null });
       }
-      setUserAccessModeSupported(false);
-      return false;
+    });
+    if (profile.user_type_id && profile.user_type_id !== u.userTypeId) {
+      updates.user_type_id = profile.user_type_id;
+      changes.push({
+        field: 'role',
+        old: u.userType,
+        next: roles.find(r => r.id === profile.user_type_id)?.user_type || '',
+      });
     }
-    setUserAccessModeSupported(true);
-    return true;
-  };
-const upsertUserAccess = async (
-  payload: Record<string, any>,
-  supportsMode: boolean
-) => {
-  const result = await supabase
-    .from('user_access')
-    .upsert(payload, {
-      onConflict: supportsMode ? 'user_id,feature_key,mode' : 'user_id,feature_key',
-    })
-    .select();
-
-  if (
-    result.error &&
-    result.error.message?.toLowerCase().includes('no unique or exclusion constraint')
-  ) {
-    return await supabase.from('user_access').insert(payload).select();
-  }
-
-  return result;
-};
-  const applyModeFilter = (builder: any, supportsMode: boolean, modeOverride?: ModeKey) => {
-    if (supportsMode) {
-      return builder.eq('mode', modeOverride ?? currentMode);
+    if (profile.aadhaar_number.trim() && !/^\d{12}$/.test(profile.aadhaar_number.trim())) {
+      toast.error('Aadhaar must be 12 digits');
+      return;
     }
-    return builder;
-  };
-
-  const loadFeatures = async () => {
-    // Define features manually - must match all sidebar menu items (except admin-only 'users')
-    const defaultFeatures = [
-      { key: 'dashboard', name: 'Dashboard' },
-      { key: 'new_entry', name: 'New Entry' },
-      { key: 'edit_entry', name: 'Edit Entry' },
-      { key: 'delete_entry', name: 'Delete Entry' },
-      { key: 'daily_report', name: 'Daily Report' },
-      { key: 'detailed_ledger', name: 'Detailed Ledger' },
-      { key: 'ledger_summary', name: 'Ledger Summary' },
-      { key: 'approve_records', name: 'Approve Records' },
-      { key: 'edited_records', name: 'Edited Records' },
-      { key: 'deleted_records', name: 'Deleted Records' },
-      { key: 'replace_form', name: 'Replace Form' },
-      { key: 'export', name: 'Export' },
-      { key: 'csv_upload', name: 'CSV Upload' },
-      { key: 'balance_sheet', name: 'Balance Sheet' },
-      { key: 'vehicles', name: 'Vehicles' },
-      { key: 'reminders', name: 'Reminders' },
-      { key: 'sync_center', name: 'Sync Center' },
-      { key: 'bank_guarantees', name: 'Bank Guarantees' },
-      { key: 'drivers', name: 'Drivers' },
-      { key: 'book_management', name: 'Book Management' },
-    ];
-    console.log('📋 Loading features:', defaultFeatures.length, 'features:', defaultFeatures.map(f => f.name).join(', '));
-    setFeatures(defaultFeatures);
-  };
-
-  const handleDeleteUser = async (id: string) => {
-    if (!window.confirm('Delete this user?')) return;
-    await supabase.from('users').delete().eq('id', id);
-    toast.success('User deleted');
-    loadUsers();
-  };
-
-  const handleModalChange = (field: string, value: any) => {
-    setNewUser(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleModalFeatureToggle = (modeKey: ModeKey, featureKey: string) => {
-    console.log('🔄 Toggling feature:', featureKey, 'for mode:', modeKey);
-    setNewUser(prev => {
-      const currentFeaturesByMode = prev.featuresByMode || emptyModeFeatures();
-      const currentFeatures = currentFeaturesByMode?.[modeKey] || [];
-      let updatedFeatures = currentFeatures.includes(featureKey)
-        ? currentFeatures.filter(f => f !== featureKey)
-        : [...currentFeatures, featureKey];
-
-      // Auto-toggle delete_entry ON if edit_entry is toggled ON
-      if (featureKey === 'edit_entry' && !currentFeatures.includes('edit_entry')) {
-        if (!updatedFeatures.includes('delete_entry')) {
-          updatedFeatures.push('delete_entry');
-        }
-      }
-
-      const updatedFeaturesByMode = {
-        ...currentFeaturesByMode,
-        [modeKey]: updatedFeatures,
-      };
-
-      return {
-        ...prev,
-        featuresByMode: updatedFeaturesByMode,
-      };
+    if (changes.length === 0) {
+      toast('No profile changes to save');
+      return;
+    }
+    askReason(`Save profile of ${u.username}`, async reason => {
+      const { error } = await db().from('users').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', u.id);
+      if (error) throw error;
+      for (const c of changes) await logAudit(u, c.field, c.old, c.next, reason);
+      toast.success('Profile saved');
+      await refreshExpanded(u.id);
     });
   };
 
-  const handleEditFeatureToggle = (modeKey: ModeKey, featureKey: string) => {
-    console.log('🔄 Toggling edit feature:', featureKey, 'for mode:', modeKey);
-    setEditFeaturesByMode(prev => {
-      const currentFeatures = prev?.[modeKey] || [];
-      let updatedFeatures = currentFeatures.includes(featureKey)
-        ? currentFeatures.filter(f => f !== featureKey)
-        : [...currentFeatures, featureKey];
-
-      // Auto-toggle delete_entry ON if edit_entry is toggled ON
-      if (featureKey === 'edit_entry' && !currentFeatures.includes('edit_entry')) {
-        if (!updatedFeatures.includes('delete_entry')) {
-          updatedFeatures.push('delete_entry');
-        }
-      }
-
-      return {
-        ...prev,
-        [modeKey]: updatedFeatures,
+  const changeStatus = (u: UserRow, target: string) => {
+    askReason(`Set ${u.username} to ${target}`, async reason => {
+      const updates: Record<string, any> = {
+        status: target,
+        is_active: target === 'Active',
+        updated_at: new Date().toISOString(),
       };
+      // Unlocking clears the wrong-password count, otherwise the next mistake locks it again
+      if (target === 'Active' && 'failed_login_attempts' in u.raw) updates.failed_login_attempts = 0;
+      const { error } = await db().from('users').update(updates).eq('id', u.id);
+      if (error) throw error;
+      await logAudit(u, 'status', u.status, target, reason);
+      toast.success(`User status updated to ${target}`);
+      await refreshExpanded(u.id);
     });
   };
 
-  const handleModalSubmit = async (e: React.FormEvent) => {
+  const submitPasswordReset = () => {
+    const u = passwordFor;
+    if (!u) return;
+    const temp = passwordText.trim();
+    if (temp.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+    setPasswordFor(null);
+    setPasswordText('');
+    askReason(`Reset password of ${u.username}`, async reason => {
+      const hash = await bcrypt.hash(temp, 10);
+      const { error } = await db().from('users').update({
+        password_hash: hash,
+        temp_password: temp,
+        password_expired: true,
+        last_password_change: new Date().toISOString(),
+      }).eq('id', u.id);
+      if (error) throw error;
+      await logAudit(u, 'password', 'HIDDEN', 'TEMPORARY_SET', reason);
+      toast.success(`Password reset. Temp password: ${temp}`, { duration: 12000 });
+      await refreshExpanded(u.id);
+    });
+  };
+
+  const deleteUser = (u: UserRow) => {
+    askReason(`Delete user ${u.username}`, async reason => {
+      const { error } = await db().from('users').update({
+        status: 'Deleted',
+        is_active: false,
+        deleted_by: getStaffName(),
+        deleted_at: new Date().toISOString(),
+        deletion_reason: reason,
+      }).eq('id', u.id);
+      if (error) throw error;
+      await logAudit(u, 'status', u.status, 'Deleted', reason);
+      toast.success('User deleted');
+      if (expandedId === u.id) setExpandedId(null);
+      await loadUsers();
+    });
+  };
+
+  const restoreUser = (u: UserRow) => {
+    askReason(`Restore user ${u.username}`, async reason => {
+      const { error } = await db().from('users').update({
+        status: 'Active',
+        is_active: true,
+        deleted_by: null,
+        deleted_at: null,
+        deletion_reason: null,
+      }).eq('id', u.id);
+      if (error) throw error;
+      await logAudit(u, 'status', 'Deleted', 'Active', reason);
+      toast.success('User restored');
+      await loadUsers();
+    });
+  };
+
+  // ─── Create user ───────────────────────────────────────────────────────────
+
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUser.username || !newUser.password) {
+    const username = newUser.username.trim();
+    if (!username || !newUser.password) {
       toast.error('Username and password required');
       return;
     }
+    if (newUser.password.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+    if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
+      toast.error('This username already exists');
+      return;
+    }
+    if (newUser.aadhaar_number.trim() && !/^\d{12}$/.test(newUser.aadhaar_number.trim())) {
+      toast.error('Aadhaar must be 12 digits');
+      return;
+    }
+    const roleName = newUser.is_admin ? 'Admin' : 'Operator';
+    const roleId = roles.find(r => r.user_type === roleName)?.id;
+    if (!roleId) {
+      toast.error(`User type "${roleName}" not found`);
+      return;
+    }
+
     setLoading(true);
     try {
       const password_hash = await bcrypt.hash(newUser.password, 10);
-
-      // Get the appropriate user type ID
-      const userType = newUser.is_admin ? 'Admin' : 'Operator';
-      const { data: userTypeData } = await supabase
-        .from('user_types')
-        .select('id')
-        .eq('user_type', userType)
-        .single();
-
-      if (!userTypeData) {
-        throw new Error('User type not found');
-      }
-
-      // Try to insert with mode first - include all personal details
-      let insertData: any = {
-        username: newUser.username,
+      const row: Record<string, any> = {
+        username,
         password_hash,
-        user_type_id: userTypeData.id,
-        email: newUser.email || `${newUser.username}@thirumala.com`,
-        mode: newUser.mode,
-        // Personal details
-        full_name: newUser.full_name || null,
-        address: newUser.address || null,
-        aadhaar_number: newUser.aadhaar_number || null,
-        phone: newUser.phone || null,
+        user_type_id: roleId,
+        email: newUser.email.trim() || `${username}@thirumala.com`,
+        full_name: newUser.full_name.trim() || null,
+        phone: newUser.phone.trim() || null,
+        address: newUser.address.trim() || null,
+        aadhaar_number: newUser.aadhaar_number.trim() || null,
         date_of_birth: newUser.date_of_birth || null,
-        other_details: newUser.other_details || null,
+        other_details: newUser.other_details.trim() || null,
+        branch: newUser.branch.trim() || null,
+        employee_id: newUser.employee_id.trim() || null,
+        designation: newUser.designation.trim() || null,
+        created_by: getStaffName(),
+        status: 'Active',
+        is_active: true,
       };
 
-      let createdUser: any = null;
-      let finalUser: any = null;
-      
-      // First, try to insert with mode
-      const { data: userData, error } = await supabase
-        .from('users')
-        .insert(insertData)
-        .select()
-        .single();
-      
-      if (error) {
-        // Check if error is about missing columns (mode, aadhaar_number, address, or other personal details)
-        const isColumnError = error.message?.includes('column') || 
-                              error.message?.includes('does not exist') ||
-                              error.code === '42703' || 
-                              error.code === 'PGRST116';
-        
-        if (isColumnError) {
-          console.log('Column error detected, trying to create user without problematic columns...');
-          
-          // Extract the column name from error message
-          const errorMessage = error.message || '';
-          const columnMatch = errorMessage.match(/column ['"]([^'"]+)['"]/i) || 
-                             errorMessage.match(/column\s+([a-z_]+)/i);
-          const missingColumn = columnMatch ? columnMatch[1]?.toLowerCase() : null;
-          
-          console.log(`⚠️ Missing column detected: ${missingColumn}`);
-          
-          // Check which specific columns are missing
-          const isModeError = missingColumn === 'mode' || errorMessage.includes('mode');
-          const isAadhaarError = missingColumn === 'aadhaar_number' || missingColumn === 'aadhaar' || errorMessage.includes('aadhaar');
-          const isAddressError = missingColumn === 'address' || errorMessage.includes('address');
-          const isPhoneError = missingColumn === 'phone' || errorMessage.includes('phone');
-          const isFullNameError = missingColumn === 'full_name' || errorMessage.includes('full_name');
-          const isDateOfBirthError = missingColumn === 'date_of_birth' || errorMessage.includes('date_of_birth');
-          const isOtherDetailsError = missingColumn === 'other_details' || errorMessage.includes('other_details');
-          const isEmailError = missingColumn === 'email' || errorMessage.includes('email');
-          
-          // Create a clean insert data object with only required fields
-          // Email is required (NOT NULL constraint), so always include it
-          const cleanInsertData: any = {
-            username: insertData.username,
-            password_hash: insertData.password_hash,
-            user_type_id: insertData.user_type_id,
-            email: insertData.email || `${insertData.username}@thirumala.com`, // Always include email with default if needed
-          };
-          
-          if (!isModeError && insertData.mode) {
-            cleanInsertData.mode = insertData.mode;
-          }
-          
-          // Include personal details only if the columns exist
-          if (!isFullNameError && insertData.full_name) {
-            cleanInsertData.full_name = insertData.full_name;
-          }
-          if (!isAddressError && insertData.address) {
-            cleanInsertData.address = insertData.address;
-          }
-          if (!isAadhaarError && insertData.aadhaar_number) {
-            cleanInsertData.aadhaar_number = insertData.aadhaar_number;
-          }
-          if (!isPhoneError && insertData.phone) {
-            cleanInsertData.phone = insertData.phone;
-          }
-          if (!isDateOfBirthError && insertData.date_of_birth) {
-            cleanInsertData.date_of_birth = insertData.date_of_birth;
-          }
-          if (!isOtherDetailsError && insertData.other_details) {
-            cleanInsertData.other_details = insertData.other_details;
-          }
-          
-
-          
-          const { data: retryUser, error: retryError } = await supabase
-            .from('users')
-            .insert(cleanInsertData)
-            .select()
-            .single();
-          
-          if (retryError) {
-            console.error('❌ Error creating user after retry:', retryError);
-            // If retry also fails, try with only absolutely required fields
-            // Email is required (NOT NULL constraint), so always include it
-            const minimalData = {
-              username: insertData.username,
-              password_hash: insertData.password_hash,
-              user_type_id: insertData.user_type_id,
-              email: insertData.email || `${insertData.username}@thirumala.com`, // Always include email with default
-            };
-            
-            const { data: minimalUser, error: minimalError } = await supabase
-              .from('users')
-              .insert(minimalData)
-              .select()
-              .single();
-            
-            if (minimalError) {
-              console.error('❌ Error creating user with minimal data:', minimalError);
-              throw minimalError;
-            }
-            
-            if (!minimalUser || !minimalUser.id) {
-              throw new Error('User was created but no ID was returned. Please try again.');
-            }
-            
-            finalUser = minimalUser;
-            createdUser = minimalUser;
-            toast('User created with minimal data. Some personal details could not be saved due to missing database columns.', { 
-              duration: 7000,
-              icon: '⚠️',
-              style: {
-                background: '#f59e0b',
-                color: '#fff',
-              },
-            });
-          } else {
-            if (!retryUser || !retryUser.id) {
-              throw new Error('User was created but no ID was returned. Please try again.');
-            }
-            
-            finalUser = retryUser;
-            createdUser = retryUser;
-            
-            // Show warnings for missing columns
-            const missingColumns: string[] = [];
-            if (isModeError) missingColumns.push('mode');
-            if (isAadhaarError) missingColumns.push('aadhaar_number');
-            if (isAddressError) missingColumns.push('address');
-            if (isPhoneError) missingColumns.push('phone');
-            if (isFullNameError) missingColumns.push('full_name');
-            if (isDateOfBirthError) missingColumns.push('date_of_birth');
-            if (isOtherDetailsError) missingColumns.push('other_details');
-            if (isEmailError) missingColumns.push('email');
-            
-            if (missingColumns.length > 0) {
-              toast(`User created, but these columns don't exist in database: ${missingColumns.join(', ')}. Related data was not saved.`, { 
-                duration: 7000,
-                icon: '⚠️',
-                style: {
-                  background: '#f59e0b',
-                  color: '#fff',
-                },
-              });
-            }
-          }
-        } else {
-          console.error('❌ Error creating user:', error);
-          throw error;
-        }
-      } else {
-        createdUser = userData;
-        finalUser = userData;
-        // User created successfully with mode - column exists!
-      }
-
-      if (!createdUser || !createdUser.id || !finalUser || !finalUser.id) {
-        throw new Error('User was created but no ID was returned. Please try again.');
-      }
-
-      console.log('✅ User created with ID:', finalUser.id);
-
-      // CRITICAL: Verify user exists in database with aggressive retry logic
-      // This is essential because foreign key constraints require the user to exist
-      let verifyUser = null;
-      let verifyError = null;
-      const maxRetries = 10; // Increased retries
-      
-      console.log('🔍 Verifying user exists in database before inserting features...');
-      
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        // Increasing delays: 500ms, 700ms, 900ms, etc.
-        await new Promise(resolve => setTimeout(resolve, 500 + (attempt * 200)));
-        
-        const { data, error: checkError } = await supabase
-          .from('users')
-          .select('id, username')
-          .eq('id', finalUser.id)
-          .single();
-        
-        if (data && !checkError) {
-          verifyUser = data;
-          console.log(`✅ User verified in database on attempt ${attempt + 1}:`, verifyUser.id);
+      // If this database lacks an optional column, save the user without it
+      const REQUIRED = ['username', 'password_hash', 'user_type_id', 'email'];
+      let created: any = null;
+      for (let attempt = 0; attempt < 12 && !created; attempt++) {
+        const { data, error } = await db().from('users').insert(row).select().single();
+        if (!error) {
+          created = data;
           break;
         }
-        
-        verifyError = checkError;
-        console.log(`⏳ User verification attempt ${attempt + 1}/${maxRetries} failed, retrying...`, checkError);
+        const missing = Object.keys(row).find(k => !REQUIRED.includes(k) && (error.message || '').includes(`'${k}'`));
+        if (!missing || !['PGRST204', '42703'].includes(error.code || '')) throw error;
+        delete row[missing];
       }
+      if (!created?.id) throw new Error('User was not created');
 
-      if (!verifyUser) {
-        console.error('❌ User verification failed after', maxRetries, 'attempts:', verifyError);
-        throw new Error(`User was created but cannot be verified in database after ${maxRetries} attempts. The user ID is ${finalUser.id}. This might be a database issue. Please check the database and try again.`);
+      const target = { id: created.id, username };
+      if (!newUser.is_admin) {
+        await writePermissions(target, emptyFeatures(), newUser.features, [], 'New user created');
       }
+      await logAudit(target, 'user', null, `Created as ${roleName}`, 'New user created');
 
-      // Additional wait to ensure database has fully committed the user
-      console.log('⏳ Waiting for database to fully commit user...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      const newUserFeatureSets = mapFeaturesByMode(newUser.featuresByMode);
-      const totalSelectedFeatures = newUserFeatureSets.reduce(
-        (sum, set) => sum + set.features.length,
-        0
-      );
-
-      // Save feature access for non-admin users
-      if (!newUser.is_admin && totalSelectedFeatures > 0) {
-        const supportsUserAccessMode = await ensureUserAccessModeSupport();
-        const featureBatches = supportsUserAccessMode
-          ? newUserFeatureSets.filter(batch => batch.features.length > 0)
-          : [
-              {
-                mode: 'regular' as ModeKey,
-                features: normalizeFeatures(
-                  newUserFeatureSets.flatMap(batch => batch.features)
-                ),
-              },
-            ];
-
-        const allFeatureKeys = normalizeFeatures(
-          featureBatches.flatMap(batch => batch.features)
-        );
-
-        if (allFeatureKeys.length === 0) {
-          console.warn('⚠️ No valid features to save');
-          toast.error('User created but no valid features to save.');
-        } else {
-          console.log('🔧 Saving features for user:', {
-            userId: finalUser.id,
-            username: finalUser.username,
-            featuresByMode: featureBatches,
-          });
-
-          // STEP 1: Ensure all features exist in the features table
-          const featureDefinitions = features.filter(f => allFeatureKeys.includes(f.key));
-
-          for (const featureDef of featureDefinitions) {
-            try {
-              const { error: featureError } = await supabase
-                .from('features')
-                .upsert(
-                  {
-                    key: featureDef.key,
-                    name: featureDef.name,
-                  },
-                  {
-                    onConflict: 'key',
-                  }
-                );
-
-              if (
-                featureError &&
-                featureError.code !== '23505' &&
-                featureError.code !== 'PGRST116'
-              ) {
-                console.warn(`⚠️ Could not ensure feature "${featureDef.key}" exists:`, featureError);
-              } else {
-                console.log(`✅ Feature "${featureDef.key}" ensured in database`);
-              }
-            } catch (err) {
-              console.warn(`⚠️ Exception ensuring feature "${featureDef.key}":`, err);
-            }
-          }
-
-          // STEP 2: Wait for features to be committed
-          await new Promise(resolve => setTimeout(resolve, 400));
-
-          // STEP 3: Final user verification before inserting features
-          const { data: finalUserCheck, error: finalCheckError } = await supabase
-            .from('users')
-            .select('id')
-            .eq('id', finalUser.id)
-            .single();
-
-          if (!finalUserCheck || finalCheckError) {
-            console.error('❌ Final user check failed before inserting features:', {
-              error: finalCheckError,
-              userId: finalUser.id,
-            });
-
-            // Try one more time after waiting longer
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            const { data: retryCheck } = await supabase
-              .from('users')
-              .select('id')
-              .eq('id', finalUser.id)
-              .single();
-
-            if (!retryCheck) {
-              toast.error(
-                'User created but database is not ready. Features cannot be saved. Please edit the user to add features manually.'
-              );
-              console.error('❌ User still not found after extended wait. Foreign key constraint may be broken.');
-              console.error('💡 SOLUTION: Run the SQL fix in fix-foreign-key-immediate.sql file to fix the database constraint.');
-            }
-          }
-
-          // STEP 4: Insert user_access records per mode with retry logic
-          console.log('💾 Inserting user_access records per mode...');
-          let successCount = 0;
-          let errorCount = 0;
-          const errors: string[] = [];
-
-          for (const batch of featureBatches) {
-            for (const featureKey of batch.features) {
-            const trimmedKey = featureKey.trim();
-            if (!trimmedKey) continue;
-            
-            let saved = false;
-            let lastError = null;
-            
-            // Try up to 3 times per feature
-            for (let retry = 0; retry < 3; retry++) {
-              if (retry > 0) {
-                // Wait longer between retries
-                await new Promise(resolve => setTimeout(resolve, 300 * retry));
-                
-                // Re-verify user exists before each retry
-                const { data: userCheck } = await supabase
-                  .from('users')
-                  .select('id')
-                  .eq('id', finalUser.id)
-                  .single();
-                
-                if (!userCheck) {
-                  console.error(`❌ User ${finalUser.id} not found before retry ${retry + 1} for feature "${trimmedKey}"`);
-                  lastError = new Error('User not found in database');
-                  continue;
-                }
-              }
-              
-              try {
-                const accessPayload: Record<string, any> = {
-                  user_id: finalUser.id,
-                  feature_key: trimmedKey,
-                };
-                if (supportsUserAccessMode) {
-                  accessPayload.mode = batch.mode;
-                }
-                const { error: singleError, data: singleData } = await upsertUserAccess(
-                  accessPayload,
-                  supportsUserAccessMode
-                );
-                
-                if (singleError) {
-                  lastError = singleError;
-                  
-                  // Check if it's a foreign key error
-                  if (singleError.code === '23503') {
-                    const errorMsg = singleError.message || '';
-                    const isUserssError = errorMsg.includes('userss');
-                    
-                    if (isUserssError) {
-                      console.error(`❌ FOREIGN KEY CONSTRAINT ERROR for "${trimmedKey}": The database constraint points to wrong table "userss" instead of "users"`);
-                      console.error(`💡 FIX REQUIRED: Run the SQL in fix-foreign-key-immediate.sql to fix the database constraint.`);
-                      errors.push(`"${trimmedKey}" - Database constraint error (see console for SQL fix)`);
-                      errorCount++;
-                      break; // Don't retry, it won't work until constraint is fixed
-                    }
-                  }
-                  
-                  console.error(`❌ Failed to save feature "${trimmedKey}" (attempt ${retry + 1}/3):`, singleError);
-                  
-                  if (retry === 2) {
-                    // Last retry failed
-                    errorCount++;
-                    errors.push(`"${trimmedKey}" - ${singleError.message || 'Unknown error'}`);
-                  }
-                } else {
-                  // Success!
-                  if (singleData && singleData.length > 0) {
-                    console.log(`✅ Feature "${trimmedKey}" saved successfully${retry > 0 ? ` (on retry ${retry + 1})` : ''}`);
-                    successCount++;
-                    saved = true;
-                    break;
-                  } else {
-                    // No error but no data - might still be saved, verify
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                    let verifyQuery = supabase
-                      .from('user_access')
-                      .select('id')
-                      .eq('user_id', finalUser.id)
-                      .eq('feature_key', trimmedKey);
-                    verifyQuery = applyModeFilter(verifyQuery, supportsUserAccessMode, batch.mode);
-                    const { data: verify } = await verifyQuery.maybeSingle();
-                    
-                    if (verify) {
-                      console.log(`✅ Feature "${trimmedKey}" verified as saved`);
-                      successCount++;
-                      saved = true;
-                      break;
-                    }
-                  }
-                }
-              } catch (err: any) {
-                lastError = err;
-                console.error(`❌ Exception saving feature "${trimmedKey}" (attempt ${retry + 1}/3):`, err);
-                
-                if (retry === 2) {
-                  errorCount++;
-                  errors.push(`"${trimmedKey}" - ${err.message || 'Exception'}`);
-                }
-              }
-            }
-            
-            if (!saved && lastError) {
-              console.error(`❌ Feature "${trimmedKey}" failed after all retries`);
-            }
-            
-            // Small delay between features
-            await new Promise(resolve => setTimeout(resolve, 150));
-          }
-          
-          // Show results
-          if (errorCount > 0) {
-            const errorDetails = errors.length > 0 ? ` Errors: ${errors.join(', ')}` : '';
-            
-            if (errors.some(e => e.includes('Database constraint error'))) {
-              toast.error(
-                `User created but ${errorCount} feature(s) failed due to database constraint issue. ${successCount} saved.${errorDetails}\n\n⚠️ DATABASE FIX REQUIRED: Run fix-foreign-key-immediate.sql in Supabase SQL Editor.`,
-                { duration: 15000 }
-              );
-            } else {
-              toast.error(`User created but ${errorCount} feature(s) failed to save. ${successCount} saved successfully.${errorDetails}`);
-            }
-          } else if (successCount > 0) {
-            toast.success(`User created! All ${successCount} feature(s) saved successfully.`);
-          }
-          
-          // Always verify what was actually saved
-          for (const batch of featureBatches) {
-            await new Promise(resolve => setTimeout(resolve, 300));
-            let verifySavedQuery = supabase
-              .from('user_access')
-              .select('feature_key')
-              .eq('user_id', finalUser.id);
-            verifySavedQuery = applyModeFilter(verifySavedQuery, supportsUserAccessMode, batch.mode);
-            const { data: verifyData, error: verifyError } = await verifySavedQuery;
-            
-            if (!verifyError && verifyData) {
-              const savedFeatures = verifyData.map(d => d.feature_key).filter(Boolean);
-              console.log(`✅ Final verification (${batch.mode}) - Saved features:`, savedFeatures);
-              
-              if (savedFeatures.length < batch.features.length) {
-                const missing = batch.features.filter(f => !savedFeatures.includes(f));
-                if (missing.length > 0) {
-                  console.warn(`⚠️ Missing features for ${batch.mode}:`, missing);
-                }
-              }
-            }
-          }
-        }
-      }
-    } else if (!newUser.is_admin && totalSelectedFeatures === 0) {
-        console.warn('⚠️ User created without any feature access assigned');
-        toast.error('User created but no features were selected. User will only see Dashboard.');
-      }
-
-      // Save credentials to database and localStorage for Dashboard display
-      const combinedFeatureList = normalizeFeatures(
-        MODE_VALUES.flatMap(modeKey => newUser.featuresByMode[modeKey] || [])
-      );
-      const credentialsData = {
-        username: newUser.username,
+      // Same credentials record Regular / ITR saves for its Dashboard
+      const credentials = {
+        username,
         password: newUser.password,
         is_admin: newUser.is_admin,
-        features: combinedFeatureList,
-        featuresByMode: newUser.featuresByMode,
+        features: unique(MODE_VALUES.flatMap(m => newUser.features[m])),
+        featuresByMode: newUser.features,
         created_at: new Date().toISOString(),
       };
-      
-      // Save to database (will work if table exists, otherwise falls back to localStorage only)
-      await supabaseDB.saveUserCredentials(credentialsData);
-      
-      // Also save to localStorage as fallback
-      const existingCredentials = JSON.parse(localStorage.getItem('user_credentials') || '[]');
-      existingCredentials.push(credentialsData);
-      // Keep only last 10 credentials
-      const recentCredentials = existingCredentials.slice(-10);
-      localStorage.setItem('user_credentials', JSON.stringify(recentCredentials));
-      
-      // Show detailed success message with credentials
-      const featuresList = newUser.is_admin
-        ? 'All Features (Admin)'
-        : (() => {
-            const parts = MODE_VALUES.map(modeKey => {
-              const modeFeatures = normalizeFeatures(newUser.featuresByMode[modeKey]);
-              if (!modeFeatures.length) return null;
-              const named = modeFeatures
-                .map(f => features.find(fe => fe.key === f)?.name || f)
-                .join(', ');
-              return `${MODE_LABELS[modeKey]}: ${named}`;
-            }).filter(Boolean);
-            return parts.length > 0 ? parts.join(' | ') : 'None (Dashboard only)';
-          })();
-      
-      toast.success(
-        `✅ Login Credentials Created!\n\nUsername: ${newUser.username}\nPassword: ${newUser.password}\n\nAccess Features: ${featuresList}`,
-        { duration: 12000 }
-      );
-      
+      await supabaseDB.saveUserCredentials(credentials);
+      try {
+        const saved = JSON.parse(localStorage.getItem('user_credentials') || '[]');
+        saved.push(credentials);
+        localStorage.setItem('user_credentials', JSON.stringify(saved.slice(-10)));
+      } catch {
+        /* browser storage is only a convenience */
+      }
+
+      toast.success(`Login Credentials Created!\n\nUsername: ${username}\nPassword: ${newUser.password}`, { duration: 12000 });
       setShowAddForm(false);
-      setNewUser({
-        username: '',
-        password: '',
-        is_admin: false,
-        featuresByMode: emptyModeFeatures(),
-        mode: currentMode,
-        address: '',
-        aadhaar_number: '',
-        phone: '',
-        email: '',
-        full_name: '',
-        date_of_birth: '',
-        other_details: '',
-      });
-      loadUsers();
-      
-      // Trigger dashboard refresh to show new credentials
+      setNewUser(emptyNewUser());
+      await loadUsers();
       window.dispatchEvent(new Event('dashboard-refresh'));
     } catch (err: any) {
       toast.error(err.message || 'Error creating user');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
+  const setNew = (field: string, value: any) => setNewUser(prev => ({ ...prev, [field]: value }));
+  const setProf = (field: keyof ProfileForm, value: string) => setProfile(prev => ({ ...prev, [field]: value }));
+
   if (!user?.is_admin) {
+    return <div className='p-8 text-center text-red-600 text-xl font-bold'>You are not authorized to view this page.</div>;
+  }
+
+  const active = users.filter(u => u.status !== 'Deleted');
+  const admins = active.filter(u => u.is_admin);
+  const others = active.filter(u => !u.is_admin);
+  const deleted = users.filter(u => u.status === 'Deleted');
+
+  // ─── One user card ─────────────────────────────────────────────────────────
+
+  const renderCard = (u: UserRow) => {
+    const isOpen = expandedId === u.id;
+    const isSelf = u.username === user?.username;
+    const isDeleted = u.status === 'Deleted';
+    const shown = [...u.features.finance, ...u.features.regular, ...u.features.itr];
+    const names = unique(u.features.finance.map(k => FINANCE_FEATURES.find(f => f.key === k)?.name || k).concat(
+      [...u.features.regular, ...u.features.itr].map(k => REGULAR_FEATURES.find(f => f.key === k)?.name || k)
+    ));
     return (
-      <div className='p-8 text-center text-red-600 text-xl font-bold'>
-        You are not authorized to view this page.
+      <div
+        key={u.id}
+        className={`flex flex-col border rounded-xl shadow-md px-4 md:px-8 py-5 md:py-6 transition-shadow hover:shadow-lg bg-white w-full ${isOpen ? 'ring-2 ring-blue-200' : 'border-gray-200'}`}
+      >
+        <div className='flex items-center justify-between gap-4 cursor-pointer w-full' onClick={() => toggleCard(u)}>
+          <div className='flex items-center gap-5 flex-1 min-w-0'>
+            <div className='w-16 h-16 shrink-0 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-2xl font-bold text-white shadow-lg border-4 border-white'>
+              {u.username.charAt(0).toUpperCase()}
+            </div>
+            <div className='flex flex-col min-w-0'>
+              <div className='flex flex-wrap items-center gap-2 mb-2'>
+                <span className='text-xl font-semibold text-blue-900 break-words'>{u.username}</span>
+                {u.is_admin && (
+                  <span className='inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-semibold'>
+                    <Shield className='w-4 h-4' /> Admin
+                  </span>
+                )}
+                {isRecentlyCreated(u.created_at) && (
+                  <span className='inline-flex items-center gap-1 bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full text-xs font-semibold'>
+                    <Clock className='w-3 h-3' /> New
+                  </span>
+                )}
+                {u.status !== 'Active' && (
+                  <span className='inline-flex items-center gap-1 bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs font-semibold'>
+                    <Lock className='w-3 h-3' /> {u.status}
+                  </span>
+                )}
+              </div>
+              <div className='flex flex-wrap gap-2 items-center'>
+                {u.is_admin ? (
+                  <span className='inline-block bg-gradient-to-r from-green-100 to-green-300 text-green-900 px-3 py-1 rounded-full text-xs font-semibold border border-green-200 shadow-sm'>
+                    All Access (Admin)
+                  </span>
+                ) : shown.length === 0 ? (
+                  <span className='inline-block bg-gray-100 text-gray-500 px-2 py-1 rounded-full text-xs font-medium border border-gray-200'>No access</span>
+                ) : (
+                  <>
+                    {names.slice(0, 3).map(name => (
+                      <span key={name} className='bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium border border-blue-200 shadow-sm'>
+                        {name}
+                      </span>
+                    ))}
+                    {names.length > 3 && (
+                      <span className='bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs font-medium border border-blue-200'>+{names.length - 3} more</span>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className='flex flex-col items-end gap-2 shrink-0' onClick={e => e.stopPropagation()}>
+            {isDeleted ? (
+              <Button variant='secondary' size='sm' onClick={() => restoreUser(u)} disabled={loading}>
+                Restore
+              </Button>
+            ) : (
+              <Button variant='danger' size='sm' disabled={isSelf || loading} onClick={() => deleteUser(u)}>
+                Delete
+              </Button>
+            )}
+            <button
+              type='button'
+              className='text-gray-400 hover:text-blue-600 transition-colors'
+              onClick={() => toggleCard(u)}
+              aria-label={isOpen ? 'Collapse details' : 'Expand details'}
+            >
+              {isOpen ? <ChevronUp className='w-5 h-5' /> : <ChevronDown className='w-5 h-5' />}
+            </button>
+          </div>
+        </div>
+
+        {isOpen && expanded && (
+          <div className='mt-4 pt-3 border-t border-gray-100'>
+            <div className='flex flex-wrap gap-1 border-b border-gray-200 mb-4'>
+              {([
+                ['profile', 'Profile'],
+                ['permissions', 'Permissions'],
+                ['activity', 'Activity'],
+                ['login_history', 'Login History'],
+                ['audit', 'Audit Log'],
+              ] as [TabKey, string][]).map(([key, label]) => (
+                <button
+                  key={key}
+                  type='button'
+                  onClick={() => setTab(key)}
+                  className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === key ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {tab === 'profile' && (
+              <div className='space-y-4'>
+                <div className='grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3'>
+                  <Input label='Full Name' value={profile.full_name} onChange={v => setProf('full_name', v)} />
+                  <Input label='Email' type='email' value={profile.email} onChange={v => setProf('email', v)} />
+                  <Input label='Phone Number' type='tel' value={profile.phone} onChange={v => setProf('phone', v)} />
+                  <Input label='Aadhaar Number' value={profile.aadhaar_number} onChange={v => setProf('aadhaar_number', v)} maxLength={12} />
+                  <Input label='Date of Birth' type='date' value={profile.date_of_birth} onChange={v => setProf('date_of_birth', v)} />
+                  <Input label='Address' value={profile.address} onChange={v => setProf('address', v)} />
+                  <Input label='Branch' value={profile.branch} onChange={v => setProf('branch', v)} />
+                  <Input label='Employee ID' value={profile.employee_id} onChange={v => setProf('employee_id', v)} />
+                  <Input label='Designation' value={profile.designation} onChange={v => setProf('designation', v)} />
+                  <div>
+                    <label className='block text-sm font-medium text-gray-700 mb-1'>Role</label>
+                    <select
+                      value={profile.user_type_id}
+                      onChange={e => setProf('user_type_id', e.target.value)}
+                      disabled={isSelf}
+                      className='w-full h-[42px] px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
+                    >
+                      {roles.map(r => (
+                        <option key={r.id} value={r.id}>{r.user_type}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className='md:col-span-2'>
+                    <label className='block text-sm font-medium text-gray-700 mb-1'>Other Personal Details</label>
+                    <textarea
+                      value={profile.other_details}
+                      onChange={e => setProf('other_details', e.target.value)}
+                      rows={2}
+                      className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500'
+                    />
+                  </div>
+                </div>
+
+                <div className='grid grid-cols-2 md:grid-cols-4 gap-3 text-sm bg-gray-50 rounded-lg p-3'>
+                  <div><div className='text-xs text-gray-500'>Created</div><div className='font-medium text-gray-800'>{fmtDateTime(u.created_at)}</div></div>
+                  <div><div className='text-xs text-gray-500'>Created By</div><div className='font-medium text-gray-800'>{u.raw.created_by || '-'}</div></div>
+                  <div><div className='text-xs text-gray-500'>Last Login</div><div className='font-medium text-gray-800'>{fmtDateTime(u.raw.last_login)}</div></div>
+                  <div><div className='text-xs text-gray-500'>Last Password Change</div><div className='font-medium text-gray-800'>{fmtDateTime(u.raw.last_password_change)}</div></div>
+                </div>
+
+                {!isDeleted && (
+                  <div className='flex flex-wrap gap-2'>
+                    <Button size='sm' onClick={() => saveProfile(u)} disabled={loading}>
+                      <span className='inline-flex items-center gap-1'><Save className='w-4 h-4' /> Save Profile</span>
+                    </Button>
+                    <Button variant='secondary' size='sm' onClick={() => { setPasswordText(''); setPasswordFor(u); }} disabled={loading}>
+                      <span className='inline-flex items-center gap-1'><Key className='w-4 h-4' /> Reset Password</span>
+                    </Button>
+                    {u.status === 'Active' ? (
+                      <>
+                        <Button variant='secondary' size='sm' disabled={isSelf || loading} onClick={() => changeStatus(u, 'Locked')}>
+                          <span className='inline-flex items-center gap-1'><Lock className='w-4 h-4' /> Lock Account</span>
+                        </Button>
+                        <Button variant='secondary' size='sm' disabled={isSelf || loading} onClick={() => changeStatus(u, 'Suspended')}>
+                          <span className='inline-flex items-center gap-1'><Ban className='w-4 h-4' /> Suspend</span>
+                        </Button>
+                        <Button variant='secondary' size='sm' disabled={isSelf || loading} onClick={() => changeStatus(u, 'Disabled')}>
+                          <span className='inline-flex items-center gap-1'><X className='w-4 h-4' /> Disable</span>
+                        </Button>
+                      </>
+                    ) : (
+                      <Button variant='secondary' size='sm' disabled={loading} onClick={() => changeStatus(u, 'Active')}>
+                        <span className='inline-flex items-center gap-1'>
+                          {u.status === 'Locked' ? <Unlock className='w-4 h-4' /> : <RotateCcw className='w-4 h-4' />}
+                          {u.status === 'Locked' ? 'Unlock Account' : 'Activate Account'}
+                        </span>
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === 'permissions' && (
+              u.is_admin ? (
+                <div className='text-blue-600 text-sm p-4 bg-blue-50 rounded border border-blue-200'>
+                  Admin users have access to all features automatically. No need to select individual features.
+                </div>
+              ) : (
+                <div className='space-y-3'>
+                  <PermissionPicker
+                    value={editFeatures}
+                    onToggle={(m, k) => setEditFeatures(prev => toggleFeature(prev, m, k))}
+                    disabled={isDeleted}
+                  />
+                  {u.oldFinanceKeys.length > 0 && (
+                    <p className='text-xs text-gray-500'>
+                      {u.oldFinanceKeys.length} older Finance permission(s) from the previous screen are kept as they are.
+                    </p>
+                  )}
+                  {!isDeleted && (
+                    <div className='flex flex-wrap items-center gap-2'>
+                      <Button size='sm' onClick={() => savePermissions(u)} disabled={loading}>
+                        <span className='inline-flex items-center gap-1'><Save className='w-4 h-4' /> Save Permissions</span>
+                      </Button>
+                      <select
+                        value={copyFromId}
+                        onChange={e => setCopyFromId(e.target.value)}
+                        className='h-[38px] px-2 border border-gray-300 rounded-md bg-white text-sm'
+                      >
+                        <option value=''>Copy permissions from…</option>
+                        {others.filter(x => x.id !== u.id).map(x => (
+                          <option key={x.id} value={x.id}>{x.username}</option>
+                        ))}
+                      </select>
+                      <Button variant='secondary' size='sm' onClick={copyPermissions} disabled={!copyFromId}>Copy</Button>
+                    </div>
+                  )}
+                </div>
+              )
+            )}
+
+            {tab === 'activity' && (
+              <div className='space-y-3'>
+                <div className='grid grid-cols-3 gap-3 text-center'>
+                  <div className='p-3 bg-gray-50 border border-gray-200 rounded-lg'>
+                    <div className='text-xs text-gray-500'>Login Count</div>
+                    <div className='text-lg font-bold text-gray-800'>{u.raw.login_count || 0}</div>
+                  </div>
+                  <div className='p-3 bg-gray-50 border border-gray-200 rounded-lg'>
+                    <div className='text-xs text-gray-500'>Failed Attempts</div>
+                    <div className='text-lg font-bold text-gray-800'>{u.raw.failed_login_attempts || 0}</div>
+                  </div>
+                  <div className='p-3 bg-gray-50 border border-gray-200 rounded-lg'>
+                    <div className='text-xs text-gray-500'>Last Active</div>
+                    <div className='text-sm font-bold text-gray-800'>{fmtDateTime(u.raw.last_login)}</div>
+                  </div>
+                </div>
+                {tabLoading ? (
+                  <p className='text-center text-gray-500 py-4 text-sm'>Loading activity…</p>
+                ) : tabRows.length === 0 ? (
+                  <p className='text-center text-gray-500 py-4 text-sm'>No activity logged yet.</p>
+                ) : (
+                  tabRows.map(a => (
+                    <div key={a.id} className='p-3 border border-gray-200 rounded-lg text-sm flex justify-between gap-4'>
+                      <div className='min-w-0'>
+                        <div className='font-semibold text-gray-800'>{a.activity_type}</div>
+                        <p className='text-gray-600 break-words'>{a.description}</p>
+                      </div>
+                      <span className='text-gray-500 shrink-0'>{fmtDateTime(a.created_at)}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {tab === 'login_history' && (
+              tabLoading ? (
+                <p className='text-center text-gray-500 py-4 text-sm'>Loading login history…</p>
+              ) : tabRows.length === 0 ? (
+                <p className='text-center text-gray-500 py-4 text-sm'>No login records found.</p>
+              ) : (
+                <table className='fit-table fit-lg border border-gray-200'>
+                  <thead className='bg-gray-50'>
+                    <tr>
+                      <th className='text-left'>Date &amp; Time</th>
+                      <th className='text-left'>IP Address</th>
+                      <th className='text-left'>Device</th>
+                      <th className='text-left'>Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tabRows.map(lh => (
+                      <tr key={lh.id} className='border-t border-gray-100'>
+                        <td className='fit-nowrap'>{fmtDateTime(lh.login_time)}</td>
+                        <td className='fit-nowrap font-mono'>{lh.ip_address || '-'}</td>
+                        <td>{lh.os || 'Unknown'} / {lh.browser || 'Unknown'}</td>
+                        <td className='fit-nowrap'>
+                          <span className={`px-2 py-0.5 rounded-full font-semibold ${lh.success ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                            {lh.success ? 'Success' : 'Failed'}
+                          </span>
+                          {!lh.success && lh.failure_reason ? ` ${lh.failure_reason}` : ''}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            )}
+
+            {tab === 'audit' && (
+              tabLoading ? (
+                <p className='text-center text-gray-500 py-4 text-sm'>Loading audit log…</p>
+              ) : tabRows.length === 0 ? (
+                <p className='text-center text-gray-500 py-4 text-sm'>No administrative changes logged.</p>
+              ) : (
+                <div className='space-y-2'>
+                  {tabRows.map(log => (
+                    <div key={log.id} className='p-3 border border-gray-200 rounded-lg text-sm'>
+                      <div className='flex justify-between gap-4 text-gray-500 text-xs mb-1'>
+                        <span>{fmtDateTime(log.created_at)}</span>
+                        <span>By {log.changed_by}</span>
+                      </div>
+                      <div className='text-gray-800 break-words'>
+                        Updated <span className='font-semibold text-blue-800'>{log.field}</span>
+                        {log.old_value ? <> from &quot;{log.old_value}&quot;</> : null}
+                        {log.new_value ? <> to &quot;{log.new_value}&quot;</> : null}
+                      </div>
+                      {log.reason && <p className='text-gray-600 mt-1 break-words'>Reason: {log.reason}</p>}
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
+        )}
       </div>
     );
+  };
+
+  // ─── Page ──────────────────────────────────────────────────────────────────
+
+  // Admins, or Finance users given the User Management permission
+  if (user && !user.is_admin && !(Array.isArray(user.features) && user.features.includes('user_access_management'))) {
+    return <Navigate to='/' replace />;
   }
 
   return (
-    <div className='min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col'>
+    <div className='min-h-full bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col'>
       <div className='max-w-7xl w-full mx-auto py-8 px-4'>
-        {/* Header */}
         <div className='flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8'>
           <div>
             <div className='flex items-center gap-3 mb-1'>
-              <h1 className='text-3xl font-bold text-gray-900'>
-                User Management
-              </h1>
-              <ModeLabel />
-            </div>
-            <p className='text-gray-600'>
-              Create login credentials and manage feature access for your organization members
-            </p>
-            <div className='mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full border text-sm font-semibold'
-              data-current-mode={currentMode}
-              style={{ borderColor: currentMode === 'itr' ? '#fb923c' : '#3b82f6' }}
-            >
-              <span
-                className={`inline-flex items-center gap-2 px-2 py-0.5 rounded-full border text-xs font-semibold ${MODE_BADGES[currentMode].badge}`}
-              >
-                {currentMode === 'itr' ? <FileCheck className='w-3 h-3' /> : <Briefcase className='w-3 h-3' />}
-                {MODE_LABELS[currentMode]}
-              </span>
-              <span className='text-gray-500 text-xs'>
-                Feature access settings update when you switch modes.
+              <h1 className='text-3xl font-bold text-gray-900'>User Management</h1>
+              <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border ${MODE_BADGE[pageMode].pill}`}>
+                <span className={`w-2 h-2 rounded-full ${MODE_BADGE[pageMode].dot}`} />
+                {MODE_LABELS[pageMode]}
               </span>
             </div>
-            <div className='text-sm text-gray-500 mt-2 flex flex-wrap items-center gap-3'>
-              <span>
-                Total Users: <span className='font-semibold text-gray-700'>{users.length}</span>
-              </span>
+            <p className='text-gray-600'>Create login credentials and manage feature access for your organization members</p>
+            <p className='text-gray-500 text-sm mt-2'>Permissions for Regular, ITR and Finance can all be given from here.</p>
+            <div className='text-sm text-gray-500 mt-2'>
+              Total Users: <span className='font-semibold text-gray-700'>{active.length}</span>
             </div>
           </div>
           <Button
@@ -1138,196 +1136,64 @@ const upsertUserAccess = async (
           <Card className='mb-8 p-0 overflow-visible'>
             <div className='bg-gradient-to-r from-blue-500 to-indigo-600 px-4 sm:px-8 py-4 sm:py-5 flex items-center gap-3 rounded-t-2xl'>
               <UserIcon className='w-7 h-7 sm:w-8 sm:h-8 text-white' />
-              <h2 className='text-xl sm:text-2xl font-bold text-white flex-1'>
-                Create Login Credentials
-              </h2>
+              <h2 className='text-xl sm:text-2xl font-bold text-white flex-1'>Create Login Credentials</h2>
             </div>
-            <form
-              onSubmit={handleModalSubmit}
-              ref={formRef}
-              className='space-y-6 sm:space-y-8 px-4 sm:px-10 py-6 sm:py-10'
-            >
-              {/* Info Banner */}
+            <form onSubmit={handleCreate} className='space-y-6 px-4 sm:px-10 py-6 sm:py-8'>
               <div className='bg-blue-50 border-l-4 border-blue-500 p-4 rounded'>
                 <p className='text-sm text-blue-800'>
                   <strong>Note:</strong> Creating a user here will generate login credentials. The member can use the username and password to log in to the system.
                 </p>
               </div>
-
-              {/* User Info Section */}
-              <div className='grid grid-cols-1 gap-3 sm:gap-4'>
-                <Input
-                  label='Full Name'
-                  value={newUser?.full_name || ''}
-                  onChange={v => handleModalChange('full_name', v)}
-                  placeholder='Enter full name'
-                />
-                <Input
-                  label='Username (Login ID)'
-                  value={newUser?.username || ''}
-                  onChange={v => handleModalChange('username', v)}
-                  placeholder='Enter username for login'
-                  required
-                />
-                <Input
-                  label='Password (Login Password)'
-                  type='password'
-                  value={newUser?.password || ''}
-                  onChange={v => handleModalChange('password', v)}
-                  placeholder='Enter password for login'
-                  required
-                />
-                <Input
-                  label='Email'
-                  type='email'
-                  value={newUser?.email || ''}
-                  onChange={v => handleModalChange('email', v)}
-                  placeholder='Enter email address'
-                />
-                <Input
-                  label='Phone Number'
-                  type='tel'
-                  value={newUser?.phone || ''}
-                  onChange={v => handleModalChange('phone', v)}
-                  placeholder='Enter phone number'
-                />
-                <Input
-                  label='Address'
-                  value={newUser?.address || ''}
-                  onChange={v => handleModalChange('address', v)}
-                  placeholder='Enter address'
-                />
-                <Input
-                  label='Aadhaar Number'
-                  type='text'
-                  value={newUser?.aadhaar_number || ''}
-                  onChange={v => handleModalChange('aadhaar_number', v)}
-                  placeholder='Enter Aadhaar number (12 digits)'
-                  maxLength={12}
-                />
-                <Input
-                  label='Date of Birth'
-                  type='date'
-                  value={newUser?.date_of_birth || ''}
-                  onChange={v => handleModalChange('date_of_birth', v)}
-                  placeholder='Select date of birth'
-                />
-                <div>
-                  <label className='block text-sm font-medium text-gray-700 mb-1'>
-                    Other Personal Details
-                  </label>
+              <div className='grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4'>
+                <Input label='Full Name' value={newUser.full_name} onChange={v => setNew('full_name', v)} placeholder='Enter full name' />
+                <Input label='Username (Login ID)' value={newUser.username} onChange={v => setNew('username', v)} placeholder='Enter username for login' required />
+                <Input label='Password (Login Password)' type='password' value={newUser.password} onChange={v => setNew('password', v)} placeholder='Enter password for login' required />
+                <Input label='Email' type='email' value={newUser.email} onChange={v => setNew('email', v)} placeholder='Enter email address' />
+                <Input label='Phone Number' type='tel' value={newUser.phone} onChange={v => setNew('phone', v)} placeholder='Enter phone number' />
+                <Input label='Address' value={newUser.address} onChange={v => setNew('address', v)} placeholder='Enter address' />
+                <Input label='Aadhaar Number' value={newUser.aadhaar_number} onChange={v => setNew('aadhaar_number', v)} placeholder='Enter Aadhaar number (12 digits)' maxLength={12} />
+                <Input label='Date of Birth' type='date' value={newUser.date_of_birth} onChange={v => setNew('date_of_birth', v)} />
+                <Input label='Branch' value={newUser.branch} onChange={v => setNew('branch', v)} placeholder='Enter branch' />
+                <Input label='Employee ID' value={newUser.employee_id} onChange={v => setNew('employee_id', v)} placeholder='Enter employee ID' />
+                <Input label='Designation' value={newUser.designation} onChange={v => setNew('designation', v)} placeholder='Enter designation' />
+                <div className='md:col-span-2'>
+                  <label className='block text-sm font-medium text-gray-700 mb-1'>Other Personal Details</label>
                   <textarea
-                    value={newUser?.other_details || ''}
-                    onChange={e => handleModalChange('other_details', e.target.value)}
+                    value={newUser.other_details}
+                    onChange={e => setNew('other_details', e.target.value)}
                     placeholder='Enter any other personal details...'
-                    rows={3}
+                    rows={2}
                     className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500'
                   />
                 </div>
-                <label className='flex items-center gap-2 mt-2 cursor-pointer select-none'>
-                  <input
-                    type='checkbox'
-                    checked={newUser?.is_admin || false}
-                    onChange={e => {
-                      const isAdmin = e.target.checked;
-                      handleModalChange('is_admin', isAdmin);
-                      // If admin is checked, clear features (admin has all access)
-                      if (isAdmin) {
-                        setNewUser(prev => ({
-                          ...prev,
-                          featuresByMode: emptyModeFeatures(),
-                        }));
-                        console.log('🔐 Admin mode enabled - clearing features');
-                      }
-                    }}
-                    className='accent-blue-600 w-5 h-5'
-                  />
-                  <span className='text-blue-800 font-medium'>Admin (has access to all features)</span>
-                </label>
               </div>
-              {/* Divider */}
-              <div className='border-t border-blue-100 my-2' />
-              {/* Feature Access Section */}
-              <div className={newUser?.is_admin ? 'opacity-50 pointer-events-none' : ''}>
-                <div className='font-semibold mb-4 text-blue-800'>
-                  Feature Access by Mode
-                </div>
-                {newUser?.is_admin ? (
+              <label className='flex items-center gap-2 cursor-pointer select-none'>
+                <input
+                  type='checkbox'
+                  checked={newUser.is_admin}
+                  onChange={e => setNewUser(prev => ({ ...prev, is_admin: e.target.checked, features: e.target.checked ? emptyFeatures() : prev.features }))}
+                  className='accent-blue-600 w-5 h-5'
+                />
+                <span className='text-blue-800 font-medium'>Admin (has access to all features)</span>
+              </label>
+              <div className='border-t border-blue-100' />
+              <div>
+                <div className='font-semibold mb-4 text-blue-800'>Feature Access by Mode</div>
+                {newUser.is_admin ? (
                   <div className='text-blue-600 text-sm p-4 bg-blue-50 rounded border border-blue-200'>
                     Admin users have access to all features automatically. No need to select individual features.
                   </div>
-                ) : features.length === 0 ? (
-                  <div className='text-red-600 text-sm p-4 bg-red-50 rounded border border-red-200'>
-                    No features available. Please refresh the page.
-                  </div>
                 ) : (
-                  <div className='space-y-6'>
-                    {MODE_VALUES.map(modeKey => {
-                      const selected = newUser.featuresByMode[modeKey] || [];
-                      return (
-                        <div
-                          key={modeKey}
-                          className='border border-gray-200 rounded-2xl shadow-sm overflow-hidden'
-                        >
-                          <div
-                            className={`px-4 py-3 flex items-center justify-between text-white bg-gradient-to-r ${MODE_BADGES[modeKey].gradient}`}
-                          >
-                            <div className='flex items-center gap-2 text-base font-semibold'>
-                              {modeKey === 'itr' ? (
-                                <FileCheck className='w-5 h-5' />
-                              ) : (
-                                <Briefcase className='w-5 h-5' />
-                              )}
-                              {MODE_LABELS[modeKey]}
-                            </div>
-                            <span className='text-sm font-medium bg-white/20 px-3 py-1 rounded-full'>
-                              {selected.length} selected
-                            </span>
-                          </div>
-                          <div className='p-4'>
-                            <div className='flex flex-wrap gap-2 sm:gap-3'>
-                              {features.map(f => {
-                                const isSelected = selected.includes(f.key);
-                                return (
-                                  <label
-                                    key={`${modeKey}-${f.key}`}
-                                    className={`flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full shadow border-2 transition-all cursor-pointer select-none text-xs sm:text-sm font-medium
-                                    ${
-                                      isSelected
-                                        ? 'bg-gradient-to-r from-blue-200 to-indigo-200 text-blue-900 border-blue-400 scale-105'
-                                        : 'bg-blue-50 text-blue-800 border-blue-100 hover:border-blue-300 hover:bg-blue-100'
-                                    }
-                                  `}
-                                  >
-                                    <input
-                                      type='checkbox'
-                                      checked={isSelected}
-                                      onChange={e => {
-                                        e.stopPropagation();
-                                        handleModalFeatureToggle(modeKey, f.key);
-                                      }}
-                                      onClick={e => e.stopPropagation()}
-                                      className='accent-blue-600 w-5 h-5 cursor-pointer'
-                                    />
-                                    <span className='cursor-pointer'>{f.name}</span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                            <p className='mt-3 text-xs text-gray-500'>
-                              Select the features this user should have in {MODE_LABELS[modeKey]}. They will only see these options when using this mode.
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <PermissionPicker
+                    value={newUser.features}
+                    onToggle={(m, k) => setNewUser(prev => ({ ...prev, features: toggleFeature(prev.features, m, k) }))}
+                  />
                 )}
               </div>
               <Button
                 type='submit'
                 disabled={loading}
-                className='w-full mt-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg text-base sm:text-lg py-2.5 sm:py-3'
+                className='w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg text-base sm:text-lg py-2.5 sm:py-3'
               >
                 {loading ? 'Creating Login Credentials...' : 'Create Login Credentials'}
               </Button>
@@ -1335,1013 +1201,71 @@ const upsertUserAccess = async (
           </Card>
         )}
 
-        {/* Users List as Cards */}
         <div className='flex flex-col gap-6'>
-          {/* Admins Section */}
-          {users.filter(u => u.is_admin).length > 0 && (
+          {admins.length > 0 && (
             <div>
               <h2 className='text-xl font-bold text-gray-900 mb-4 flex items-center gap-2'>
-                <Shield className='w-5 h-5 text-green-600' />
-                Admins ({users.filter(u => u.is_admin).length})
+                <Shield className='w-5 h-5 text-green-600' /> Admins ({admins.length})
               </h2>
-              <div className='flex flex-col gap-6'>
-                {users.filter(u => u.is_admin).map(u => {
-
-                  return (
-            <div
-              key={u.id}
-              className={`group flex flex-col border rounded-xl shadow-md px-10 py-8 transition-shadow hover:shadow-lg bg-white relative w-full overflow-visible ${expandedUserId === u.id ? 'ring-2 ring-blue-200' : 'bg-white border-gray-200'}`}
-              onMouseEnter={() =>
-                setExpandedUserId(expandedUserId === u.id ? null : u.id)
-              }
-              onMouseLeave={() => {}}
-            >
-              {/* Main Row (always visible) */}
-              <div
-                className='flex flex-col md:flex-row items-center md:items-center justify-between gap-4 cursor-pointer w-full'
-                onClick={() =>
-                  setExpandedUserId(expandedUserId === u.id ? null : u.id)
-                }
-              >
-                <div className='flex items-center gap-5 flex-1 min-w-0'>
-                  {/* Avatar */}
-                  <div className='w-20 h-20 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-3xl font-bold text-white shadow-lg border-4 border-white'>
-                    {u.username.charAt(0).toUpperCase()}
-                  </div>
-                  <div className='flex flex-col min-w-0'>
-                    <div className='flex items-center gap-2 mb-2'>
-                      <span className='text-xl font-semibold text-blue-900 truncate max-w-[200px]'>
-                        {u.username}
-                      </span>
-                      {u.is_admin && (
-                        <span className='inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-semibold'>
-                          <Shield className='w-4 h-4' />
-                          Admin
-                        </span>
-                      )}
-                      {isRecentlyCreated(u.created_at) && (
-                        <span className='inline-flex items-center gap-1 bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full text-xs font-semibold animate-pulse'>
-                          <Clock className='w-3 h-3' />
-                          New
-                        </span>
-                      )}
-                      {u.mode && (
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
-                          u.mode === 'itr'
-                            ? 'bg-orange-100 text-orange-700'
-                            : 'bg-blue-100 text-blue-700'
-                        }`}>
-                          {u.mode === 'itr' ? (
-                            <>
-                              <FileCheck className='w-3 h-3' />
-                              ITR
-                            </>
-                          ) : (
-                            <>
-                              <Briefcase className='w-3 h-3' />
-                              Regular
-                            </>
-                          )}
-                        </span>
-                      )}
-                    </div>
-                    <div className='flex flex-wrap gap-2 items-center'>
-                      {u.is_admin ? (
-                        <span className='inline-block bg-gradient-to-r from-green-100 to-green-300 text-green-900 px-3 py-1 rounded-full text-xs font-semibold border border-green-200 shadow-sm'>
-                          All Access (Admin)
-                        </span>
-                      ) : u.features.length === 0 ? (
-                        <span className='inline-block bg-gray-100 text-gray-500 px-2 py-1 rounded-full text-xs font-medium border border-gray-200'>
-                          No access
-                        </span>
-                      ) : (
-                        u.features.slice(0, 2).map(fk => {
-                          const f = features.find(ff => ff.key === fk);
-                          return f ? (
-                            <span
-                              key={fk}
-                              className='flex items-center gap-1 bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium border border-blue-200 shadow-sm'
-                            >
-                              {/* Optionally add an icon here */}
-                              {f.name}
-                            </span>
-                          ) : null;
-                        })
-                      )}
-                      {!u.is_admin && u.features.length > 2 && (
-                        <span className='bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs font-medium border border-blue-200'>
-                          +{u.features.length - 2} more
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                {/* Actions and expand/collapse */}
-                <div className='flex flex-col items-end gap-2'>
-                  <span
-                    onClick={e => {
-                      e.stopPropagation();
-                      handleDeleteUser(u.id);
-                    }}
-                    className='w-full'
-                  >
-                    <Button
-                      variant='danger'
-                      size='sm'
-                      disabled={u.username === user?.username}
-                      className='mt-2'
-                    >
-                      Delete
-                    </Button>
-                  </span>
-                  <button
-                    className='text-gray-400 hover:text-blue-600 transition-colors'
-                    onClick={e => {
-                      e.stopPropagation();
-                      setExpandedUserId(expandedUserId === u.id ? null : u.id);
-                    }}
-                    aria-label={
-                      expandedUserId === u.id
-                        ? 'Collapse details'
-                        : 'Expand details'
-                    }
-                    type='button'
-                  >
-                    {expandedUserId === u.id ? (
-                      <ChevronUp className='w-5 h-5' />
-                    ) : (
-                      <ChevronDown className='w-5 h-5' />
-                    )}
-                  </button>
-                </div>
-              </div>
-              {/* Expanded Details (on click) */}
-              <div
-                className={`transition-all duration-200 ${editingUserId === u.id ? 'overflow-visible' : 'overflow-hidden'} ${expandedUserId === u.id ? 'max-h-none opacity-100 py-3 px-0' : 'max-h-0 opacity-0 py-0 px-0'} w-full bg-gray-50 rounded-b-2xl border-t border-gray-100`}
-                style={{
-                  pointerEvents: expandedUserId === u.id ? 'auto' : 'none',
-                }}
-              >
-                <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 px-2 md:px-6 ${editingUserId === u.id ? 'overflow-visible' : ''}`}>
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>Full Name</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.full_name || '-'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>Username</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.username}
-                    </div>
-                  </div>
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>Email</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.email || '-'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>Phone</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.phone || '-'}
-                    </div>
-                  </div>
-                  <div className='md:col-span-2'>
-                    <div className='mb-1 text-xs text-gray-500'>Address</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.address || '-'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>Aadhaar Number</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.aadhaar_number || '-'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>Date of Birth</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.date_of_birth ? format(new Date(u.date_of_birth), 'dd/MM/yyyy') : '-'}
-                    </div>
-                  </div>
-                  {u.other_details && (
-                    <div className='md:col-span-2'>
-                      <div className='mb-1 text-xs text-gray-500'>Other Details</div>
-                      <div className='text-gray-800 font-medium text-sm'>
-                        {u.other_details}
-                      </div>
-                    </div>
-                  )}
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>
-                      Admin Status
-                    </div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.is_admin ? 'Admin' : 'User'}
-                    </div>
-                  </div>
-                  <div className={`md:col-span-2 ${editingUserId === u.id ? 'overflow-visible' : ''}`}>
-                    <div className='mb-1 text-xs text-gray-500 flex items-center gap-2'>
-                      Feature Access
-                      {!u.is_admin &&
-                        (editingUserId === u.id ? (
-                          <>
-                            <button
-                              className='ml-2 text-gray-500 hover:text-blue-700 text-xs flex items-center gap-1'
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                // Save current scroll position
-                                const scrollY = window.scrollY;
-                                setEditingUserId(null);
-                                setEditFeaturesByMode(emptyModeFeatures());
-                                // Restore scroll position after state update
-                                requestAnimationFrame(() => {
-                                  window.scrollTo(0, scrollY);
-                                });
-                              }}
-                              type='button'
-                            >
-                              <X className='w-4 h-4' /> Cancel
-                            </button>
-                            <button
-                              className='ml-2 text-blue-600 hover:text-blue-800 text-xs flex items-center gap-1'
-                              onClick={async () => {
-                                // Save feature access changes
-                                setLoading(true);
-                                try {
-                                  const supportsMode = await ensureUserAccessModeSupport();
-                                  
-                                  // STEP 1: Ensure all features exist in the features table
-                                  const allFeatureKeys = MODE_VALUES.flatMap(modeKey => 
-                                    normalizeFeatures(editFeaturesByMode[modeKey] || [])
-                                  );
-                                  const uniqueFeatureKeys = [...new Set(allFeatureKeys)];
-                                  
-                                  console.log('🔧 Ensuring all features exist in features table...');
-                                  for (const featureKey of uniqueFeatureKeys) {
-                                    const trimmedKey = featureKey.trim();
-                                    if (!trimmedKey) continue;
-                                    
-                                    const featureDef = features.find(f => f.key === trimmedKey);
-                                    if (featureDef) {
-                                      const { error: featureError } = await supabase
-                                        .from('features')
-                                        .upsert(
-                                          { key: featureDef.key, name: featureDef.name },
-                                          { onConflict: 'key' }
-                                        );
-                                      
-                                      if (featureError && featureError.code !== '23505' && featureError.code !== 'PGRST116') {
-                                        console.warn(`⚠️ Could not ensure feature "${trimmedKey}":`, featureError);
-                                      }
-                                    }
-                                    await new Promise(resolve => setTimeout(resolve, 50));
-                                  }
-                                  
-                                  // STEP 2: Remove all current access for this user
-                                  const { error: deleteError } = await supabase
-                                    .from('user_access')
-                                    .delete()
-                                    .eq('user_id', u.id);
-                                  
-                                  if (deleteError) {
-                                    console.error('Error deleting existing access:', deleteError);
-                                  }
-                                  
-                                  // STEP 3: Add new access grouped by mode
-                                  let successCount = 0;
-                                  let errorCount = 0;
-                                  
-                                  for (const modeKey of MODE_VALUES) {
-                                    const modeFeatures = normalizeFeatures(editFeaturesByMode[modeKey] || []);
-                                    
-                                    for (const featureKey of modeFeatures) {
-                                      const trimmedKey = featureKey.trim();
-                                      if (!trimmedKey) continue;
-                                      
-                                      try {
-                                        const editPayload: Record<string, any> = {
-                                          user_id: u.id,
-                                          feature_key: trimmedKey,
-                                        };
-                                        if (supportsMode) {
-                                          editPayload.mode = modeKey;
-                                        }
-                                        
-                                        const { error: insertError, data: insertData } = await upsertUserAccess(
-                                          editPayload,
-                                          supportsMode
-                                        );
-                                        
-                                        if (insertData && insertData.length > 0) {
-                                          console.log(`✅ Feature "${trimmedKey}" saved for ${modeKey} mode`);
-                                          successCount++;
-                                        } else if (insertError) {
-                                          console.error(`❌ Error inserting feature "${trimmedKey}" for ${modeKey}:`, insertError);
-                                          errorCount++;
-                                        } else {
-                                          successCount++;
-                                        }
-                                        
-                                        await new Promise(resolve => setTimeout(resolve, 50));
-                                      } catch (err: any) {
-                                        console.error(`❌ Exception inserting feature "${trimmedKey}" for ${modeKey}:`, err);
-                                        errorCount++;
-                                      }
-                                    }
-                                  }
-                                  
-                                  // Show result
-                                  if (successCount > 0) {
-                                    const message = errorCount > 0
-                                      ? `Feature access updated! ${successCount} feature(s) saved. ${errorCount} failed.`
-                                      : `Feature access updated! ${successCount} feature(s) saved successfully.`;
-                                    toast.success(message);
-                                  } else if (errorCount > 0) {
-                                    toast.error(`Failed to update features. ${errorCount} error(s) occurred. Check console for details.`);
-                                  } else {
-                                    toast.success('Feature access cleared.');
-                                  }
-                                  
-                                  setEditingUserId(null);
-                                  setEditFeaturesByMode(emptyModeFeatures());
-                                  
-                                  // Wait a bit for database to commit changes before reloading
-                                  await new Promise(resolve => setTimeout(resolve, 300));
-                                  await loadUsers();
-                                } catch (err: any) {
-                                  console.error('Error updating features:', err);
-                                  toast.error(err.message || 'Error updating feature access');
-                                }
-                                setLoading(false);
-                              }}
-                              type='button'
-                              disabled={loading}
-                            >
-                              <Save className='w-4 h-4' /> Save
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            className='ml-2 text-blue-600 hover:text-blue-800 text-xs flex items-center gap-1'
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              // Save current scroll position
-                              const scrollY = window.scrollY;
-                              setEditingUserId(u.id);
-                              // Load features by mode from user's current access
-                              // Ensure both regular and itr keys exist by merging with emptyModeFeatures
-                              const baseFeatures = emptyModeFeatures();
-                              const userFeatures = u.featuresByMode || emptyModeFeatures();
-                              // Ensure both keys exist and are arrays
-                              const featuresByMode: Record<ModeKey, string[]> = {
-                                regular: Array.isArray(userFeatures.regular) ? userFeatures.regular : baseFeatures.regular,
-                                itr: Array.isArray(userFeatures.itr) ? userFeatures.itr : baseFeatures.itr,
-                              };
-                              console.log('📝 Loading edit features for user:', u.username, {
-                                featuresByMode,
-                                regular: featuresByMode.regular?.length || 0,
-                                itr: featuresByMode.itr?.length || 0,
-                                totalFeaturesAvailable: features.length,
-                                hasRegularKey: 'regular' in featuresByMode,
-                                hasItrKey: 'itr' in featuresByMode,
-                                MODE_VALUES: MODE_VALUES
-                              });
-                              // Force ensure both keys exist before setting state
-                              const finalFeaturesByMode: Record<ModeKey, string[]> = {
-                                regular: Array.isArray(featuresByMode.regular) ? featuresByMode.regular : [],
-                                itr: Array.isArray(featuresByMode.itr) ? featuresByMode.itr : [],
-                              };
-                              console.log('✅ Setting editFeaturesByMode with both modes:', finalFeaturesByMode);
-                              setEditFeaturesByMode(finalFeaturesByMode);
-                              // Restore scroll position after state update
-                              requestAnimationFrame(() => {
-                                window.scrollTo(0, scrollY);
-                              });
-                            }}
-                            type='button'
-                          >
-                            <Edit className='w-4 h-4' /> Edit
-                          </button>
-                        ))}
-                    </div>
-                    {u.is_admin ? (
-                      <span className='inline-block bg-gradient-to-r from-green-100 to-green-300 text-green-900 px-3 py-1 rounded-full text-xs font-semibold border border-green-200 shadow-sm'>
-                        All Access (Admin)
-                      </span>
-                    ) : editingUserId === u.id ? (
-                      <div className='mt-4 space-y-6 w-full overflow-visible'>
-                        <div className='font-semibold mb-4 text-blue-800'>
-                          Feature Access by Mode
-                        </div>
-                        {features.length === 0 ? (
-                          <div className='text-red-600 text-sm p-4 bg-red-50 rounded border border-red-200'>
-                            No features available. Please refresh the page.
-                          </div>
-                        ) : (
-                          <div className='space-y-6 w-full overflow-visible'>
-                            {MODE_VALUES.map(modeKey => {
-                              // Ensure both regular and itr keys exist in editFeaturesByMode
-                              const safeEditFeatures = {
-                                regular: editFeaturesByMode?.regular || [],
-                                itr: editFeaturesByMode?.itr || [],
-                              };
-                              const selected = safeEditFeatures[modeKey] || [];
-                              return (
-                                <div
-                                  key={modeKey}
-                                  className='border border-gray-200 rounded-2xl shadow-sm overflow-visible'
-                                >
-                                  <div
-                                    className={`px-4 py-3 flex items-center justify-between text-white bg-gradient-to-r ${MODE_BADGES[modeKey].gradient}`}
-                                  >
-                                    <div className='flex items-center gap-2 text-base font-semibold'>
-                                      {modeKey === 'itr' ? (
-                                        <FileCheck className='w-5 h-5' />
-                                      ) : (
-                                        <Briefcase className='w-5 h-5' />
-                                      )}
-                                      {MODE_LABELS[modeKey]}
-                                    </div>
-                                    <span className='text-sm font-medium bg-white/20 px-3 py-1 rounded-full'>
-                                      {selected.length} selected
-                                    </span>
-                                  </div>
-                                  <div className='p-4'>
-                                    <div className='flex flex-wrap gap-2 sm:gap-3'>
-                                      {features.map(f => {
-                                        const isSelected = selected.includes(f.key);
-                                        return (
-                                          <label
-                                            key={`${modeKey}-${f.key}`}
-                                            className={`flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full shadow border-2 transition-all cursor-pointer select-none text-xs sm:text-sm font-medium
-                                            ${
-                                              isSelected
-                                                ? 'bg-gradient-to-r from-blue-200 to-indigo-200 text-blue-900 border-blue-400 scale-105'
-                                                : 'bg-blue-50 text-blue-800 border-blue-100 hover:border-blue-300 hover:bg-blue-100'
-                                            }
-                                          `}
-                                          >
-                                            <input
-                                              type='checkbox'
-                                              checked={isSelected}
-                                              onChange={e => {
-                                                e.stopPropagation();
-                                                handleEditFeatureToggle(modeKey, f.key);
-                                              }}
-                                              onClick={e => e.stopPropagation()}
-                                              className='accent-blue-600 w-5 h-5 cursor-pointer'
-                                            />
-                                            <span className='cursor-pointer'>{f.name}</span>
-                                          </label>
-                                        );
-                                      })}
-                                    </div>
-                                    <p className='mt-3 text-xs text-gray-500'>
-                                      Select the features this user should have in {MODE_LABELS[modeKey]}. They will only see these options when using this mode.
-                                    </p>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    ) : u.features.length === 0 ? (
-                      <span className='inline-block bg-gray-100 text-gray-500 px-2 py-1 rounded-full text-xs font-medium border border-gray-200'>
-                        No access assigned
-                      </span>
-                    ) : (
-                      <div className='flex flex-wrap gap-2'>
-                        {u.features.map(fk => {
-                          const f = features.find(ff => ff.key === fk);
-                          return f ? (
-                            <span
-                              key={fk}
-                              className='flex items-center gap-1 bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium border border-blue-200 shadow-sm'
-                            >
-                              {f.name}
-                            </span>
-                          ) : null;
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-                );
-                })}
-              </div>
+              <div className='flex flex-col gap-4'>{admins.map(renderCard)}</div>
             </div>
           )}
-
-          {/* Regular Users Section */}
-          {users.filter(u => !u.is_admin).length > 0 && (
+          {others.length > 0 && (
             <div>
               <h2 className='text-xl font-bold text-gray-900 mb-4 flex items-center gap-2'>
-                <UserIcon className='w-5 h-5 text-blue-600' />
-                Users ({users.filter(u => !u.is_admin).length})
+                <UserIcon className='w-5 h-5 text-blue-600' /> Users ({others.length})
               </h2>
-              <div className='flex flex-col gap-6'>
-                {users.filter(u => !u.is_admin).map(u => {
-
-                  return (
-            <div
-              key={u.id}
-              className={`group flex flex-col border rounded-xl shadow-md px-10 py-8 transition-shadow hover:shadow-lg bg-white relative w-full overflow-visible ${expandedUserId === u.id ? 'ring-2 ring-blue-200' : 'bg-white border-gray-200'}`}
-              onMouseEnter={() =>
-                setExpandedUserId(expandedUserId === u.id ? null : u.id)
-              }
-              onMouseLeave={() => {}}
-            >
-              {/* Main Row (always visible) */}
-              <div
-                className='flex flex-col md:flex-row items-center md:items-center justify-between gap-4 cursor-pointer w-full'
-                onClick={() =>
-                  setExpandedUserId(expandedUserId === u.id ? null : u.id)
-                }
-              >
-                <div className='flex items-center gap-5 flex-1 min-w-0'>
-                  {/* Avatar */}
-                  <div className='w-20 h-20 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-3xl font-bold text-white shadow-lg border-4 border-white'>
-                    {u.username.charAt(0).toUpperCase()}
-                  </div>
-                  <div className='flex flex-col min-w-0'>
-                    <div className='flex items-center gap-2 mb-2'>
-                      <span className='text-xl font-semibold text-blue-900 truncate max-w-[200px]'>
-                        {u.username}
-                      </span>
-                      {u.is_admin && (
-                        <span className='inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-semibold'>
-                          <Shield className='w-4 h-4' />
-                          Admin
-                        </span>
-                      )}
-                      {isRecentlyCreated(u.created_at) && (
-                        <span className='inline-flex items-center gap-1 bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full text-xs font-semibold animate-pulse'>
-                          <Clock className='w-3 h-3' />
-                          New
-                        </span>
-                      )}
-                      {u.mode && (
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
-                          u.mode === 'itr'
-                            ? 'bg-orange-100 text-orange-700'
-                            : 'bg-blue-100 text-blue-700'
-                        }`}>
-                          {u.mode === 'itr' ? (
-                            <>
-                              <FileCheck className='w-3 h-3' />
-                              ITR
-                            </>
-                          ) : (
-                            <>
-                              <Briefcase className='w-3 h-3' />
-                              Regular
-                            </>
-                          )}
-                        </span>
-                      )}
-                    </div>
-                    <div className='flex flex-wrap gap-2 items-center'>
-                      {u.is_admin ? (
-                        <span className='inline-block bg-gradient-to-r from-green-100 to-green-300 text-green-900 px-3 py-1 rounded-full text-xs font-semibold border border-green-200 shadow-sm'>
-                          All Access (Admin)
-                        </span>
-                      ) : u.features.length === 0 ? (
-                        <span className='inline-block bg-gray-100 text-gray-500 px-2 py-1 rounded-full text-xs font-medium border border-gray-200'>
-                          No access
-                        </span>
-                      ) : (
-                        u.features.slice(0, 2).map(fk => {
-                          const f = features.find(ff => ff.key === fk);
-                          return f ? (
-                            <span
-                              key={fk}
-                              className='flex items-center gap-1 bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium border border-blue-200 shadow-sm'
-                            >
-                              {/* Optionally add an icon here */}
-                              {f.name}
-                            </span>
-                          ) : null;
-                        })
-                      )}
-                      {!u.is_admin && u.features.length > 2 && (
-                        <span className='bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs font-medium border border-blue-200'>
-                          +{u.features.length - 2} more
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                {/* Actions and expand/collapse */}
-                <div className='flex flex-col items-end gap-2'>
-                  <span
-                    onClick={e => {
-                      e.stopPropagation();
-                      handleDeleteUser(u.id);
-                    }}
-                    className='w-full'
-                  >
-                    <Button
-                      variant='danger'
-                      size='sm'
-                      disabled={u.username === user?.username}
-                      className='mt-2'
-                    >
-                      Delete
-                    </Button>
-                  </span>
-                  <button
-                    className='text-gray-400 hover:text-blue-600 transition-colors'
-                    onClick={e => {
-                      e.stopPropagation();
-                      setExpandedUserId(expandedUserId === u.id ? null : u.id);
-                    }}
-                    aria-label={
-                      expandedUserId === u.id
-                        ? 'Collapse details'
-                        : 'Expand details'
-                    }
-                    type='button'
-                  >
-                    {expandedUserId === u.id ? (
-                      <ChevronUp className='w-5 h-5' />
-                    ) : (
-                      <ChevronDown className='w-5 h-5' />
-                    )}
-                  </button>
-                </div>
-              </div>
-              {/* Expanded Details (on click) */}
-              <div
-                className={`transition-all duration-200 ${editingUserId === u.id ? 'overflow-visible' : 'overflow-hidden'} ${expandedUserId === u.id ? 'max-h-none opacity-100 py-3 px-0' : 'max-h-0 opacity-0 py-0 px-0'} w-full bg-gray-50 rounded-b-2xl border-t border-gray-100`}
-                style={{
-                  pointerEvents: expandedUserId === u.id ? 'auto' : 'none',
-                }}
-              >
-                <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 px-2 md:px-6 ${editingUserId === u.id ? 'overflow-visible' : ''}`}>
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>Full Name</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.full_name || '-'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>Username</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.username}
-                    </div>
-                  </div>
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>Email</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.email || '-'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>Phone</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.phone || '-'}
-                    </div>
-                  </div>
-                  <div className='md:col-span-2'>
-                    <div className='mb-1 text-xs text-gray-500'>Address</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.address || '-'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>Aadhaar Number</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.aadhaar_number || '-'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>Date of Birth</div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.date_of_birth ? format(new Date(u.date_of_birth), 'dd/MM/yyyy') : '-'}
-                    </div>
-                  </div>
-                  {u.other_details && (
-                    <div className='md:col-span-2'>
-                      <div className='mb-1 text-xs text-gray-500'>Other Details</div>
-                      <div className='text-gray-800 font-medium text-sm'>
-                        {u.other_details}
-                      </div>
-                    </div>
-                  )}
-                  <div>
-                    <div className='mb-1 text-xs text-gray-500'>
-                      Admin Status
-                    </div>
-                    <div className='text-gray-800 font-medium'>
-                      {u.is_admin ? 'Admin' : 'User'}
-                    </div>
-                  </div>
-                  <div className={`md:col-span-2 ${editingUserId === u.id ? 'overflow-visible' : ''}`}>
-                    <div className='mb-1 text-xs text-gray-500 flex items-center gap-2'>
-                      Feature Access
-                      {!u.is_admin &&
-                        (editingUserId === u.id ? (
-                          <>
-                            <button
-                              className='ml-2 text-gray-500 hover:text-blue-700 text-xs flex items-center gap-1'
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                // Save current scroll position
-                                const scrollY = window.scrollY;
-                                setEditingUserId(null);
-                                setEditFeaturesByMode(emptyModeFeatures());
-                                // Restore scroll position after state update
-                                requestAnimationFrame(() => {
-                                  window.scrollTo(0, scrollY);
-                                });
-                              }}
-                              type='button'
-                            >
-                              <X className='w-4 h-4' /> Cancel
-                            </button>
-                            <button
-                              className='ml-2 text-blue-600 hover:text-blue-800 text-xs flex items-center gap-1'
-                              onClick={async () => {
-                                // Save feature access changes
-                                setLoading(true);
-                                try {
-                                  const supportsMode = await ensureUserAccessModeSupport();
-                                  
-                                  // STEP 1: Ensure all features exist in the features table
-                                  const allFeatureKeys = MODE_VALUES.flatMap(modeKey => 
-                                    normalizeFeatures(editFeaturesByMode[modeKey] || [])
-                                  );
-                                  const uniqueFeatureKeys = [...new Set(allFeatureKeys)];
-                                  
-                                  console.log('🔧 Ensuring all features exist in features table...');
-                                  for (const featureKey of uniqueFeatureKeys) {
-                                    const trimmedKey = featureKey.trim();
-                                    if (!trimmedKey) continue;
-                                    
-                                    const featureDef = features.find(f => f.key === trimmedKey);
-                                    if (featureDef) {
-                                      const { error: featureError } = await supabase
-                                        .from('features')
-                                        .upsert(
-                                          { key: featureDef.key, name: featureDef.name },
-                                          { onConflict: 'key' }
-                                        );
-                                      
-                                      if (featureError && featureError.code !== '23505' && featureError.code !== 'PGRST116') {
-                                        console.warn(`⚠️ Could not ensure feature "${trimmedKey}":`, featureError);
-                                      }
-                                    }
-                                    await new Promise(resolve => setTimeout(resolve, 50));
-                                  }
-                                  
-                                  // STEP 2: Remove all current access for this user
-                                  const { error: deleteError } = await supabase
-                                    .from('user_access')
-                                    .delete()
-                                    .eq('user_id', u.id);
-                                  
-                                  if (deleteError) {
-                                    console.error('Error deleting existing access:', deleteError);
-                                  }
-                                  
-                                  // STEP 3: Add new access grouped by mode
-                                  let successCount = 0;
-                                  let errorCount = 0;
-                                  
-                                  for (const modeKey of MODE_VALUES) {
-                                    const modeFeatures = normalizeFeatures(editFeaturesByMode[modeKey] || []);
-                                    
-                                    for (const featureKey of modeFeatures) {
-                                      const trimmedKey = featureKey.trim();
-                                      if (!trimmedKey) continue;
-                                      
-                                      try {
-                                        const editPayload: Record<string, any> = {
-                                          user_id: u.id,
-                                          feature_key: trimmedKey,
-                                        };
-                                        if (supportsMode) {
-                                          editPayload.mode = modeKey;
-                                        }
-                                        
-                                        const { error: insertError, data: insertData } = await upsertUserAccess(
-                                          editPayload,
-                                          supportsMode
-                                        );
-                                        
-                                        if (insertData && insertData.length > 0) {
-                                          console.log(`✅ Feature "${trimmedKey}" saved for ${modeKey} mode`);
-                                          successCount++;
-                                        } else if (insertError) {
-                                          console.error(`❌ Error inserting feature "${trimmedKey}" for ${modeKey}:`, insertError);
-                                          errorCount++;
-                                        } else {
-                                          successCount++;
-                                        }
-                                        
-                                        await new Promise(resolve => setTimeout(resolve, 50));
-                                      } catch (err: any) {
-                                        console.error(`❌ Exception inserting feature "${trimmedKey}" for ${modeKey}:`, err);
-                                        errorCount++;
-                                      }
-                                    }
-                                  }
-                                  
-                                  // Show result
-                                  if (successCount > 0) {
-                                    const message = errorCount > 0
-                                      ? `Feature access updated! ${successCount} feature(s) saved. ${errorCount} failed.`
-                                      : `Feature access updated! ${successCount} feature(s) saved successfully.`;
-                                    toast.success(message);
-                                  } else if (errorCount > 0) {
-                                    toast.error(`Failed to update features. ${errorCount} error(s) occurred. Check console for details.`);
-                                  } else {
-                                    toast.success('Feature access cleared.');
-                                  }
-                                  
-                                  setEditingUserId(null);
-                                  setEditFeaturesByMode(emptyModeFeatures());
-                                  
-                                  // Wait a bit for database to commit changes before reloading
-                                  await new Promise(resolve => setTimeout(resolve, 300));
-                                  await loadUsers();
-                                } catch (err: any) {
-                                  console.error('Error updating features:', err);
-                                  toast.error(err.message || 'Error updating feature access');
-                                }
-                                setLoading(false);
-                              }}
-                              type='button'
-                              disabled={loading}
-                            >
-                              <Save className='w-4 h-4' /> Save
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            className='ml-2 text-blue-600 hover:text-blue-800 text-xs flex items-center gap-1'
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              // Save current scroll position
-                              const scrollY = window.scrollY;
-                              setEditingUserId(u.id);
-                              // Load features by mode from user's current access
-                              // Ensure both regular and itr keys exist by merging with emptyModeFeatures
-                              const baseFeatures = emptyModeFeatures();
-                              const userFeatures = u.featuresByMode || emptyModeFeatures();
-                              // Ensure both keys exist and are arrays
-                              const featuresByMode: Record<ModeKey, string[]> = {
-                                regular: Array.isArray(userFeatures.regular) ? userFeatures.regular : baseFeatures.regular,
-                                itr: Array.isArray(userFeatures.itr) ? userFeatures.itr : baseFeatures.itr,
-                              };
-                              console.log('📝 Loading edit features for user:', u.username, {
-                                featuresByMode,
-                                regular: featuresByMode.regular?.length || 0,
-                                itr: featuresByMode.itr?.length || 0,
-                                totalFeaturesAvailable: features.length,
-                                hasRegularKey: 'regular' in featuresByMode,
-                                hasItrKey: 'itr' in featuresByMode,
-                                MODE_VALUES: MODE_VALUES
-                              });
-                              // Force ensure both keys exist before setting state
-                              const finalFeaturesByMode: Record<ModeKey, string[]> = {
-                                regular: Array.isArray(featuresByMode.regular) ? featuresByMode.regular : [],
-                                itr: Array.isArray(featuresByMode.itr) ? featuresByMode.itr : [],
-                              };
-                              console.log('✅ Setting editFeaturesByMode with both modes:', finalFeaturesByMode);
-                              setEditFeaturesByMode(finalFeaturesByMode);
-                              // Restore scroll position after state update
-                              requestAnimationFrame(() => {
-                                window.scrollTo(0, scrollY);
-                              });
-                            }}
-                            type='button'
-                          >
-                            <Edit className='w-4 h-4' /> Edit
-                          </button>
-                        ))}
-                    </div>
-                    {u.is_admin ? (
-                      <span className='inline-block bg-gradient-to-r from-green-100 to-green-300 text-green-900 px-3 py-1 rounded-full text-xs font-semibold border border-green-200 shadow-sm'>
-                        All Access (Admin)
-                      </span>
-                    ) : editingUserId === u.id ? (
-                      <div className='mt-4 space-y-6 w-full overflow-visible'>
-                        <div className='font-semibold mb-4 text-blue-800'>
-                          Feature Access by Mode
-                        </div>
-                        {features.length === 0 ? (
-                          <div className='text-red-600 text-sm p-4 bg-red-50 rounded border border-red-200'>
-                            No features available. Please refresh the page.
-                          </div>
-                        ) : (
-                          <div className='space-y-6 w-full overflow-visible'>
-                            {MODE_VALUES.map(modeKey => {
-                              // Ensure both regular and itr keys exist in editFeaturesByMode
-                              const safeEditFeatures = {
-                                regular: editFeaturesByMode?.regular || [],
-                                itr: editFeaturesByMode?.itr || [],
-                              };
-                              const selected = safeEditFeatures[modeKey] || [];
-                              return (
-                                <div
-                                  key={modeKey}
-                                  className='border border-gray-200 rounded-2xl shadow-sm overflow-visible'
-                                >
-                                  <div
-                                    className={`px-4 py-3 flex items-center justify-between text-white bg-gradient-to-r ${MODE_BADGES[modeKey].gradient}`}
-                                  >
-                                    <div className='flex items-center gap-2 text-base font-semibold'>
-                                      {modeKey === 'itr' ? (
-                                        <FileCheck className='w-5 h-5' />
-                                      ) : (
-                                        <Briefcase className='w-5 h-5' />
-                                      )}
-                                      {MODE_LABELS[modeKey]}
-                                    </div>
-                                    <span className='text-sm font-medium bg-white/20 px-3 py-1 rounded-full'>
-                                      {selected.length} selected
-                                    </span>
-                                  </div>
-                                  <div className='p-4'>
-                                    <div className='flex flex-wrap gap-2 sm:gap-3'>
-                                      {features.map(f => {
-                                        const isSelected = selected.includes(f.key);
-                                        return (
-                                          <label
-                                            key={`${modeKey}-${f.key}`}
-                                            className={`flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full shadow border-2 transition-all cursor-pointer select-none text-xs sm:text-sm font-medium
-                                            ${
-                                              isSelected
-                                                ? 'bg-gradient-to-r from-blue-200 to-indigo-200 text-blue-900 border-blue-400 scale-105'
-                                                : 'bg-blue-50 text-blue-800 border-blue-100 hover:border-blue-300 hover:bg-blue-100'
-                                            }
-                                          `}
-                                          >
-                                            <input
-                                              type='checkbox'
-                                              checked={isSelected}
-                                              onChange={e => {
-                                                e.stopPropagation();
-                                                handleEditFeatureToggle(modeKey, f.key);
-                                              }}
-                                              onClick={e => e.stopPropagation()}
-                                              className='accent-blue-600 w-5 h-5 cursor-pointer'
-                                            />
-                                            <span className='cursor-pointer'>{f.name}</span>
-                                          </label>
-                                        );
-                                      })}
-                                    </div>
-                                    <p className='mt-3 text-xs text-gray-500'>
-                                      Select the features this user should have in {MODE_LABELS[modeKey]}. They will only see these options when using this mode.
-                                    </p>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    ) : u.features.length === 0 ? (
-                      <span className='inline-block bg-gray-100 text-gray-500 px-2 py-1 rounded-full text-xs font-medium border border-gray-200'>
-                        No access assigned
-                      </span>
-                    ) : (
-                      <div className='flex flex-wrap gap-2'>
-                        {u.features.map(fk => {
-                          const f = features.find(ff => ff.key === fk);
-                          return f ? (
-                            <span
-                              key={fk}
-                              className='flex items-center gap-1 bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium border border-blue-200 shadow-sm'
-                            >
-                              {f.name}
-                            </span>
-                          ) : null;
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <div className='flex flex-col gap-4'>{others.map(renderCard)}</div>
             </div>
-                );
-                })}
-              </div>
+          )}
+          {deleted.length > 0 && (
+            <div>
+              <h2 className='text-xl font-bold text-gray-900 mb-4 flex items-center gap-2'>
+                <Ban className='w-5 h-5 text-red-600' /> Deleted ({deleted.length})
+              </h2>
+              <div className='flex flex-col gap-4'>{deleted.map(renderCard)}</div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Reset password box */}
+      {passwordFor && (
+        <div className='fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4'>
+          <div className='bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4'>
+            <h3 className='text-lg font-bold text-gray-900'>Reset password of {passwordFor.username}</h3>
+            <Input label='New temporary password (min 6 characters)' type='password' value={passwordText} onChange={setPasswordText} />
+            <div className='flex justify-end gap-2'>
+              <Button variant='secondary' onClick={() => setPasswordFor(null)}>Cancel</Button>
+              <Button onClick={submitPasswordReset}>Continue</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reason box: every change is recorded in the audit log with this reason */}
+      {reasonPrompt && (
+        <div className='fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4'>
+          <div className='bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4'>
+            <h3 className='text-lg font-bold text-gray-900'>{reasonPrompt.title}</h3>
+            <div>
+              <label className='block text-sm font-medium text-gray-700 mb-1'>Reason *</label>
+              <textarea
+                value={reasonText}
+                onChange={e => setReasonText(e.target.value)}
+                rows={3}
+                autoFocus
+                className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500'
+                placeholder='Why is this change being made?'
+              />
+            </div>
+            <div className='flex justify-end gap-2'>
+              <Button variant='secondary' onClick={() => setReasonPrompt(null)}>Cancel</Button>
+              <Button onClick={confirmReason}>Confirm</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -67,7 +67,6 @@ import NewCustomers from './pages/finance/NewCustomers';
 import PhoneNumberEditor from './pages/finance/PhoneNumberEditor';
 import AadhaarSearch from './pages/finance/AadhaarSearch';
 import EditedDeletedLogs from './pages/finance/EditedDeletedLogs';
-import FinanceUserManagement from './pages/finance/FinanceUserManagement';
 import OldDataEntry from './pages/finance/OldDataEntry';
 import NewCustomer from './pages/finance/NewCustomer';
 import Customers from './pages/finance/Customers';
@@ -268,7 +267,7 @@ const AppContent: React.FC = () => {
           <Route path='sync-center' element={<SyncCenter />} />
           <Route path='vehicles' element={<Vehicles />} />
           <Route path='reminders' element={<Reminders />} />
-          <Route path='user-management' element={<UserManagement />} />
+          <Route path='user-management' element={<OfflineGuard><UserManagement /></OfflineGuard>} />
           <Route path='attendance' element={<OfflineGuard><Attendance /></OfflineGuard>} />
           <Route path='book-management' element={<BookManagement />} />
           
@@ -315,7 +314,7 @@ const AppContent: React.FC = () => {
           <Route path='finance/phone-editor' element={<OfflineGuard><PhoneNumberEditor /></OfflineGuard>} />
           <Route path='finance/aadhaar-search' element={<OfflineGuard><AadhaarSearch /></OfflineGuard>} />
           <Route path='finance/logs' element={<OfflineGuard><EditedDeletedLogs /></OfflineGuard>} />
-          <Route path='finance/user-access-management' element={<OfflineGuard><FinanceUserManagement /></OfflineGuard>} />
+          <Route path='finance/user-access-management' element={<OfflineGuard><UserManagement /></OfflineGuard>} />
           <Route path='finance/old-data-entry' element={<OfflineGuard><OldDataEntry /></OfflineGuard>} />
           <Route path='finance/new-customer' element={<OfflineGuard><NewCustomer /></OfflineGuard>} />
           <Route path='finance/customers' element={<OfflineGuard><Customers /></OfflineGuard>} />
