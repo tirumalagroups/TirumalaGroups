@@ -28,6 +28,7 @@ import {
   Shield,
   Bell,
   RefreshCw,
+  CalendarCheck,
 } from 'lucide-react';
 import { supabaseDB } from '../../lib/supabaseDatabase';
 
@@ -38,6 +39,7 @@ interface MenuItem {
   key: string;
   adminOnly?: boolean;
   showForAll?: boolean;
+  regularOnly?: boolean;
 }
 
 const Sidebar: React.FC = () => {
@@ -168,6 +170,14 @@ const Sidebar: React.FC = () => {
       adminOnly: true,
     },
     {
+      icon: CalendarCheck,
+      label: 'Attendance',
+      path: '/attendance',
+      key: 'attendance',
+      adminOnly: true,
+      regularOnly: true,
+    },
+    {
       icon: Book,
       label: 'Book Management',
       path: '/book-management',
@@ -264,6 +274,10 @@ const Sidebar: React.FC = () => {
         <ul className='space-y-1'>
           {activeMenuItems
             .filter(item => {
+              if (item.regularOnly && tableMode !== 'regular') {
+                return false;
+              }
+
               if (item.showForAll) {
                 return true;
               }

@@ -31,6 +31,7 @@ import Vehicles from './pages/Vehicles';
 import BankGuarantees from './pages/BankGuarantees';
 import Drivers from './pages/Drivers';
 import UserManagement from './pages/UserManagement';
+import Attendance from './pages/Attendance';
 import CsvUpload from './pages/CsvUpload';
 import Reminders from './pages/Reminders';
 import DebugInfo from './components/UI/DebugInfo';
@@ -268,6 +269,7 @@ const AppContent: React.FC = () => {
           <Route path='vehicles' element={<Vehicles />} />
           <Route path='reminders' element={<Reminders />} />
           <Route path='user-management' element={<UserManagement />} />
+          <Route path='attendance' element={<OfflineGuard><Attendance /></OfflineGuard>} />
           <Route path='book-management' element={<BookManagement />} />
           
           {/* Guarded Routes requiring connection */}

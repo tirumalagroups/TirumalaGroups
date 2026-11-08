@@ -45,6 +45,12 @@ const SHARED_TABLES = [
   'audit_logs',
   'notification_settings',
   'ledger_settings',
+  'attendance_staff',
+  'attendance_salary_history',
+  'attendance_records',
+  'attendance_holidays',
+  'attendance_month_locks',
+  'attendance_logs',
 ];
 
 // Helper to get table mode from storage
