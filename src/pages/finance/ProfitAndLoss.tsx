@@ -55,7 +55,7 @@ const formatDateOld = (dateStr?: string | null): string => {
 
 const getAdaptiveCardFontSize = (amount: number, minimumFractionDigits = 2, maxFractionDigits?: number) => {
   const opts = maxFractionDigits !== undefined ? { maximumFractionDigits: maxFractionDigits } : { minimumFractionDigits };
-  const str = `₹ ${amount.toLocaleString('en-IN', opts)}`;
+  const str = `${amount.toLocaleString('en-IN', opts)}`;
   const len = str.length;
   if (len >= 18) return 'text-[15px] sm:text-[17px] xl:text-[19px]';
   if (len >= 15) return 'text-[17px] sm:text-[19px] xl:text-[21px]';
@@ -114,7 +114,7 @@ const PLTotalLine: React.FC<{ label: string; value: number; tone: 'income' | 'ex
     <div className="flex items-center justify-end gap-3">
       <span className={`text-right uppercase text-slate-700 ${strong ? 'text-[15px] font-black' : 'text-[14px] font-bold'}`}>{label}:</span>
       <span className={`min-w-[12rem] text-right font-mono tabular-nums whitespace-nowrap bg-white border-2 rounded px-3 py-1 ${color} ${strong ? 'text-[19px] font-black' : 'text-[17px] font-black'}`}>
-        ₹ {fmtINR(value)}
+        {fmtINR(value)}
       </span>
     </div>
   );
@@ -609,7 +609,7 @@ const ProfitAndLoss: React.FC = () => {
             <tr className="border-b border-slate-200 bg-slate-50 text-[12px] font-bold uppercase text-slate-500">
               <th className="w-8 px-1 py-1.5"></th>
               <th className="px-2 py-1.5 text-left">Account</th>
-              <th className="px-2 py-1.5 text-right whitespace-nowrap">Amount (₹)</th>
+              <th className="px-2 py-1.5 text-right whitespace-nowrap">Amount</th>
               <th className="w-10 px-1 py-1.5 text-center">Ledger</th>
             </tr>
           </thead>
@@ -869,7 +869,7 @@ const ProfitAndLoss: React.FC = () => {
                 </div>
                 <div className="text-right">
                   <div className={`font-black font-mono text-blue-900 tracking-tight leading-none ${getAdaptiveCardFontSize(totalLoanPrincipalReceivable)}`}>
-                    ₹ {totalLoanPrincipalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {totalLoanPrincipalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </div>
                   <span className="text-[10px] text-slate-400 font-bold uppercase block mt-1.5">Principal still to be collected</span>
                 </div>
@@ -883,9 +883,9 @@ const ProfitAndLoss: React.FC = () => {
                 </div>
                 <div className="text-right">
                   <div className={`font-black font-mono text-slate-900 tracking-tight leading-none ${getAdaptiveCardFontSize(closingCash)}`}>
-                    ₹ {closingCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {closingCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block mt-1.5">Opening: ₹ {openingCash.toLocaleString('en-IN')}</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block mt-1.5">Opening: {openingCash.toLocaleString('en-IN')}</span>
                 </div>
               </div>
 
@@ -897,7 +897,7 @@ const ProfitAndLoss: React.FC = () => {
                 </div>
                 <div className="text-right">
                   <div className={`font-black font-mono text-purple-900 tracking-tight leading-none ${getAdaptiveCardFontSize(totalCapitalContributed)}`}>
-                    ₹ {totalCapitalContributed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {totalCapitalContributed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </div>
                   <span className="text-[10px] text-slate-400 font-bold uppercase block mt-1.5">Total money put in by partners</span>
                 </div>
@@ -911,9 +911,9 @@ const ProfitAndLoss: React.FC = () => {
                 </div>
                 <div className="text-right">
                   <div className={`font-black font-mono text-emerald-800 tracking-tight leading-none ${getAdaptiveCardFontSize(totalAssets)}`}>
-                    ₹ {totalAssets.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {totalAssets.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block mt-1.5">Net Worth: ₹ {netBusinessPosition.toLocaleString('en-IN')}</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block mt-1.5">Net Worth: {netBusinessPosition.toLocaleString('en-IN')}</span>
                 </div>
               </div>
 
@@ -930,7 +930,7 @@ const ProfitAndLoss: React.FC = () => {
                     What We Own
                   </h3>
                   <span className="font-mono font-black text-blue-900 text-xs sm:text-sm">
-                    ₹ {totalAssets.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {totalAssets.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="p-4 space-y-3 font-mono text-xs flex-1">
@@ -943,7 +943,7 @@ const ProfitAndLoss: React.FC = () => {
                     </div>
                     <div className="text-right">
                       <div className="font-black text-blue-900 text-sm sm:text-base">
-                        ₹ {totalLoanPrincipalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {totalLoanPrincipalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </div>
                       <div className="text-[10px] text-blue-700 font-sans font-bold">Still to collect</div>
                     </div>
@@ -953,10 +953,10 @@ const ProfitAndLoss: React.FC = () => {
                   <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex justify-between items-center">
                     <div>
                       <div className="font-sans font-bold text-slate-900 uppercase">Cash in Hand (Closing)</div>
-                      <div className="text-[11px] text-slate-500 font-sans mt-0.5">Opening: ₹ {openingCash.toLocaleString('en-IN')}</div>
+                      <div className="text-[11px] text-slate-500 font-sans mt-0.5">Opening: {openingCash.toLocaleString('en-IN')}</div>
                     </div>
                     <div className="text-right font-black text-slate-900 text-sm sm:text-base">
-                      ₹ {closingCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {closingCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </div>
                   </div>
 
@@ -968,7 +968,7 @@ const ProfitAndLoss: React.FC = () => {
                         <div className="text-[11px] text-slate-500 font-sans mt-0.5">Something we own</div>
                       </div>
                       <div className="text-right font-black text-slate-900 text-sm sm:text-base">
-                        ₹ {acc.netOutstandingAsset.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {acc.netOutstandingAsset.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </div>
                     </div>
                   ))}
@@ -976,7 +976,7 @@ const ProfitAndLoss: React.FC = () => {
                 </div>
                 <div className="p-3 bg-slate-100/80 border-t border-slate-200 flex justify-between items-center font-mono font-black text-xs">
                   <span className="font-sans font-bold uppercase text-slate-700">TOTAL WE OWN</span>
-                  <span className="text-blue-900 text-sm sm:text-base">₹ {totalAssets.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  <span className="text-blue-900 text-sm sm:text-base">{totalAssets.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 </div>
               </div>
 
@@ -988,7 +988,7 @@ const ProfitAndLoss: React.FC = () => {
                     What We Owe (Partners’ Money &amp; Profit)
                   </h3>
                   <span className="font-mono font-black text-purple-900 text-xs sm:text-sm">
-                    ₹ {totalLiabilitiesAndCapital.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {totalLiabilitiesAndCapital.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="p-4 space-y-3 font-mono text-xs flex-1">
@@ -1001,7 +1001,7 @@ const ProfitAndLoss: React.FC = () => {
                     </div>
                     <div className="text-right">
                       <div className="font-black text-purple-900 text-sm sm:text-base">
-                        ₹ {totalCapitalContributed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {totalCapitalContributed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </div>
                       <div className="text-[10px] text-purple-700 font-sans font-bold">Partners’ money</div>
                     </div>
@@ -1015,7 +1015,7 @@ const ProfitAndLoss: React.FC = () => {
                     </div>
                     <div className="text-right">
                       <div className={`font-black text-sm sm:text-base ${totalProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                        ₹ {totalProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {totalProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </div>
                       <div className="text-[10px] text-emerald-700 font-sans font-bold">Profit kept in business</div>
                     </div>
@@ -1029,7 +1029,7 @@ const ProfitAndLoss: React.FC = () => {
                         <div className="text-[11px] text-slate-500 font-sans mt-0.5">Something we owe</div>
                       </div>
                       <div className="text-right font-black text-slate-900 text-sm sm:text-base">
-                        ₹ {Math.abs(acc.closing).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {Math.abs(acc.closing).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </div>
                     </div>
                   ))}
@@ -1037,7 +1037,7 @@ const ProfitAndLoss: React.FC = () => {
                 </div>
                 <div className="p-3 bg-slate-100/80 border-t border-slate-200 flex justify-between items-center font-mono font-black text-xs">
                   <span className="font-sans font-bold uppercase text-slate-700">TOTAL WE OWE (PARTNERS + PROFIT)</span>
-                  <span className="text-purple-900 text-sm sm:text-base">₹ {totalLiabilitiesAndCapital.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  <span className="text-purple-900 text-sm sm:text-base">{totalLiabilitiesAndCapital.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 </div>
               </div>
 
@@ -1166,9 +1166,9 @@ const ProfitAndLoss: React.FC = () => {
             <thead>
               <tr>
                 <th>Loan Type</th>
-                <th className="num">Loans Issued (₹)</th>
-                <th className="num">Collection (₹)</th>
-                <th className="num">Balance (₹)</th>
+                <th className="num">Loans Issued</th>
+                <th className="num">Collection</th>
+                <th className="num">Balance</th>
                 <th className="num">New Loans</th>
                 <th className="num">Closed Loans</th>
                 <th className="num">Running</th>
@@ -1212,9 +1212,9 @@ const ProfitAndLoss: React.FC = () => {
             <thead>
               <tr>
                 <th>Income</th>
-                <th className="num">Amount (₹)</th>
+                <th className="num">Amount</th>
                 <th>Expenditure</th>
-                <th className="num">Amount (₹)</th>
+                <th className="num">Amount</th>
               </tr>
             </thead>
             <tbody>
@@ -1258,9 +1258,9 @@ const ProfitAndLoss: React.FC = () => {
             <thead>
               <tr>
                 <th>What We Own</th>
-                <th className="num">Amount (₹)</th>
+                <th className="num">Amount</th>
                 <th>What We Owe</th>
-                <th className="num">Amount (₹)</th>
+                <th className="num">Amount</th>
               </tr>
             </thead>
             <tbody>

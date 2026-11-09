@@ -1,3 +1,4 @@
+import LoadMoreBar, { LOAD_STEP } from '../../components/UI/LoadMoreBar';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Edit, Eye, FileEdit, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
@@ -18,7 +19,6 @@ import { getLocalBusinessDateISO } from '../../utils/dateUtils';
 
 type Row = DailyFinancialTransaction & { kind: EntryKind; loanUuid: string | null; loanStatus: string };
 
-const PAGE_SIZE = 100;
 const fmt = (n: number) => (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const fmt2 = (n: number) => (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const isoDay = (d?: string | null) => String(d || '').split('T')[0];
@@ -74,7 +74,7 @@ const FinanceEditEntry: React.FC = () => {
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [visible, setVisible] = useState(PAGE_SIZE);
+  const [visible, setVisible] = useState(LOAD_STEP);
   const [accounts, setAccounts] = useState<FinanceCashbookAccount[]>([]);
 
   // Filters
@@ -187,7 +187,7 @@ const FinanceEditEntry: React.FC = () => {
     [filtered]
   );
 
-  useEffect(() => { setVisible(PAGE_SIZE); }, [filtered.length]);
+  useEffect(() => { setVisible(LOAD_STEP); }, [filtered.length]);
 
   const clearFilters = () => {
     setFDate(''); setFCustomer(''); setFHead(''); setFLoan(''); setFOperator('');
@@ -415,7 +415,7 @@ const FinanceEditEntry: React.FC = () => {
           <div className='px-3 py-12 text-center text-slate-500 font-extrabold'>No entries found matching your criteria.</div>
         ) : (
           <div className='overflow-y-auto w-full' style={{ maxHeight: 'calc(100vh - 340px)', minHeight: 320 }}>
-            <table className='fit-table w-full divide-y divide-slate-200'>
+            <table data-no-load-more className='fit-table w-full divide-y divide-slate-200'>
               <thead className='sticky top-0 z-10 bg-slate-200 shadow-[inset_0_-2px_0_rgba(0,0,0,0.1)]'>
                 <tr className='text-slate-950 uppercase font-black tracking-wider'>
                   <th className='px-1 py-2.5 text-center border-r border-slate-300'>#</th>
@@ -468,13 +468,7 @@ const FinanceEditEntry: React.FC = () => {
                 ))}
               </tbody>
             </table>
-            {filtered.length > visible && (
-              <div className='text-center py-3 border-t border-slate-200'>
-                <button type='button' className={BTN_LIGHT} onClick={() => setVisible(v => v + PAGE_SIZE)}>
-                  Load More ({(filtered.length - visible).toLocaleString('en-IN')} more)
-                </button>
-              </div>
-            )}
+            <LoadMoreBar shown={shown.length} total={filtered.length} onMore={() => setVisible(v => v + LOAD_STEP)} onRefresh={() => setVisible(LOAD_STEP)} />
           </div>
         )}
       </div>

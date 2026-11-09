@@ -6,11 +6,11 @@ import {
   calculateMonth,
   calculateStaffMonth,
   dayKind,
-  isSunday,
   monthDates,
   paidDays,
   payableSalary,
   salaryForMonth,
+  workingDays,
 } from '../utils/attendanceCalc';
 
 const staff = (over: Partial<AttendanceStaff> = {}): AttendanceStaff => ({
@@ -26,7 +26,7 @@ const staff = (over: Partial<AttendanceStaff> = {}): AttendanceStaff => ({
   ...over,
 });
 
-/** Marks every Monday-Saturday of the month: Present, except the dates given. */
+/** Marks every day of the month except holidays: Present, except the dates given. */
 const markMonth = (
   month: string,
   exceptions: Record<string, AttendanceStatus> = {},
@@ -34,7 +34,7 @@ const markMonth = (
   holidays: string[] = []
 ): AttendanceRecord[] =>
   monthDates(month)
-    .filter(d => !isSunday(d) && !holidays.includes(d))
+    .filter(d => !holidays.includes(d))
     .map(d => ({
       staff_id: id,
       attendance_date: d,
@@ -55,12 +55,6 @@ const row = (
 };
 
 describe('calendar', () => {
-  it('finds real Sundays', () => {
-    expect(isSunday('2026-11-08')).toBe(true);
-    expect(isSunday('2026-11-09')).toBe(false);
-    expect(isSunday('2026-02-01')).toBe(true);
-  });
-
   it('knows month lengths, including leap years', () => {
     expect(monthDates('2026-02')).toHaveLength(28);
     expect(monthDates('2028-02')).toHaveLength(29);
@@ -70,13 +64,13 @@ describe('calendar', () => {
   });
 });
 
-describe('salary / days in the month x paid days (salary 15000)', () => {
-  it('nothing marked in February pays only the 4 Sundays, not the full salary', () => {
+describe('salary / working days x paid days (salary 15000)', () => {
+  it('nothing marked pays nothing', () => {
     const r = row(staff(), '2026-02', []);
-    expect(r.week_off).toBe(4);
-    expect(r.unmarked).toBe(24);
-    expect(r.paid_days).toBe(4);
-    expect(r.payable).toBe(2143); // 15000 / 28 x 4 = 2142.86
+    expect(r.holiday).toBe(0);
+    expect(r.unmarked).toBe(28);
+    expect(r.paid_days).toBe(0);
+    expect(r.payable).toBe(0);
   });
 
   it('never absent pays the full salary in every month length', () => {
@@ -106,29 +100,55 @@ describe('salary / days in the month x paid days (salary 15000)', () => {
         '2026-11-07': 'absent',
       })
     );
-    expect([r.present, r.half_day, r.absent, r.week_off]).toEqual([19, 2, 4, 5]);
+    expect([r.present, r.half_day, r.absent, r.holiday]).toEqual([24, 2, 4, 0]);
     expect(r.paid_days).toBe(25);
     expect(r.payable).toBe(12500);
   });
 
   it('a half day counts as half a paid day', () => {
-    expect(paidDays(10, 3, 4)).toBe(15.5);
+    expect(paidDays(10, 3)).toBe(11.5);
   });
 });
 
-describe('week offs', () => {
-  it('counts every Sunday as week off, with no entry needed', () => {
-    const r = row(staff(), '2026-11', markMonth('2026-11'));
-    expect(r.week_off).toBe(5);
-    expect(r.present).toBe(25);
-    expect(r.present + r.week_off).toBe(30);
+describe('Sundays are normal days', () => {
+  it('a Sunday can be marked and counts like any other day', () => {
+    expect(dayKind(staff(), '2026-11-08', undefined, new Set())).toBe('unmarked');
+    expect(dayKind(staff(), '2026-11-08', { status: 'present' }, new Set())).toBe('present');
+    expect(dayKind(staff(), '2026-11-08', { status: 'absent' }, new Set())).toBe('absent');
   });
 
-  it('counts a holiday as a paid week off', () => {
+  it('not working the 5 Sundays of a 30-day month: 25 days of 30000 pays 25000', () => {
+    const sundays = ['2026-11-01', '2026-11-08', '2026-11-15', '2026-11-22', '2026-11-29'];
+    const records = markMonth('2026-11').filter(r => !sundays.includes(r.attendance_date));
+    const r = row(staff({ salary: 30000 }), '2026-11', records);
+    expect(r.present).toBe(25);
+    expect(r.unmarked).toBe(5);
+    expect(r.working_days).toBe(30);
+    expect(r.payable).toBe(25000);
+  });
+});
+
+describe('holidays added by hand', () => {
+  it('there are no default holidays', () => {
+    expect(workingDays('2026-11', new Set())).toBe(30);
+    expect(row(staff(), '2026-11', markMonth('2026-11')).holiday).toBe(0);
+  });
+
+  it('take the day out of the month: 29 days worked of 29 pays the full salary', () => {
     const h = ['2026-11-09'];
-    const r = row(staff(), '2026-11', markMonth('2026-11', {}, 's1', h), h);
-    expect(r.week_off).toBe(6);
-    expect(r.payable).toBe(15000);
+    const r = row(staff({ salary: 30000 }), '2026-11', markMonth('2026-11', {}, 's1', h), h);
+    expect(r.present).toBe(29);
+    expect(r.holiday).toBe(1);
+    expect(r.working_days).toBe(29);
+    expect(r.paid_days).toBe(29);
+    expect(r.payable).toBe(30000);
+  });
+
+  it('an absent day is then a day of the shorter month', () => {
+    const h = ['2026-11-09'];
+    const r = row(staff(), '2026-11', markMonth('2026-11', { '2026-11-10': 'absent' }, 's1', h), h);
+    expect(r.paid_days).toBe(28);
+    expect(r.payable).toBe(14483); // 15000 / 29 x 28 = 14482.76
   });
 
   it('a holiday added later beats an Absent already saved for that day', () => {
@@ -137,9 +157,12 @@ describe('week offs', () => {
     expect(row(staff(), '2026-11', records, ['2026-11-09']).payable).toBe(15000);
   });
 
-  it('ignores an entry saved on a Sunday', () => {
-    const k = dayKind(staff(), '2026-11-08', { status: 'absent' }, new Set());
-    expect(k).toBe('week_off');
+  it('a holiday in another month changes nothing', () => {
+    expect(row(staff(), '2026-11', markMonth('2026-11'), ['2026-12-25']).working_days).toBe(30);
+  });
+
+  it('a month that is all holidays pays nothing instead of failing', () => {
+    expect(payableSalary(15000, 0, 0)).toBe(0);
   });
 });
 
@@ -148,9 +171,9 @@ describe('days not marked', () => {
     const records = markMonth('2026-11').slice(0, 10);
     const r = row(staff(), '2026-11', records);
     expect(r.present).toBe(10);
-    expect(r.unmarked).toBe(15);
-    expect(r.paid_days).toBe(15); // 10 present + 5 Sundays
-    expect(r.payable).toBe(7500);
+    expect(r.unmarked).toBe(20);
+    expect(r.paid_days).toBe(10);
+    expect(r.payable).toBe(5000);
   });
 });
 
@@ -173,7 +196,7 @@ describe('joining and leaving during a month', () => {
     expect(r.payable).toBe(4500);
   });
 
-  it('divides by the days in the month, not the days employed', () => {
+  it('divides by the working days of the month, not the days employed', () => {
     const r = row(staff({ salary: 10000, joining_date: '2026-10-16' }), '2026-10', markMonth('2026-10'));
     expect(r.paid_days).toBe(16);
     expect(r.payable).toBe(5161); // 10000 / 31 x 16 = 5161.29

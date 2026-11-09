@@ -146,8 +146,7 @@ export const formatLogValue = (field: string, val: any): string => {
     }
     if (fieldLower.includes('amount') || fieldLower.includes('charge') || fieldLower.includes('fee') || fieldLower.includes('balance') || fieldLower === 'debit' || fieldLower === 'credit' || fieldLower.includes('liability')) {
       return new Intl.NumberFormat('en-IN', {
-        style: 'currency',
-        currency: 'INR',
+        minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }).format(numVal);
     }
@@ -156,8 +155,7 @@ export const formatLogValue = (field: string, val: any): string => {
     if (!isNaN(parsedNum) && val.trim() !== '') {
       if (fieldLower.includes('amount') || fieldLower.includes('charge') || fieldLower.includes('fee') || fieldLower.includes('balance') || fieldLower.includes('liability')) {
         return new Intl.NumberFormat('en-IN', {
-          style: 'currency',
-          currency: 'INR',
+          minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         }).format(parsedNum);
       }

@@ -1,3 +1,4 @@
+import LoadMoreBar, { LOAD_STEP } from '../../components/UI/LoadMoreBar';
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
@@ -8,8 +9,6 @@ import {
   ArrowLeft, 
   RefreshCw, 
   Info,
-  ChevronLeft,
-  ChevronRight,
   Eye,
   Printer,
 } from 'lucide-react';
@@ -75,7 +74,7 @@ const Customers: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sortBy, setSortBy] = useState<'Customer ID' | 'Latest' | 'Oldest' | 'Name' | 'Village' | 'Mandal' | 'District' | 'Partner'>('Customer ID');
-  const [pageSize, setPageSize] = useState<25 | 50 | 100>(25);
+  const pageSize = LOAD_STEP;
   const [pageIndex, setPageIndex] = useState(0);
 
   // Selected Customer Profile View Modal & Extra parameters
@@ -241,8 +240,12 @@ const Customers: React.FC = () => {
           };
         });
 
-        setCustomers(mapped);
-      } else {
+        setCustomers(prev => {
+          if (pageIndex === 0) return mapped;
+          const fresh = new Set(mapped.map(c => c.id));
+          return [...prev.filter(c => !fresh.has(c.id)), ...mapped];
+        });
+      } else if (pageIndex === 0) {
         setCustomers([]);
       }
 
@@ -253,7 +256,7 @@ const Customers: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, sortBy, pageIndex, pageSize]);
+  }, [debouncedSearch, sortBy, pageIndex]);
 
   useEffect(() => {
     fetchCustomers();
@@ -550,23 +553,10 @@ const Customers: React.FC = () => {
           </select>
         </div>
 
-        {/* Size select */}
-        <div className="md:col-span-3 space-y-1">
-          <label className="text-[15px] font-bold text-slate-500 uppercase block">Rows Per Page</label>
-          <select
-            value={pageSize}
-            onChange={(e) => { setPageSize(Number(e.target.value) as any); setPageIndex(0); }}
-            className="w-full bg-white border border-slate-250 rounded px-3 text-[16px] text-slate-800 focus:outline-none h-[48px] font-bold"
-          >
-            <option value="25">25 rows</option>
-            <option value="50">50 rows</option>
-            <option value="100">100 rows</option>
-          </select>
-        </div>
       </div>
 
       {/* Main Customers List Card */}
-      {loading ? (
+      {loading && customers.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 bg-white border border-slate-200 rounded-lg shadow-sm">
           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-slate-900 mb-2"></div>
           <p className="text-slate-500 font-bold uppercase text-[11px] tracking-wider">Loading Customer DB...</p>
@@ -582,7 +572,7 @@ const Customers: React.FC = () => {
         <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex flex-col w-full">
           {/* Table Container */}
           <div className="overflow-y-auto max-h-[520px] w-full custom-scrollbar">
-            <table className="fit-table fit-lg w-full divide-y divide-slate-200">
+            <table data-no-load-more className="fit-table fit-lg w-full divide-y divide-slate-200">
               <thead className="bg-slate-100 sticky top-0 z-10 text-slate-700">
                 <tr className="divide-x divide-slate-200">
                   <th className="px-1.5 py-2.5 text-center font-bold uppercase text-[11px] tracking-wider">SL</th>
@@ -606,7 +596,7 @@ const Customers: React.FC = () => {
                       className="hover:bg-slate-50 transition-colors cursor-pointer"
                     >
                       <td className="fit-nowrap px-1.5 py-2 text-center text-slate-400 font-mono font-bold">
-                        {pageIndex * pageSize + index + 1}
+                        {index + 1}
                       </td>
                       <td className="fit-nowrap px-2 py-2 font-mono text-slate-900 font-bold text-center">
                         {cust.customer_id ?? '—'}
@@ -664,32 +654,7 @@ const Customers: React.FC = () => {
             </table>
           </div>
 
-          {/* Table pagination Footer */}
-          <div className="bg-slate-50 border-t border-slate-200 px-4 py-2 flex items-center justify-between">
-            <div className="text-slate-500 font-bold text-xs uppercase">
-              Showing <strong className="text-slate-850 font-mono">{pageIndex * pageSize + 1}</strong> to{' '}
-              <strong className="text-slate-850 font-mono">
-                {Math.min((pageIndex + 1) * pageSize, totalCount)}
-              </strong>{' '}
-              of <strong className="text-slate-850 font-mono">{totalCount}</strong> records
-            </div>
-            <div className="flex gap-1">
-              <button
-                onClick={() => setPageIndex(p => Math.max(0, p - 1))}
-                disabled={pageIndex === 0}
-                className="p-1 rounded border border-slate-250 bg-white hover:bg-slate-50 disabled:opacity-40"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setPageIndex(p => p + 1)}
-                disabled={(pageIndex + 1) * pageSize >= totalCount}
-                className="p-1 rounded border border-slate-250 bg-white hover:bg-slate-50 disabled:opacity-40"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+          <LoadMoreBar shown={customers.length} total={totalCount} busy={loading} onMore={() => setPageIndex(p => p + 1)} onRefresh={() => setPageIndex(0)} />
         </div>
       )}
 

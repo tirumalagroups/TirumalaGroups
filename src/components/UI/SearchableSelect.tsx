@@ -284,13 +284,15 @@ const SearchableSelect = forwardRef<HTMLInputElement, SearchableSelectProps>(
             aria-expanded={isOpen}
             aria-autocomplete='list'
             aria-controls={isOpen && label ? `${label.replace(/\s+/g, '-').toLowerCase()}-listbox` : undefined}
-            className={`w-full pr-20 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed font-bold select-text ${
+            className={`w-full border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed font-bold select-text ${
               size === 'sm' ? 'px-2 py-1 text-sm' : size === 'lg' ? 'px-4 py-3 text-lg' : 'px-3 py-2 text-base'
             } ${(className.includes('staff-field') || isFinance) ? 'uppercase' : ''}`}
             style={{ 
               fontFamily: 'Times New Roman', 
               fontSize: '15px',
               fontWeight: 'bold',
+              // Room for the arrow, and the clear button when something is chosen; the rest is for the text
+              paddingRight: value && !disabled ? 56 : 30,
               userSelect: 'text',
               WebkitUserSelect: 'text',
               ...((className.includes('staff-field') || isFinance) ? { textTransform: 'uppercase' } : {})

@@ -53,7 +53,7 @@ const buildPrintHtml = (month: string, rows: MonthSummaryRow[], locked: boolean)
     <table>
       <thead><tr>
         <th>S.No</th><th>Job Holder Name</th><th>Relation</th><th>Village</th><th class="money">Salary</th>
-        <th ${num}>Present</th><th ${num}>Half Day</th><th ${num}>Absent</th><th ${num}>Week Off</th>
+        <th ${num}>Present</th><th ${num}>Half Day</th><th ${num}>Absent</th><th ${num}>Holiday</th>
         <th ${num}>Paid Days</th><th class="money">Payable</th>
       </tr></thead>
       <tbody>
@@ -62,7 +62,7 @@ const buildPrintHtml = (month: string, rows: MonthSummaryRow[], locked: boolean)
             r => `<tr>
           <td ${num}>${r.sno}</td><td>${esc(r.name)}</td><td>${esc(r.relation)}</td><td>${esc(r.village)}</td>
           <td class="money">${esc(fmtMoney(r.salary))}</td>
-          <td ${num}>${r.present}</td><td ${num}>${r.half_day}</td><td ${num}>${r.absent}</td><td ${num}>${r.week_off}</td>
+          <td ${num}>${r.present}</td><td ${num}>${r.half_day}</td><td ${num}>${r.absent}</td><td ${num}>${r.holiday}</td>
           <td ${num}>${fmtDays(r.paid_days)}</td><td class="money">${esc(fmtMoney(r.payable))}</td>
         </tr>`
           )
@@ -73,7 +73,7 @@ const buildPrintHtml = (month: string, rows: MonthSummaryRow[], locked: boolean)
         </tr>
       </tbody>
     </table>
-    <div class="note">Payable = Salary / ${daysInMonth(month)} days x Paid Days. Paid Days = Present + (Half Days x 0.5) + Week Off. Sundays and holidays are paid week offs.</div>
+    <div class="note">Payable = Salary / ${rows[0]?.working_days ?? daysInMonth(month)} working days x Paid Days. Working Days = days in the month less holidays. Paid Days = Present + (Half Days x 0.5).</div>
     <div class="note">Printed on ${format(new Date(), 'dd/MM/yyyy HH:mm')}</div>
   </div></body></html>`;
 };
@@ -82,7 +82,7 @@ const KIND_CELL: Record<DayKind, string> = {
   present: 'bg-green-100 text-green-900 border-green-200',
   half_day: 'bg-amber-100 text-amber-900 border-amber-200',
   absent: 'bg-red-100 text-red-900 border-red-200',
-  week_off: 'bg-sky-100 text-sky-900 border-sky-200',
+  holiday: 'bg-sky-100 text-sky-900 border-sky-200',
   unmarked: 'bg-white text-gray-500 border-gray-200',
   not_employed: 'bg-gray-100 text-gray-400 border-gray-200',
 };
@@ -320,7 +320,7 @@ const SummaryTab: React.FC<{
                 <th className='text-center font-semibold'>Present</th>
                 <th className='text-center font-semibold'>Half Day</th>
                 <th className='text-center font-semibold'>Absent</th>
-                <th className='text-center font-semibold'>Week Off</th>
+                <th className='text-center font-semibold'>Holiday</th>
                 <th className='text-center font-semibold'>Not Marked</th>
                 <th className='text-center font-semibold'>Paid Days</th>
                 <th className='text-right font-semibold'>Payable</th>
@@ -341,7 +341,7 @@ const SummaryTab: React.FC<{
                   <td className='text-center'>{r.present}</td>
                   <td className='text-center'>{r.half_day}</td>
                   <td className='text-center'>{r.absent}</td>
-                  <td className='text-center'>{r.week_off}</td>
+                  <td className='text-center'>{r.holiday}</td>
                   <td className={`text-center ${r.unmarked > 0 ? 'text-amber-700 font-bold' : ''}`}>{r.unmarked}</td>
                   <td className='text-center font-semibold'>{fmtDays(r.paid_days)}</td>
                   <td className='text-right font-bold whitespace-nowrap'>{fmtMoney(r.payable)}</td>

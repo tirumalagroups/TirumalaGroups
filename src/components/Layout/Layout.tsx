@@ -1,3 +1,4 @@
+import FitMain from './FitMain';
 import OfflineBanner from '../offline/OfflineBanner';
 import React from 'react';
 import { Outlet, useLocation, Navigate } from 'react-router-dom';
@@ -63,9 +64,9 @@ const Layout: React.FC = () => {
         <FinanceHeader />
         <div className='flex flex-1 overflow-hidden'>
           <FinanceSidebar />
-          <main className='flex-1 overflow-y-auto p-6'>
+          <FitMain>
             <Outlet />
-          </main>
+          </FitMain>
         </div>
       </div>
     );
@@ -77,9 +78,9 @@ const Layout: React.FC = () => {
       <div className='flex-1 flex flex-col overflow-hidden min-h-screen'>
         <Header />
         <OfflineBanner />
-        <main className='flex-1 overflow-y-auto p-6'>
-          <Outlet />
-        </main>
+        <FitMain>
+            <Outlet />
+          </FitMain>
       </div>
     </div>
   );

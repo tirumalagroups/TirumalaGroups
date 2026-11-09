@@ -17,7 +17,6 @@ import {
   Download,
   RefreshCw,
   Search,
-  Edit2,
   X,
   User,
   File as FileIcon,
@@ -235,13 +234,6 @@ const CDLedger: React.FC = () => {
   const [editLogs, setEditLogs] = useState<any[]>([]);
   const [pendingReviews, setPendingReviews] = useState<any[]>([]);
   const [loanTransactions, setLoanTransactions] = useState<any[]>([]);
-  const [showEditTxModal, setShowEditTxModal] = useState(false);
-  const [editingTx, setEditingTx] = useState<any | null>(null);
-  const [editTxReceiptNo, setEditTxReceiptNo] = useState('');
-  const [editTxDate, setEditTxDate] = useState('');
-  const [editTxAmount, setEditTxAmount] = useState('');
-  const [editTxReason, setEditTxReason] = useState('');
-  const [isSavingTx, setIsSavingTx] = useState(false);
   const [expandedTxIds, setExpandedTxIds] = useState<Set<string>>(new Set());
   const toggleExpandTx = (txId: string) => {
     const newSet = new Set(expandedTxIds);
@@ -428,208 +420,6 @@ const CDLedger: React.FC = () => {
       await fetchLedgerData();
     }
   };
-
-  const handleOpenEditTxModal = (tx: any) => {
-    setEditingTx(tx);
-    setEditTxReceiptNo(tx.receipt_no || '');
-    setEditTxDate(tx.date ? new Date(tx.date).toISOString().split('T')[0] : '');
-    
-    setEditTxAmount(String(tx.amount || ''));
-    setEditTxReason('');
-    setShowEditTxModal(true);
-  };
-
-  const handleSaveEditTx = async () => {
-    if (!editingTx || !selectedLoan) return;
-    if (!editTxReceiptNo.trim() || !editTxDate || !editTxAmount || !editTxReason.trim()) {
-      toast.error('All required fields must be filled.');
-      return;
-    }
-    const amt = parseFloat(editTxAmount);
-    if (isNaN(amt) || amt <= 0) {
-      toast.error('Amount must be greater than 0.');
-      return;
-    }
-
-    setIsSavingTx(true);
-    try {
-      // 1. Check for duplicate receipt numbers for same loan (excluding current transaction)
-      const { data: dupTx, error: dupError } = await supabase
-        .from('finance_transactions')
-        .select('id')
-        .eq('loan_id', selectedLoan.id)
-        .eq('receipt_no', editTxReceiptNo.trim())
-        .neq('id', editingTx.id)
-        .maybeSingle();
-
-      if (dupError) throw dupError;
-      if (dupTx) {
-        toast.error(`Receipt number ${editTxReceiptNo.trim()} is already used for another transaction on this loan.`);
-        setIsSavingTx(false);
-        return;
-      }
-
-      // Prepare old and new data for audit log
-      const oldData = {
-        receipt_no: editingTx.receipt_no,
-        date: editingTx.date,
-        amount: editingTx.amount,
-        remarks: editingTx.remarks,
-        type: editingTx.type
-      };
-
-      const newData = {
-        receipt_no: editTxReceiptNo.trim(),
-        date: editTxDate,
-        amount: amt,
-        remarks: editingTx.remarks || '',
-        type: 'Collection'
-      };
-
-      // 2. Update transaction record
-      const { error: txUpdateError } = await supabase
-        .from('finance_transactions')
-        .update({
-          receipt_no: newData.receipt_no,
-          date: new Date(newData.date).toISOString(),
-          amount: newData.amount,
-          remarks: newData.remarks,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', editingTx.id);
-
-      if (txUpdateError) throw txUpdateError;
-
-      // 3. Log the edit audit
-      try {
-        const username = user?.username || 'Staff';
-        await supabase
-          .from('finance_cd_transaction_edit_logs')
-          .insert({
-            loan_id: selectedLoan.id,
-            transaction_id: editingTx.id,
-            old_data: oldData,
-            new_data: newData,
-            edited_by: username,
-            reason: editTxReason.trim()
-          });
-
-        await supabaseFinance.logTransactionForReview({
-          loanId: selectedLoan.id,
-          sourceType: 'Loan Payment',
-          sourceId: editingTx.id,
-          receiptNo: newData.receipt_no,
-          transactionType: 'CD Collection Edition',
-          transactionDate: newData.date,
-          amount: newData.amount,
-          enteredBy: username,
-          actionType: 'EDIT'
-        });
-      } catch (logErr) {
-        console.error('Failed to write audit log:', logErr);
-      }
-
-      // 4. Run rebuild
-      const rebuildResult = await cdLedgerRebuildService.rebuildCDLoanLifecycle(selectedLoan.id, 'FULL_RECALCULATE');
-      if (!rebuildResult.success) {
-        throw new Error(rebuildResult.error || 'Rebuild failed');
-      }
-
-      toast.success('Transaction updated and loan rebuilt successfully');
-      setShowEditTxModal(false);
-      setEditingTx(null);
-      
-      // Refresh details
-      await refreshLoanData();
-    } catch (err: any) {
-      console.error('Error saving transaction edit:', err);
-      toast.error(err.message || 'Failed to edit transaction');
-    } finally {
-      setIsSavingTx(false);
-    }
-  };
-
-  const handleDeleteTx = async (tx: any) => {
-    if (!selectedLoan) return;
-    if (!user?.is_admin) {
-      toast.error('Only administrators can delete transactions.');
-      return;
-    }
-
-    const confirmDelete = window.confirm(`Are you sure you want to delete transaction ${tx.receipt_no || ''} of ${Number(tx.amount).toLocaleString('en-IN')}? This will completely rebuild the loan lifecycle.`);
-    if (!confirmDelete) return;
-
-    const reason = window.prompt('Please enter the reason for deleting this transaction (Mandatory):');
-    if (reason === null) return; // User cancelled prompt
-    if (!reason.trim()) {
-      toast.error('Delete reason is mandatory.');
-      return;
-    }
-
-    try {
-      // 1. Prepare log snapshot
-      const oldData = {
-        receipt_no: tx.receipt_no,
-        date: tx.date,
-        amount: tx.amount,
-        remarks: tx.remarks,
-        type: tx.type
-      };
-
-      // 2. Log audit log first (before deleting)
-      try {
-        const username = user?.username || 'Admin';
-        await supabase
-          .from('finance_cd_transaction_edit_logs')
-          .insert({
-            loan_id: selectedLoan.id,
-            transaction_id: tx.id,
-            old_data: oldData,
-            new_data: { status: 'Deleted' },
-            edited_by: username,
-            reason: reason.trim()
-          });
-
-        await supabaseFinance.logTransactionForReview({
-          loanId: selectedLoan.id,
-          sourceType: 'Loan Payment',
-          sourceId: tx.id,
-          receiptNo: tx.receipt_no,
-          transactionType: 'CD Collection Deletion',
-          transactionDate: tx.date,
-          amount: Number(tx.amount),
-          enteredBy: username,
-          actionType: 'DELETE'
-        });
-      } catch (logErr) {
-        console.error('Failed to log delete audit:', logErr);
-      }
-
-      // 3. Delete transaction record
-      const { error: deleteError } = await supabase
-        .from('finance_transactions')
-        .delete()
-        .eq('id', tx.id);
-
-      if (deleteError) throw deleteError;
-
-      // 4. Run rebuild
-      const rebuildResult = await cdLedgerRebuildService.rebuildCDLoanLifecycle(selectedLoan.id, 'FULL_RECALCULATE');
-      if (!rebuildResult.success) {
-        throw new Error(rebuildResult.error || 'Rebuild failed');
-      }
-
-      toast.success('Transaction deleted and loan rebuilt successfully');
-      
-      // Refresh details
-      await refreshLoanData();
-    } catch (err: any) {
-      console.error('Error deleting transaction:', err);
-      toast.error(err.message || 'Failed to delete transaction');
-    }
-  };
-
-
 
   // Autocomplete Suggestions logic
   const universalSuggestions = useMemo(() => {
@@ -988,7 +778,7 @@ const CDLedger: React.FC = () => {
       if (npaLossRow) {
         // NPA close: nothing received, the remaining amount is written off as loss
         eventType = 'NPA';
-        remarks = `NPA Close - Loss ₹${Number(npaLossRow.debit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+        remarks = `NPA Close - Loss ${Number(npaLossRow.debit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
       } else if (isClose) {
         eventType = 'Closure';
         remarks = 'Account Closed & Settled';
@@ -1838,7 +1628,7 @@ const CDLedger: React.FC = () => {
 
       clearFinanceCalendarCache();
       await refreshLoanData();
-      toast.success(`NPA Account closed. Loss of ₹${total_for_close.toLocaleString('en-IN', { minimumFractionDigits: 2 })} recorded (Receipt: ${npaReceiptNo}).`);
+      toast.success(`NPA Account closed. Loss of ${total_for_close.toLocaleString('en-IN', { minimumFractionDigits: 2 })} recorded (Receipt: ${npaReceiptNo}).`);
       setShowNpaModal(false);
       setNpaReason('');
     } catch (e: any) {
@@ -2931,20 +2721,12 @@ const CDLedger: React.FC = () => {
                         <th className="px-4 py-3.5 whitespace-nowrap">Transaction Type</th>
                         <th className="px-4 py-3.5 text-right text-indigo-950 whitespace-nowrap">Amount Paid</th>
                         <th className="px-4 py-3.5 whitespace-nowrap">Collected By</th>
-                        <th className="px-4 py-3.5 text-center whitespace-nowrap">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 bg-white font-sans">
                       {loanTransactions
                         .filter((tx: any) => tx.type === 'Collection')
                         .map((tx: any) => {
-                          const isTxEditable = user?.is_admin || (() => {
-                            const txCreatedAt = new Date(tx.created_at || tx.date).getTime();
-                            const now = Date.now();
-                            const diffHours = (now - txCreatedAt) / (1000 * 60 * 60);
-                            return diffHours <= 24;
-                          })();
-                          
                           const isExpanded = expandedTxIds.has(tx.id);
                           
                           const txAllocations = cdLedgerEntries.filter(
@@ -2992,36 +2774,10 @@ const CDLedger: React.FC = () => {
                                   {Number(tx.amount).toLocaleString('en-IN')}
                                 </td>
                                 <td className="px-4 py-3 text-slate-700 font-medium whitespace-nowrap">{tx.collected_by || 'Staff'}</td>
-                                <td className="px-4 py-3 whitespace-nowrap">
-                                  <div className="flex items-center justify-center gap-2">
-                                    {isTxEditable ? (
-                                      <button
-                                        onClick={() => handleOpenEditTxModal(tx)}
-                                        className="p-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-900 rounded-lg transition-colors border border-indigo-200"
-                                        title="Edit Transaction"
-                                      >
-                                        <Edit2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    ) : (
-                                      <span className="text-slate-400 text-xs italic bg-slate-50 px-2 py-0.5 rounded border border-slate-200" title={isPending ? "Pending approval review" : "Editable only within 24 hours"}>
-                                        {isPending ? 'Pending' : 'ReadOnly'}
-                                      </span>
-                                    )}
-                                    {user?.is_admin && (
-                                      <button
-                                        onClick={() => handleDeleteTx(tx)}
-                                        className="p-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:text-rose-900 rounded-lg transition-colors border border-rose-200"
-                                        title="Delete Transaction"
-                                      >
-                                        <X className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
                               </tr>
                               {isExpanded && (
                                 <tr className="bg-slate-50/90">
-                                  <td colSpan={7} className="px-6 py-3 border-y border-slate-250">
+                                  <td colSpan={6} className="px-6 py-3 border-y border-slate-250">
                                     <div className="bg-white rounded-xl border border-slate-200 p-3 space-y-2 shadow-sm">
                                       <div className="flex items-center justify-between text-[11px] font-mono font-bold text-slate-700 border-b pb-1.5">
                                         <span className="flex items-center gap-1.5 text-blue-900">
@@ -3059,7 +2815,7 @@ const CDLedger: React.FC = () => {
                         })}
                       {loanTransactions.filter((tx: any) => tx.type === 'Collection').length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="text-center py-8 text-slate-400 italic">No collection transactions recorded</td>
+                          <td colSpan={6} className="text-center py-8 text-slate-400 italic">No collection transactions recorded</td>
                         </tr>
                       ) : null}
                     </tbody>
@@ -3068,7 +2824,7 @@ const CDLedger: React.FC = () => {
                         <tr>
                           <td colSpan={4} className="px-4 py-3 uppercase text-right font-sans font-bold text-slate-700">TOTAL CASH COLLECTED:</td>
                           <td className="px-4 py-3 text-right text-indigo-950 font-black">{paymentTotals.toLocaleString('en-IN')}</td>
-                          <td colSpan={2}></td>
+                          <td></td>
                         </tr>
                       </tfoot>
                     )}
@@ -3667,7 +3423,7 @@ const CDLedger: React.FC = () => {
                   ))}
                   <tr className="rc-total">
                     <td className="rc-label">Total Paid</td>
-                    <td className="rc-amt">₹ {formatReceiptAmount(r.totalPaid)}</td>
+                    <td className="rc-amt">{formatReceiptAmount(r.totalPaid)}</td>
                   </tr>
                   <tr>
                     <td className="rc-label">Balance Principal Outstanding</td>
@@ -3777,101 +3533,6 @@ const CDLedger: React.FC = () => {
                 </Button>
                 <Button onClick={handleReturnDocSubmit} variant="primary" className="flex-1 bg-blue-600 hover:bg-blue-700 border-0 text-white rounded-xl" disabled={isReturningDoc || !returnedTo.trim()}>
                   {isReturningDoc ? 'Saving...' : 'Confirm Return'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Transaction Modal */}
-      {showEditTxModal && editingTx && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-xl relative">
-            <button onClick={() => setShowEditTxModal(false)} className="absolute right-4 top-4 text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
-            <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <CreditCard className="w-6 h-6 text-indigo-600" />
-              Edit Payment Transaction
-            </h2>
-            <div className="space-y-4">
-              {/* Original Snapshot Panel */}
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-xs space-y-2">
-                <div className="font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Original Transaction Snapshot</div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <div className="text-slate-400">Receipt No</div>
-                    <div className="font-bold font-mono text-slate-800">{editingTx.receipt_no || '-'}</div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400">Payment Date</div>
-                    <div className="font-bold text-slate-800">
-                      {editingTx.date ? new Date(editingTx.date).toLocaleDateString('en-IN') : '-'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400">Amount Paid</div>
-                    <div className="font-bold text-slate-800">
-                      {Number(editingTx.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <Input 
-                  label="New Receipt Number" 
-                  value={editTxReceiptNo} 
-                  onChange={setEditTxReceiptNo} 
-                  placeholder="Receipt number (e.g. RC150)"
-                  required
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <FinanceSmartCalendar
-                    value={editTxDate}
-                    onChange={setEditTxDate}
-                    module="CD_LEDGER"
-                    label="New Payment Date"
-                    required
-                  />
-                </div>
-                <div>
-                  <Input 
-                    label="New Payment Amount ()" 
-                    value={editTxAmount} 
-                    onChange={setEditTxAmount} 
-                    placeholder="Amount paid"
-                    type="number"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <Input 
-                  label="Reason for Edit (Mandatory)" 
-                  value={editTxReason} 
-                  onChange={setEditTxReason} 
-                  placeholder="e.g. Wrong amount entered, Cash correction"
-                  required
-                />
-              </div>
-              
-              <div className="pt-4 flex gap-3">
-                <Button onClick={() => setShowEditTxModal(false)} variant="secondary" className="flex-1 rounded-xl">
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleSaveEditTx} 
-                  variant="primary" 
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 border-0 text-white rounded-xl" 
-                  disabled={isSavingTx || !editTxReceiptNo.trim() || !editTxDate || !editTxAmount || !editTxReason.trim()}
-                >
-                  {isSavingTx ? 'Saving...' : 'Save Changes'}
                 </Button>
               </div>
             </div>

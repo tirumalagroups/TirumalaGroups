@@ -1,13 +1,15 @@
 // Attendance salary rules. No database or screen code here, so every rule can be tested.
 //
-// Salary = salary / days in the month x paid days
-// Paid days = present days + (half days x 0.5) + week offs
+// Salary = salary / working days x paid days
+// Working days = days in the month - holidays added for that month
+// Paid days = present days + (half days x 0.5)
 //
-// Sundays and holidays are paid week offs. Days not marked and days outside the person's
-// joining and leaving dates earn nothing.
+// Sundays are normal days. There are no holidays by default. A holiday added by hand is taken
+// out of the month for everyone. Days not marked and days outside the person's joining and
+// leaving dates earn nothing.
 
 export type AttendanceStatus = 'present' | 'half_day' | 'absent';
-export type DayKind = AttendanceStatus | 'week_off' | 'unmarked' | 'not_employed';
+export type DayKind = AttendanceStatus | 'holiday' | 'unmarked' | 'not_employed';
 
 export interface AttendanceStaff {
   id: string;
@@ -54,9 +56,10 @@ export interface MonthSummaryRow {
   present: number;
   half_day: number;
   absent: number;
-  week_off: number;
+  holiday: number;
   unmarked: number;
   employed_days: number;
+  working_days: number;
   paid_days: number;
   payable: number;
 }
@@ -73,11 +76,6 @@ export const monthDates = (month: string): string[] =>
 
 export const monthOf = (date: string): string => date.slice(0, 7);
 
-export const isSunday = (date: string): boolean => {
-  const [y, m, d] = date.split('-').map(Number);
-  return new Date(y, m - 1, d).getDay() === 0;
-};
-
 export const isEmployedOn = (
   staff: Pick<AttendanceStaff, 'joining_date' | 'leaving_date'>,
   date: string
@@ -86,7 +84,7 @@ export const isEmployedOn = (
 export const relationText = (s: Pick<AttendanceStaff, 'relation_type' | 'relation_name'>): string =>
   [s.relation_type, s.relation_name].filter(Boolean).join(' ').trim();
 
-/** What a day counts as for this person. A Sunday or holiday always wins over a saved entry. */
+/** What a day counts as for this person. A holiday always wins over a saved entry. */
 export const dayKind = (
   staff: Pick<AttendanceStaff, 'joining_date' | 'leaving_date'>,
   date: string,
@@ -94,7 +92,7 @@ export const dayKind = (
   holidayDates: ReadonlySet<string>
 ): DayKind => {
   if (!isEmployedOn(staff, date)) return 'not_employed';
-  if (isSunday(date) || holidayDates.has(date)) return 'week_off';
+  if (holidayDates.has(date)) return 'holiday';
   return record ? record.status : 'unmarked';
 };
 
@@ -114,11 +112,14 @@ export const salaryForMonth = (
   return Number((inForce ?? own[0]).salary) || 0;
 };
 
-export const paidDays = (present: number, halfDays: number, weekOffs: number): number =>
-  present + halfDays * 0.5 + weekOffs;
+export const paidDays = (present: number, halfDays: number): number => present + halfDays * 0.5;
 
-export const payableSalary = (salary: number, paid: number, monthLength: number): number =>
-  Math.round((salary * paid) / monthLength);
+/** Days in the month, less the holidays added for that month. */
+export const workingDays = (month: string, holidayDates: ReadonlySet<string>): number =>
+  monthDates(month).filter(d => !holidayDates.has(d)).length;
+
+export const payableSalary = (salary: number, paid: number, working: number): number =>
+  working > 0 ? Math.round((salary * paid) / working) : 0;
 
 /** One summary row for one person, or null if they were not employed in that month. */
 export const calculateStaffMonth = (
@@ -131,7 +132,7 @@ export const calculateStaffMonth = (
   const byDate = new Map(
     records.filter(r => r.staff_id === staff.id).map(r => [r.attendance_date, r] as const)
   );
-  const counts = { present: 0, half_day: 0, absent: 0, week_off: 0, unmarked: 0 };
+  const counts = { present: 0, half_day: 0, absent: 0, holiday: 0, unmarked: 0 };
   let employedDays = 0;
   for (const date of monthDates(month)) {
     const kind = dayKind(staff, date, byDate.get(date), holidayDates);
@@ -142,7 +143,8 @@ export const calculateStaffMonth = (
   if (employedDays === 0) return null;
 
   const salary = salaryForMonth(staff, month, history);
-  const paid = paidDays(counts.present, counts.half_day, counts.week_off);
+  const paid = paidDays(counts.present, counts.half_day);
+  const working = workingDays(month, holidayDates);
   return {
     staff_id: staff.id,
     sno: staff.sno,
@@ -152,8 +154,9 @@ export const calculateStaffMonth = (
     salary,
     ...counts,
     employed_days: employedDays,
+    working_days: working,
     paid_days: paid,
-    payable: payableSalary(salary, paid, daysInMonth(month)),
+    payable: payableSalary(salary, paid, working),
   };
 };
 
@@ -175,7 +178,7 @@ export const STATUS_LABEL: Record<DayKind, string> = {
   present: 'Present',
   half_day: 'Half Day',
   absent: 'Absent',
-  week_off: 'Week Off',
+  holiday: 'Holiday',
   unmarked: 'Not Marked',
   not_employed: '-',
 };

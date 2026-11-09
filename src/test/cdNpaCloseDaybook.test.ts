@@ -40,11 +40,11 @@ describe('CD Ledger NPA Close Day Book Reflection', () => {
     expect(txCall.receipt_no).toBe('RC2474');
     expect(txCall.collected_by).toBe('OPERATOR1');
     expect(txCall.remarks).toContain('NPA Closed Payment - CD118 - NAGESHWAR REKHA');
-    expect(txCall.remarks).toContain('Principal Paid: ₹1,00,000.00');
-    expect(txCall.remarks).toContain('Interest Paid: ₹10,000.00');
-    expect(txCall.remarks).toContain('Penalty Paid: ₹2,500.00');
-    expect(txCall.remarks).toContain('Document Charges: ₹500.00');
-    expect(txCall.remarks).toContain('Total Received: ₹1,13,000.00');
+    expect(txCall.remarks).toContain('Principal Paid: 1,00,000.00');
+    expect(txCall.remarks).toContain('Interest Paid: 10,000.00');
+    expect(txCall.remarks).toContain('Penalty Paid: 2,500.00');
+    expect(txCall.remarks).toContain('Document Charges: 500.00');
+    expect(txCall.remarks).toContain('Total Received: 1,13,000.00');
     expect(txCall.remarks).toContain('Receipt: RC2474');
     expect(txCall.remarks).toContain('Reason: DEFAULTED BORROWER SETTLEMENT');
 

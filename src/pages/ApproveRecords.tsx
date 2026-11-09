@@ -1,3 +1,4 @@
+import LoadMoreBar, { LOAD_STEP } from '../components/UI/LoadMoreBar';
 import React, { useState, useEffect, useMemo } from 'react';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
@@ -89,9 +90,8 @@ const ApproveRecords: React.FC = () => {
     new Set()
   );
   const [loading, setLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [approvedPage, setApprovedPage] = useState(1);
-  const [recordsPerPage] = useState(50);
+  const [visibleCount, setVisibleCount] = useState(LOAD_STEP);
+  const [approvedVisible, setApprovedVisible] = useState(LOAD_STEP);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [viewOpen, setViewOpen] = useState(false);
   const [viewEntry, setViewEntry] = useState<any | null>(null);
@@ -214,11 +214,6 @@ const ApproveRecords: React.FC = () => {
     }
   }, [staffOptions, filters.staff]);
 
-  // Calculate total pages for pending
-  const totalPages = Math.ceil(filteredEntries.length / recordsPerPage);
-
-  // Calculate total pages for approved
-  const approvedTotalPages = Math.ceil(filteredApprovedEntries.length / recordsPerPage);
 
   // Summary data
   const [summary, setSummary] = useState({
@@ -351,19 +346,6 @@ const ApproveRecords: React.FC = () => {
     setDisplayDate(convertToDisplayFormat(filters.date) || format(new Date(), 'dd/MM/yyyy'));
   }, [filters.date]);
 
-  // Clamp currentPage
-  useEffect(() => {
-    if (totalPages > 0 && currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [filteredEntries.length, totalPages, currentPage]);
-
-  // Clamp approvedPage
-  useEffect(() => {
-    if (approvedTotalPages > 0 && approvedPage > approvedTotalPages) {
-      setApprovedPage(approvedTotalPages);
-    }
-  }, [filteredApprovedEntries.length, approvedTotalPages, approvedPage]);
 
   const applyFilters = () => {
     // 1. Filter pending entries by date and dropdown filters
@@ -1410,15 +1392,11 @@ const ApproveRecords: React.FC = () => {
   };
 
   const getCurrentPageEntries = () => {
-    const startIndex = (currentPage - 1) * recordsPerPage;
-    const endIndex = startIndex + recordsPerPage;
-    return filteredEntries.slice(startIndex, endIndex);
+    return filteredEntries.slice(0, visibleCount);
   };
 
   const getApprovedPageEntries = () => {
-    const startIndex = (approvedPage - 1) * recordsPerPage;
-    const endIndex = startIndex + recordsPerPage;
-    return filteredApprovedEntries.slice(startIndex, endIndex);
+    return filteredApprovedEntries.slice(0, approvedVisible);
   };
 
 
@@ -1772,7 +1750,7 @@ const ApproveRecords: React.FC = () => {
           subtitle={`Showing ${getCurrentPageEntries().length} of ${filteredEntries.length} records`}
         >
           <div className='overflow-x-auto'>
-            <table className='fit-table'>
+            <table className='fit-table' data-no-load-more>
               <thead className='bg-gray-50 border-b border-gray-200'>
                 <tr>
                   <th className='px-3 py-2 text-left font-medium text-gray-700'>
@@ -1873,7 +1851,7 @@ const ApproveRecords: React.FC = () => {
                           className='h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded'
                         />
                       </td>
-                      <td className='px-3 py-2 font-medium'>{index + 1 + (currentPage - 1) * recordsPerPage}</td>
+                      <td className='px-3 py-2 font-medium'>{index + 1}</td>
                       <td className='px-3 py-2 fit-nowrap'>
                         {format(new Date(entry.c_date), 'dd/MM/yyyy')}
                       </td>
@@ -1950,76 +1928,7 @@ const ApproveRecords: React.FC = () => {
             </table>
           </div>
 
-          {/* Pagination */}
-          <div className='flex items-center justify-between mt-4 px-2 py-3 sm:px-6'>
-            <div className='flex-1 flex justify-between sm:hidden'>
-              <Button
-                variant='secondary'
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-              >
-                Previous
-              </Button>
-              <Button
-                variant='secondary'
-                onClick={() =>
-                  setCurrentPage(prev => Math.min(totalPages, prev + 1))
-                }
-                disabled={currentPage === totalPages}
-              >
-                Next
-              </Button>
-            </div>
-            <div className='hidden sm:flex-1 sm:flex sm:items-center sm:justify-between'>
-              <div className='flex-1 text-sm text-center'>
-                <p className='text-sm text-gray-700'>
-                  Showing{' '}
-                  <span className='font-semibold'>
-                    {filteredEntries.length === 0 ? 0 : (currentPage * recordsPerPage - recordsPerPage + 1)}
-                  </span>{' '}
-                  to{' '}
-                  <span className='font-semibold'>
-                    {Math.min(
-                      currentPage * recordsPerPage,
-                      filteredEntries.length
-                    )}
-                  </span>{' '}
-                  of{' '}
-                  <span className='font-semibold'>
-                    {filteredEntries.length}
-                  </span>{' '}
-                  results
-                </p>
-              </div>
-              <div>
-                <nav
-                  className='relative z-0 inline-flex rounded-md shadow-sm -space-x-px'
-                  aria-label='Pagination'
-                >
-                  <Button
-                    variant='secondary'
-                    onClick={() =>
-                      setCurrentPage(prev => Math.max(1, prev - 1))
-                    }
-                    disabled={currentPage === 1}
-                    className='rounded-l-md'
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant='secondary'
-                    onClick={() =>
-                      setCurrentPage(prev => Math.min(totalPages, prev + 1))
-                    }
-                    disabled={currentPage === totalPages}
-                    className='rounded-r-md'
-                  >
-                    Next
-                  </Button>
-                </nav>
-              </div>
-            </div>
-          </div>
+          <LoadMoreBar shown={getCurrentPageEntries().length} total={filteredEntries.length} onMore={() => setVisibleCount(v => v + LOAD_STEP)} onRefresh={() => setVisibleCount(LOAD_STEP)} />
         </Card>
       )}
 
@@ -2030,7 +1939,7 @@ const ApproveRecords: React.FC = () => {
           subtitle={`Showing ${getApprovedPageEntries().length} of ${filteredApprovedEntries.length} records`}
         >
           <div className='overflow-x-auto'>
-            <table className='fit-table'>
+            <table className='fit-table' data-no-load-more>
               <thead className='bg-gray-50 border-b border-gray-200'>
                 <tr>
                   <th className='px-3 py-2 text-left font-medium text-gray-700'>
@@ -2096,7 +2005,7 @@ const ApproveRecords: React.FC = () => {
                       }}
                       title="Double click to view details"
                     >
-                      <td className='px-3 py-2 font-medium'>{index + 1 + (approvedPage - 1) * recordsPerPage}</td>
+                      <td className='px-3 py-2 font-medium'>{index + 1}</td>
                       <td className='px-3 py-2 fit-nowrap'>
                         {format(new Date(entry.c_date), 'dd/MM/yyyy')}
                       </td>
@@ -2166,76 +2075,7 @@ const ApproveRecords: React.FC = () => {
             </table>
           </div>
 
-          {/* Pagination */}
-          <div className='flex items-center justify-between mt-4 px-2 py-3 sm:px-6'>
-            <div className='flex-1 flex justify-between sm:hidden'>
-              <Button
-                variant='secondary'
-                onClick={() => setApprovedPage(prev => Math.max(1, prev - 1))}
-                disabled={approvedPage === 1}
-              >
-                Previous
-              </Button>
-              <Button
-                variant='secondary'
-                onClick={() =>
-                  setApprovedPage(prev => Math.min(approvedTotalPages, prev + 1))
-                }
-                disabled={approvedPage === approvedTotalPages}
-              >
-                Next
-              </Button>
-            </div>
-            <div className='hidden sm:flex-1 sm:flex sm:items-center sm:justify-between'>
-              <div className='flex-1 text-sm text-center'>
-                <p className='text-sm text-gray-700'>
-                  Showing{' '}
-                  <span className='font-semibold'>
-                    {filteredApprovedEntries.length === 0 ? 0 : (approvedPage * recordsPerPage - recordsPerPage + 1)}
-                  </span>{' '}
-                  to{' '}
-                  <span className='font-semibold'>
-                    {Math.min(
-                      approvedPage * recordsPerPage,
-                      filteredApprovedEntries.length
-                    )}
-                  </span>{' '}
-                  of{' '}
-                  <span className='font-semibold'>
-                    {filteredApprovedEntries.length}
-                  </span>{' '}
-                  results
-                </p>
-              </div>
-              <div>
-                <nav
-                  className='relative z-0 inline-flex rounded-md shadow-sm -space-x-px'
-                  aria-label='Pagination'
-                >
-                  <Button
-                    variant='secondary'
-                    onClick={() =>
-                      setApprovedPage(prev => Math.max(1, prev - 1))
-                    }
-                    disabled={approvedPage === 1}
-                    className='rounded-l-md'
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant='secondary'
-                    onClick={() =>
-                      setApprovedPage(prev => Math.min(approvedTotalPages, prev + 1))
-                    }
-                    disabled={approvedPage === approvedTotalPages}
-                    className='rounded-r-md'
-                  >
-                    Next
-                  </Button>
-                </nav>
-              </div>
-            </div>
-          </div>
+          <LoadMoreBar shown={getApprovedPageEntries().length} total={filteredApprovedEntries.length} onMore={() => setApprovedVisible(v => v + LOAD_STEP)} onRefresh={() => setApprovedVisible(LOAD_STEP)} />
         </Card>
       )}
 
