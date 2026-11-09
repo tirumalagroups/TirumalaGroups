@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { db, QueuedOperation } from '../lib/offlineQueueDB';
 import { useOffline } from '../contexts/OfflineContext';
+import { useAuth } from '../contexts/AuthContext';
+import { supabaseDB } from '../lib/supabaseDatabase';
 import { supabase } from '../lib/supabase';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
@@ -35,7 +37,10 @@ const SyncCenter: React.FC = () => {
 
   const [operations, setOperations] = useState<QueuedOperation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'pending' | 'failed' | 'conflict' | 'synced'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'failed' | 'conflict' | 'synced' | 'discarded'>('pending');
+  const { user, isAdmin } = useAuth();
+  const [discardOp, setDiscardOp] = useState<QueuedOperation | null>(null);
+  const [discardReason, setDiscardReason] = useState('');
   
   // Modal viewer state
   const [selectedOp, setSelectedOp] = useState<QueuedOperation | null>(null);
@@ -68,6 +73,7 @@ const SyncCenter: React.FC = () => {
   const failedOps = operations.filter(op => op.status === 'failed');
   const conflictOps = operations.filter(op => op.status === 'conflict');
   const syncedOps = operations.filter(op => op.status === 'synced');
+  const discardedOps = operations.filter(op => op.status === 'discarded');
 
   const getActiveList = () => {
     switch (activeTab) {
@@ -75,6 +81,7 @@ const SyncCenter: React.FC = () => {
       case 'failed': return failedOps;
       case 'conflict': return conflictOps;
       case 'synced': return syncedOps;
+      case 'discarded': return discardedOps;
     }
   };
 
@@ -125,18 +132,32 @@ const SyncCenter: React.FC = () => {
     }
   };
 
-  const handleDelete = async (op: QueuedOperation) => {
-    if (window.confirm('Are you sure you want to delete this operation from your local queue? This cannot be undone.')) {
-      try {
-        await db.queued_operations.delete(op.offline_uuid);
-        toast.success('Operation deleted from local queue');
-        fetchOperations();
-        updateStats();
-      } catch (err) {
-        console.error(err);
-        toast.error('Failed to delete operation');
-      }
+  // Nothing is ever erased here: a discarded item stays listed with who, when and why
+  const confirmDiscard = async () => {
+    if (!discardOp || !discardReason.trim()) return;
+    const done = await supabaseDB.discardQueuedOperation(discardOp.offline_uuid, user?.username || 'admin', discardReason.trim().toUpperCase());
+    if (done) {
+      toast.success('Discarded. It stays listed under Discarded.');
+    } else {
+      toast.error('This item can no longer be discarded. Please refresh.');
     }
+    setDiscardOp(null);
+    setDiscardReason('');
+    setSelectedOp(null);
+    fetchOperations();
+    updateStats();
+  };
+
+  const describeOp = (op: QueuedOperation) => {
+    const p: any = Array.isArray(op.payload) ? op.payload[0] : op.payload;
+    if (op.table === 'cash_book') {
+      const amount = Number(p?.credit) > 0 ? `Credit ${p.credit}` : `Debit ${p?.debit ?? 0}`;
+      return `Entry: ${p?.company_name || '-'} / ${p?.acc_name || '-'}, ${amount}, ${p?.c_date || ''}`;
+    }
+    if (op.table === 'companies') return `New company: ${p?.company_name}`;
+    if (op.table === 'company_main_accounts') return `New account: ${p?.acc_name} (${p?.company_name})`;
+    if (op.table === 'company_main_sub_acc') return `New sub account: ${p?.sub_acc} (${p?.acc_name})`;
+    return op.table;
   };
 
   const handleViewPayload = async (op: QueuedOperation) => {
@@ -180,25 +201,11 @@ const SyncCenter: React.FC = () => {
         status: 'pending_sync',
         error_message: undefined
       });
-      toast.success('Kept local changes. Queued for rewrite.');
+      toast.success('Trying again.');
       setSelectedOp(null);
       fetchOperations();
       updateStats();
       triggerSync();
-    } catch (err) {
-      console.error(err);
-      toast.error('Error resolving conflict');
-    }
-  };
-
-  const resolveConflictKeepServer = async (op: QueuedOperation) => {
-    try {
-      // Discard local by deleting the queued operation
-      await db.queued_operations.delete(op.offline_uuid);
-      toast.success('Discarded local changes. Server record kept.');
-      setSelectedOp(null);
-      fetchOperations();
-      updateStats();
     } catch (err) {
       console.error(err);
       toast.error('Error resolving conflict');
@@ -240,7 +247,8 @@ const SyncCenter: React.FC = () => {
         <div className="flex gap-2">
           <Button
             onClick={exportQueue}
-            className="flex items-center gap-2 border border-slate-200 hover:bg-slate-50 text-slate-700 bg-white"
+            variant="secondary"
+            className="flex items-center gap-2"
           >
             <Download className="w-4 h-4" />
             Export Queue Backup
@@ -296,13 +304,13 @@ const SyncCenter: React.FC = () => {
         <Card className="bg-gradient-to-br from-rose-50 to-red-50 border-red-200">
           <div className="text-[10px] uppercase font-bold tracking-wider text-red-700">Failed Records</div>
           <div className="text-3xl font-extrabold text-red-900 mt-2">{failedOps.length}</div>
-          <p className="text-xs text-red-600 mt-1">Errors requiring manual retry.</p>
+          <p className="text-xs text-red-600 mt-1">Could not be sent, will try again.</p>
         </Card>
 
         <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200">
           <div className="text-[10px] uppercase font-bold tracking-wider text-amber-700">Sync Conflicts</div>
           <div className="text-3xl font-extrabold text-amber-900 mt-2">{conflictOps.length}</div>
-          <p className="text-xs text-amber-600 mt-1">Server state differs from local.</p>
+          <p className="text-xs text-amber-600 mt-1">Held for an admin to decide.</p>
         </Card>
 
         <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
@@ -318,7 +326,7 @@ const SyncCenter: React.FC = () => {
           <Settings className="w-5 h-5 text-slate-500" />
           <div>
             <div className="text-sm font-bold text-slate-800">Automatic Sync</div>
-            <p className="text-xs text-slate-500">Automatically push pending records to Supabase when network reconnects.</p>
+            <p className="text-xs text-slate-500">Sends waiting entries to the server by themselves when the internet is back.</p>
           </div>
         </div>
 
@@ -355,7 +363,8 @@ const SyncCenter: React.FC = () => {
             { id: 'pending', label: 'Pending Sync', count: pendingOps.length, bg: 'bg-blue-600' },
             { id: 'failed', label: 'Failed', count: failedOps.length, bg: 'bg-red-600' },
             { id: 'conflict', label: 'Conflicts', count: conflictOps.length, bg: 'bg-amber-600' },
-            { id: 'synced', label: 'Recently Synced', count: syncedOps.length, bg: 'bg-green-600' }
+            { id: 'synced', label: 'Recently Synced', count: syncedOps.length, bg: 'bg-green-600' },
+            { id: 'discarded', label: 'Discarded', count: discardedOps.length, bg: 'bg-slate-600' }
           ].map(tab => (
             <button
               key={tab.id}
@@ -392,11 +401,12 @@ const SyncCenter: React.FC = () => {
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
                   <th className="py-2.5 px-3">Operation</th>
-                  <th className="py-2.5 px-3">Table</th>
+                  <th className="py-2.5 px-3">Details</th>
                   <th className="py-2.5 px-3">Context Scope</th>
                   <th className="py-2.5 px-3">Created</th>
                   {activeTab === 'synced' && <th className="py-2.5 px-3">Synced At</th>}
-                  {activeTab !== 'pending' && activeTab !== 'synced' && <th className="py-2.5 px-3">Error / Status</th>}
+                  {(activeTab === 'failed' || activeTab === 'conflict') && <th className="py-2.5 px-3">What Happened</th>}
+                  {activeTab === 'discarded' && <th className="py-2.5 px-3">Discarded By / Reason</th>}
                   <th className="py-2.5 px-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -416,7 +426,7 @@ const SyncCenter: React.FC = () => {
                         {op.operation_type}
                       </span>
                     </td>
-                    <td className="py-3 px-3 font-semibold text-slate-800">{op.table}</td>
+                    <td className="py-3 px-3 font-semibold text-slate-800">{describeOp(op)}</td>
                     <td className="py-3 px-3 text-slate-600">
                       <div>{op.book_name || `Book: ${op.book_id.substring(0, 8)}...`}</div>
                       <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mt-0.5">{op.mode} mode</div>
@@ -429,11 +439,17 @@ const SyncCenter: React.FC = () => {
                         {op.synced_at ? format(parseISO(op.synced_at), 'dd-MM-yyyy hh:mm a') : '-'}
                       </td>
                     )}
-                    {activeTab !== 'pending' && activeTab !== 'synced' && (
-                      <td className="py-3 px-3 max-w-[200px]">
-                        <span className="text-red-600 font-semibold break-words bg-red-50 p-1 rounded block text-[10px]">
-                          {op.error_message || 'Reconciliation failed'}
+                    {(activeTab === 'failed' || activeTab === 'conflict') && (
+                      <td className="py-3 px-3 max-w-[320px]">
+                        <span className="text-red-700 font-semibold break-words bg-red-50 p-1 rounded block text-xs">
+                          {op.error_message || 'Could not be sent'}
                         </span>
+                      </td>
+                    )}
+                    {activeTab === 'discarded' && (
+                      <td className="py-3 px-3 text-slate-600">
+                        <div className="font-semibold">{op.discarded_by || '-'}{op.discarded_at ? `, ${format(parseISO(op.discarded_at), 'dd-MM-yyyy hh:mm a')}` : ''}</div>
+                        <div>{op.discarded_reason || ''}</div>
                       </td>
                     )}
                     <td className="py-3 px-3 text-right whitespace-nowrap space-x-1">
@@ -458,14 +474,14 @@ const SyncCenter: React.FC = () => {
                         </button>
                       )}
 
-                      {op.status !== 'synced' && (
+                      {isAdmin && ['pending_sync', 'failed', 'conflict'].includes(op.status) && (
                         <button
-                          onClick={() => handleDelete(op)}
+                          onClick={() => { setDiscardReason(''); setDiscardOp(op); }}
                           className="p-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded transition-colors inline-flex items-center gap-1 font-bold text-[10px]"
-                          title="Delete Operation"
+                          title="Discard"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                          Delete
+                          Discard
                         </button>
                       )}
                     </td>
@@ -562,7 +578,7 @@ const SyncCenter: React.FC = () => {
               <div>
                 {selectedOp.status === 'conflict' && (
                   <div className="text-[10px] text-amber-700 bg-amber-50 p-2 rounded border border-amber-200 max-w-md">
-                    ⚠️ Resolving: Select "Overwrite Server" to force your local changes onto the database, or "Discard Local" to drop local edits and keep the server version.
+                    ⚠️ {selectedOp.error_message || 'This needs attention.'} {isAdmin ? 'Fix the cause, then Try Again, or Discard it.' : 'An admin needs to decide.'}
                   </div>
                 )}
               </div>
@@ -577,22 +593,46 @@ const SyncCenter: React.FC = () => {
 
                 {selectedOp.status === 'conflict' && (
                   <>
-                    <Button
-                      onClick={() => resolveConflictKeepServer(selectedOp)}
-                      className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200"
-                    >
-                      Discard Local
-                    </Button>
+                    {isAdmin && (
+                      <Button
+                        onClick={() => { setDiscardReason(''); setDiscardOp(selectedOp); }}
+                        className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200"
+                      >
+                        Discard
+                      </Button>
+                    )}
                     <Button
                       onClick={() => resolveConflictKeepLocal(selectedOp)}
                       className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-1.5"
                     >
-                      Overwrite Server
+                      Try Again
                       <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {discardOp && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" role="alertdialog" aria-label="Discard">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <h2 className="text-lg font-bold text-gray-900">Discard this?</h2>
+            <p className="text-sm text-gray-700 mt-2">{describeOp(discardOp)}</p>
+            <p className="text-sm text-gray-700 mt-2">It will not go to the server. It stays listed under Discarded with your name and reason.</p>
+            <label className="block text-sm font-bold text-gray-700 mt-4 mb-1">Reason <span className="text-red-500">*</span></label>
+            <textarea
+              autoFocus
+              rows={2}
+              value={discardReason}
+              onChange={e => setDiscardReason(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold"
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="secondary" onClick={() => setDiscardOp(null)}>Cancel</Button>
+              <Button variant="danger" disabled={!discardReason.trim()} onClick={confirmDiscard}>Discard</Button>
             </div>
           </div>
         </div>

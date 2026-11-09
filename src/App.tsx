@@ -1,10 +1,10 @@
+import { WifiOff } from 'lucide-react';
 import React from 'react';
 import {
   BrowserRouter as Router,
   Routes,
   Route,
-  Navigate,
-} from 'react-router-dom';
+  Navigate, Link } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
@@ -139,6 +139,7 @@ class ErrorBoundary extends React.Component<
 // Offline Guard component to block access to unsupported routes when offline
 const OfflineGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { connectionStatus } = useOffline();
+  const { isFinanceMode } = useTableMode();
 
   if (connectionStatus === 'CHECKING') {
     return (
@@ -156,21 +157,38 @@ const OfflineGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
   if (connectionStatus === 'OFFLINE') {
     return (
-      <div className='min-h-[60vh] bg-white border border-gray-150 rounded-2xl p-8 flex flex-col items-center justify-center text-center max-w-lg mx-auto my-12 font-outfit shadow-sm'>
-        <div className='w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-4 text-3xl'>
-          ⚠️
+      <div className='min-h-[60vh] flex items-center justify-center p-4'>
+        <div role='alertdialog' aria-label='Internet needed' className='bg-white border border-gray-200 rounded-xl shadow-lg p-6 text-center max-w-md w-full'>
+          <div className='w-14 h-14 mx-auto mb-3 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center'>
+            <WifiOff className='w-7 h-7' />
+          </div>
+          <h1 className='text-xl font-bold text-gray-900'>Internet needed</h1>
+          <p className='text-gray-700 mt-2'>
+            This screen needs a connection, so nothing goes unrecorded. Please reconnect and try again.
+          </p>
+          {!isFinanceMode && (
+            <div className='flex flex-wrap justify-center gap-2 mt-5'>
+              <Link to='/new-entry' className='px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700'>
+                New Entry (works offline)
+              </Link>
+              <Link to='/sync-center' className='px-4 py-2 rounded-lg bg-gray-200 text-gray-900 font-semibold hover:bg-gray-300'>
+                Sync Center
+              </Link>
+            </div>
+          )}
         </div>
-        <h1 className='text-xl font-bold text-gray-900 mb-2'>
-          Connection Required
-        </h1>
-        <p className='text-gray-600 mb-6 text-sm max-w-xs'>
-          This feature requires an active internet connection. Please reconnect to continue.
-        </p>
       </div>
     );
   }
 
   return <>{children}</>;
+};
+
+// The dashboard needs live data, so offline the app opens on New Entry
+const HomeRoute: React.FC = () => {
+  const { connectionStatus } = useOffline();
+  if (connectionStatus === 'OFFLINE') return <Navigate to='/new-entry' replace />;
+  return <Dashboard />;
 };
 
 // Main App Component - Must be inside AuthProvider
@@ -261,15 +279,15 @@ const AppContent: React.FC = () => {
           path='/*'
           element={<ProtectedRouteWrapper />}
         >
-          <Route index element={<Dashboard />} />
+          <Route index element={<HomeRoute />} />
           <Route path='new-entry' element={<NewEntry />} />
           <Route path='edit-entry' element={<EditEntry />} />
           <Route path='sync-center' element={<SyncCenter />} />
-          <Route path='vehicles' element={<Vehicles />} />
-          <Route path='reminders' element={<Reminders />} />
+          <Route path='vehicles' element={<OfflineGuard><Vehicles /></OfflineGuard>} />
+          <Route path='reminders' element={<OfflineGuard><Reminders /></OfflineGuard>} />
           <Route path='user-management' element={<OfflineGuard><UserManagement /></OfflineGuard>} />
           <Route path='attendance' element={<OfflineGuard><Attendance /></OfflineGuard>} />
-          <Route path='book-management' element={<BookManagement />} />
+          <Route path='book-management' element={<OfflineGuard><BookManagement /></OfflineGuard>} />
           
           {/* Guarded Routes requiring connection */}
           <Route path='daily-report' element={<OfflineGuard><DailyReport /></OfflineGuard>} />

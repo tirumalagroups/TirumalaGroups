@@ -1,7 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { WifiOff } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { db } from '../lib/offlineQueueDB';
 import { supabaseDB } from '../lib/supabaseDatabase';
 import { syncAllMasterData } from '../lib/offlineMasterData';
+import { backendReachable } from '../lib/offlineSession';
+import { queryClient } from '../lib/queryClient';
 
 export type ConnectionStatus = 'ONLINE' | 'OFFLINE' | 'CHECKING' | 'BACKEND_ERROR';
 
@@ -9,222 +13,192 @@ interface OfflineContextType {
   isOnline: boolean;
   connectionStatus: ConnectionStatus;
   isSyncing: boolean;
+  /** Entries waiting to go to the server */
   pendingCount: number;
+  /** Entries held or failed, which someone needs to look at */
+  attentionCount: number;
   lastSyncAt: string | null;
   offlineSince: string | null;
   autoSyncEnabled: boolean;
   setAutoSyncEnabled: (val: boolean) => void;
   triggerSync: () => Promise<void>;
   updateStats: () => Promise<void>;
+  /** Shows the "Internet needed" box for something that cannot be done offline */
+  askInternet: (what: string) => void;
 }
 
 const OfflineContext = createContext<OfflineContextType | undefined>(undefined);
+
+const PROBE_MS = 10000;
+const RETRY_SYNC_MS = 60000;
 
 export const OfflineProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('CHECKING');
   const [isOnline, setIsOnline] = useState<boolean>(true); // Assume online during CHECKING to avoid UI block
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [pendingCount, setPendingCount] = useState<number>(0);
+  const [attentionCount, setAttentionCount] = useState<number>(0);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(() => localStorage.getItem('last_sync_at'));
   const [offlineSince, setOfflineSince] = useState<string | null>(() => localStorage.getItem('offline_since'));
   const [autoSyncEnabled, setAutoSyncEnabledState] = useState<boolean>(() => {
     const saved = localStorage.getItem('auto_sync_enabled');
     return saved !== 'false'; // Default to true
   });
+  const [internetBox, setInternetBox] = useState<string | null>(null);
+
+  const syncingRef = useRef(false);
+  const statusRef = useRef<ConnectionStatus>('CHECKING');
+  const failedProbes = useRef(0);
+  const autoSyncRef = useRef(autoSyncEnabled);
+  autoSyncRef.current = autoSyncEnabled;
 
   const setAutoSyncEnabled = (val: boolean) => {
     setAutoSyncEnabledState(val);
     localStorage.setItem('auto_sync_enabled', String(val));
   };
 
-  const updateStats = async () => {
+  const askInternet = useCallback((what: string) => setInternetBox(what), []);
+
+  const updateStats = useCallback(async () => {
     try {
-      const count = await db.queued_operations
-        .where('status')
-        .equals('pending_sync')
-        .count();
+      const count = await db.queued_operations.where('status').anyOf(['pending_sync', 'syncing']).count();
       setPendingCount(count);
-      
-      const lastSync = localStorage.getItem('last_sync_at');
-      setLastSyncAt(lastSync);
-      
-      const offlineTime = localStorage.getItem('offline_since');
-      setOfflineSince(offlineTime);
+      setAttentionCount(await db.queued_operations.where('status').anyOf(['failed', 'conflict']).count());
+      setLastSyncAt(localStorage.getItem('last_sync_at'));
+      setOfflineSince(localStorage.getItem('offline_since'));
     } catch (err) {
       console.error('Failed to update offline stats:', err);
     }
-  };
+  }, []);
 
-  const triggerSync = async () => {
-    if (!navigator.onLine || isSyncing) return;
+  const triggerSync = useCallback(async () => {
+    if (!navigator.onLine || syncingRef.current) return;
+    syncingRef.current = true;
     setIsSyncing(true);
     supabaseDB.isSyncing = true;
     try {
-      console.log('🔄 Triggering background offline queue sync...');
-      await supabaseDB.syncOfflineQueue();
-      
+      const result = await supabaseDB.syncOfflineQueue();
       const now = new Date().toISOString();
       localStorage.setItem('last_sync_at', now);
       setLastSyncAt(now);
+      if (result && result.synced > 0) {
+        toast.success(`${result.synced} offline ${result.synced === 1 ? 'entry' : 'entries'} sent to the server`);
+        queryClient.invalidateQueries();
+        localStorage.setItem('dashboard-refresh', Date.now().toString());
+        window.dispatchEvent(new CustomEvent('dashboard-refresh'));
+      }
+      if (result && result.held + result.failed > 0) {
+        toast.error(`${result.held + result.failed} need attention in Sync Center. They are safe on this computer.`, {
+          id: 'sync-attention',
+        });
+      }
     } catch (err) {
       console.error('Sync failed:', err);
     } finally {
+      syncingRef.current = false;
       setIsSyncing(false);
       supabaseDB.isSyncing = false;
       await updateStats();
     }
-  };
+  }, [updateStats]);
 
   // Run retention cleanup for records older than 7 days
-  const cleanUpRetentionHistory = async () => {
+  const cleanUpRetentionHistory = useCallback(async () => {
     try {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      const isoThreshold = sevenDaysAgo.toISOString();
-      const count = await db.queued_operations
+      const threshold = sevenDaysAgo.toISOString();
+      await db.queued_operations
         .where('synced_at')
-        .below(isoThreshold)
+        .below(threshold)
+        .and(op => op.status === 'synced')
         .delete();
-      if (count > 0) {
-        console.log(`🧹 Cleaned up ${count} synced operation logs older than 7 days.`);
-      }
     } catch (err) {
       console.error('Failed to clean up sync retention history:', err);
     }
-  };
+  }, []);
 
-  const checkConnectivity = async () => {
-    if (!navigator.onLine) {
-      setIsOnline(false);
-      supabaseDB.isOnline = false;
-      setConnectionStatus('OFFLINE');
-      const now = new Date().toISOString();
-      if (!localStorage.getItem('offline_since')) {
+  const applyStatus = useCallback(
+    (next: ConnectionStatus) => {
+      const previous = statusRef.current;
+      statusRef.current = next;
+      const online = next !== 'OFFLINE';
+      setIsOnline(online);
+      supabaseDB.isOnline = online;
+      setConnectionStatus(next);
+      if (online) {
+        localStorage.removeItem('offline_since');
+        setOfflineSince(null);
+      } else if (!localStorage.getItem('offline_since')) {
+        const now = new Date().toISOString();
         localStorage.setItem('offline_since', now);
         setOfflineSince(now);
       }
+      if (previous !== next && (previous === 'OFFLINE' || next === 'OFFLINE')) {
+        // Screens reload what they can: saved lists offline, live data when back online
+        queryClient.invalidateQueries();
+        updateStats();
+      }
+    },
+    [updateStats]
+  );
+
+  // WiFi with no internet counts as offline: only an answer from the server counts as online.
+  const checkConnectivity = useCallback(async () => {
+    const reachable = await backendReachable(5000);
+    if (reachable) {
+      failedProbes.current = 0;
+      applyStatus('ONLINE');
       return;
     }
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-      // Probe current domain (fast, same-origin, no-cors avoids HEAD/CORS issues)
-      await fetch(`${window.location.origin}/index.html?_cb=${Date.now()}`, {
-        method: 'GET',
-        mode: 'no-cors',
-        signal: controller.signal,
-        cache: 'no-store',
-      });
-
-      clearTimeout(timeoutId);
-
-      setIsOnline(true);
-      supabaseDB.isOnline = true;
-      setConnectionStatus('ONLINE');
-      localStorage.removeItem('offline_since');
-      setOfflineSince(null);
-    } catch (err: any) {
-      console.warn('[Network] Primary connectivity probe failed:', err);
-
-      // Fallback check to Supabase backend URL
-      try {
-        const fallbackController = new AbortController();
-        const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 4000);
-
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        if (supabaseUrl) {
-          await fetch(`${supabaseUrl}/rest/v1/`, {
-            method: 'GET',
-            headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY || '' },
-            signal: fallbackController.signal,
-            cache: 'no-store',
-          });
-        } else {
-          await fetch('https://clients3.google.com/generate_204', {
-            mode: 'no-cors',
-            signal: fallbackController.signal,
-            cache: 'no-store',
-          });
-        }
-
-        clearTimeout(fallbackTimeoutId);
-
-        setIsOnline(true);
-        supabaseDB.isOnline = true;
-        setConnectionStatus('ONLINE');
-        localStorage.removeItem('offline_since');
-        setOfflineSince(null);
-      } catch (gErr) {
-        console.warn('[Network] Fallback connectivity probe also failed:', gErr);
-        if (navigator.onLine) {
-          // Browser is online - don't lock out user due to blocked telemetry pings
-          setIsOnline(true);
-          supabaseDB.isOnline = true;
-          setConnectionStatus('ONLINE');
-          localStorage.removeItem('offline_since');
-          setOfflineSince(null);
-        } else {
-          setIsOnline(false);
-          supabaseDB.isOnline = false;
-          setConnectionStatus('OFFLINE');
-          const now = new Date().toISOString();
-          if (!localStorage.getItem('offline_since')) {
-            localStorage.setItem('offline_since', now);
-            setOfflineSince(now);
-          }
-        }
-      }
-    }
-  };
+    failedProbes.current += 1;
+    // One slow answer while working is not an outage, unless the browser itself says it is offline
+    const certain = !navigator.onLine || statusRef.current === 'CHECKING' || failedProbes.current >= 2;
+    if (certain) applyStatus('OFFLINE');
+  }, [applyStatus]);
 
   useEffect(() => {
-    // Initial run
     checkConnectivity();
 
-    const handleOnline = () => {
-      console.log('[Network] Browser online event received. Verifying actual internet...');
-      checkConnectivity();
-    };
-
-    const handleOffline = () => {
-      console.log('[Network] Browser offline event received.');
-      setIsOnline(false);
-      supabaseDB.isOnline = false;
-      setConnectionStatus('OFFLINE');
-      const now = new Date().toISOString();
-      localStorage.setItem('offline_since', now);
-      setOfflineSince(now);
-      updateStats();
+    const handleOnline = () => checkConnectivity();
+    const handleOffline = () => applyStatus('OFFLINE');
+    const handleQueueChange = () => updateStats();
+    // A save just failed because the connection dropped between checks
+    const handleNetworkFailure = () => {
+      failedProbes.current = 2;
+      applyStatus('OFFLINE');
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('offline-queue-changed', handleQueueChange);
+    window.addEventListener('offline-network-failure', handleNetworkFailure);
 
-    // Initial operations
     updateStats();
     cleanUpRetentionHistory();
 
-    const handleQueueChange = () => {
-      updateStats();
-    };
-    window.addEventListener('offline-queue-changed', handleQueueChange);
+    // Ask the browser not to clear this computer's unsynced entries when it is short of space
+    navigator.storage?.persist?.().catch(() => undefined);
 
-    // Periodically probe connectivity (every 10 seconds)
-    const probeInterval = setInterval(() => {
-      checkConnectivity();
-    }, 10000);
+    const probeInterval = setInterval(checkConnectivity, PROBE_MS);
+    // If a sync stopped part way because the internet dropped again, carry on
+    const retryInterval = setInterval(async () => {
+      if (statusRef.current === 'OFFLINE' || !autoSyncRef.current) return;
+      const waiting = await db.queued_operations.where('status').equals('pending_sync').count();
+      if (waiting > 0) triggerSync();
+    }, RETRY_SYNC_MS);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('offline-queue-changed', handleQueueChange);
+      window.removeEventListener('offline-network-failure', handleNetworkFailure);
       clearInterval(probeInterval);
+      clearInterval(retryInterval);
     };
-  }, []);
+  }, [applyStatus, checkConnectivity, cleanUpRetentionHistory, triggerSync, updateStats]);
 
-  // Handle sync/master data load upon transitioning to ONLINE/BACKEND_ERROR
+  // Handle sync/master data load upon transitioning to ONLINE
   useEffect(() => {
     if (connectionStatus === 'ONLINE' || connectionStatus === 'BACKEND_ERROR') {
       if (autoSyncEnabled) {
@@ -236,7 +210,7 @@ export const OfflineProvider: React.FC<{ children: React.ReactNode }> = ({ child
       // Sync master data cache
       syncAllMasterData().catch(err => console.error('Error syncing master data cache:', err));
     }
-  }, [connectionStatus, autoSyncEnabled]);
+  }, [connectionStatus, autoSyncEnabled, triggerSync, updateStats]);
 
   return (
     <OfflineContext.Provider
@@ -245,15 +219,37 @@ export const OfflineProvider: React.FC<{ children: React.ReactNode }> = ({ child
         connectionStatus,
         isSyncing,
         pendingCount,
+        attentionCount,
         lastSyncAt,
         offlineSince,
         autoSyncEnabled,
         setAutoSyncEnabled,
         triggerSync,
-        updateStats
+        updateStats,
+        askInternet,
       }}
     >
       {children}
+      {internetBox && (
+        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]' role='alertdialog' aria-label='Internet needed'>
+          <div className='bg-white rounded-xl shadow-2xl max-w-md w-full p-6 text-center'>
+            <div className='w-14 h-14 mx-auto mb-3 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center'>
+              <WifiOff className='w-7 h-7' />
+            </div>
+            <h2 className='text-xl font-bold text-gray-900'>Internet needed</h2>
+            <p className='text-gray-700 mt-2'>
+              {internetBox} needs a connection, so nothing goes unrecorded. Please reconnect and try again.
+            </p>
+            <button
+              type='button'
+              onClick={() => setInternetBox(null)}
+              className='mt-5 px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700'
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </OfflineContext.Provider>
   );
 };

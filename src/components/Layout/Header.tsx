@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { format, parseISO } from 'date-fns';
-import { Link } from 'react-router-dom';
 import { Calendar, ChevronDown, Plus, X, Lock, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTableMode } from '../../contexts/TableModeContext';
@@ -13,7 +12,7 @@ const Header: React.FC = () => {
   const { user } = useAuth();
   const { isFinanceMode, isITRMode } = useTableMode();
   const { currentBook, books, selectBook, createBook } = useBook();
-  const { connectionStatus, isSyncing, pendingCount, lastSyncAt, offlineSince } = useOffline();
+  const { connectionStatus, isSyncing, lastSyncAt, offlineSince } = useOffline();
   
   const [isOpen, setIsOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -183,17 +182,6 @@ const Header: React.FC = () => {
                   </div>
                 )}
               </div>
-            )}
-
-            {/* Offline Records Badge */}
-            {pendingCount > 0 && (
-              <Link 
-                to="/sync-center" 
-                className="flex items-center gap-1.5 bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-amber-100 transition-colors animate-pulse"
-                title="View Offline Queue"
-              >
-                Offline Records: <span className="font-extrabold">{pendingCount}</span>
-              </Link>
             )}
 
             {/* Connection Status Indicator */}

@@ -2216,8 +2216,8 @@ const NewEntry: React.FC = () => {
                             <td className=' px-1.5 py-1.5 font-medium text-gray-800 leading-tight'>
                               <div className='fit-nowrap'>{format(new Date(entry.c_date), 'dd-MMM-yy')}</div>
                               {entry.pending_sync && (
-                                <span className='inline-flex items-center text-[9px] font-bold text-amber-600 bg-amber-50 px-1 py-0.2 rounded border border-amber-200 animate-pulse'>
-                                  Sync
+                                <span className='inline-flex items-center text-[11px] font-bold text-amber-600 bg-amber-50 px-1 py-0.2 rounded border border-amber-200 animate-pulse'>
+                                  Pending
                                 </span>
                               )}
                             </td>

@@ -1,3 +1,5 @@
+import { backendReachable, clearOfflineSession, readOfflineSession, saveOfflineSession } from '../lib/offlineSession';
+import { isNetworkFailure } from '../lib/offlineSyncEngine';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import bcrypt from 'bcryptjs';
@@ -214,30 +216,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     // Check for existing session on app load
     const checkSession = async () => {
       try {
-        const savedUser = sessionStorage.getItem('thirumala_user');
-        const sessionTime = sessionStorage.getItem('thirumala_session_time');
+        let savedUser = sessionStorage.getItem('thirumala_user');
+        let sessionTime = sessionStorage.getItem('thirumala_session_time');
+
+        // Browser was closed and there is no internet: stay logged in on this computer for 24 hours
+        if (!savedUser) {
+          const offlineSession = readOfflineSession();
+          if (offlineSession && !(await backendReachable())) {
+            savedUser = JSON.stringify(offlineSession.user);
+            sessionTime = String(offlineSession.time);
+            sessionStorage.setItem('thirumala_user', savedUser);
+            sessionStorage.setItem('thirumala_session_time', sessionTime);
+          }
+        }
+
         if (savedUser && sessionTime) {
           const parsedUser: User = JSON.parse(savedUser);
           const sessionAge = Date.now() - parseInt(sessionTime);
           const SESSION_DURATION = 24 * 60 * 60 * 1000;
           if (sessionAge < SESSION_DURATION) {
             // Check if user is active in DB
-            const { data: dbUserCheck, error: checkError } = await supabase
+            const { data: dbUserCheck, error: checkError, status: checkStatus } = await supabase
               .from('users')
               .select('is_active')
               .eq('id', parsedUser.id)
               .single();
 
-            if (checkError || !dbUserCheck || dbUserCheck.is_active === false) {
+            // No internet is not a reason to log someone out, and permissions stay as they were
+            const cannotCheck = !navigator.onLine || isNetworkFailure(checkError, checkStatus);
+
+            if (!cannotCheck && (checkError || !dbUserCheck || dbUserCheck.is_active === false)) {
               sessionStorage.removeItem('thirumala_user');
               sessionStorage.removeItem('thirumala_session_time');
+              clearOfflineSession();
               supabaseDB.setUserId('');
               setUser(null);
               setLoading(false);
               return;
             }
 
-            try {
+            if (!cannotCheck) try {
               const { featuresByMode } = await loadFeaturesForUser(
                 parsedUser.id,
                 Boolean(parsedUser.is_admin)
@@ -257,11 +275,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             }
 
+            saveOfflineSession(parsedUser, parseInt(sessionTime));
             setUser(parsedUser);
             supabaseDB.setUserId(parsedUser.id);
           } else {
             sessionStorage.removeItem('thirumala_user');
             sessionStorage.removeItem('thirumala_session_time');
+            clearOfflineSession();
             supabaseDB.setUserId('');
           }
         }
@@ -325,6 +345,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       if (!username.trim() || !password.trim()) {
         return { success: false, error: 'Username and password are required' };
+      }
+
+      if (!(await backendReachable(8000))) {
+        return { success: false, error: 'Login needs internet. Please connect and try again.' };
       }
 
       const trimmedUsername = username.trim();
@@ -460,8 +484,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       
       setUser(userData);
       supabaseDB.setUserId(userData.id);
+      const loginTime = Date.now();
       sessionStorage.setItem('thirumala_user', JSON.stringify(userData));
-      sessionStorage.setItem('thirumala_session_time', Date.now().toString());
+      sessionStorage.setItem('thirumala_session_time', loginTime.toString());
+      saveOfflineSession(userData, loginTime);
 
       initAudioContext();
 
@@ -501,6 +527,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.removeItem('financeSelectedBook');
       localStorage.removeItem('currentBookId');
 
+      clearOfflineSession();
+      localStorage.removeItem('offlineBook_regular');
+      localStorage.removeItem('offlineBook_itr');
       sessionStorage.removeItem('thirumala_user');
       sessionStorage.removeItem('thirumala_session_time');
       sessionStorage.removeItem('thirumala_login_history_id');

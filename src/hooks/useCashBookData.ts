@@ -64,7 +64,7 @@ export const useCreateCashBookEntry = () => {
       queryClient.invalidateQueries({ queryKey: ['recentEntries'] });
       queryClient.invalidateQueries({ queryKey: ['cashBook', 'byDate'] });
       
-      toast.success('Entry created successfully!');
+      if (supabaseDB.isOnline) toast.success('Entry created successfully!');
     },
     onError: (error: any) => {
       console.error('Error creating entry:', error);
@@ -145,7 +145,7 @@ export const useBulkCashBookOperations = () => {
       queryClient.invalidateQueries({ queryKey: ['recentEntries'] });
       queryClient.invalidateQueries({ queryKey: ['cashBook', 'byDate'] });
       
-      toast.success('Bulk operations completed successfully!');
+      if (supabaseDB.isOnline) toast.success('Bulk operations completed successfully!');
     },
     onError: (error: any) => {
       console.error('Error in bulk operations:', error);

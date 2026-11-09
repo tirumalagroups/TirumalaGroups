@@ -3,6 +3,7 @@ import { FinancialCalculator } from './financialCalculations';
 import { getTableName, getTableMode } from './tableNames';
 import { db, QueuedOperation } from './offlineQueueDB';
 import { getCachedMasterData } from './offlineMasterData';
+import { baseTableName, isNetworkFailure, isQueueableWrite, runOfflineSync, SyncOp, SyncResult, SyncStore } from './offlineSyncEngine';
 import { toast } from 'react-hot-toast';
 
 // Columns deleted_cash_book has always had (original table + book_id).
@@ -210,12 +211,37 @@ const createBuilderProxy = (builder: any, table: string): any => {
       // Intercept .then for offline write resolution
       if (prop === 'then') {
         const offlineInfo = target._offlineInfo;
-        if (offlineInfo && offlineInfo.operation_type && !supabaseDB.isOnline) {
-          return function (resolve: any, _reject: any) {
+        if (offlineInfo && offlineInfo.operation_type) {
+          const queueable = isQueueableWrite(getTableMode() || 'regular', offlineInfo.table, offlineInfo.operation_type);
+          const saveOffline = (resolve: any) =>
             supabaseDB.handleOfflineWrite(offlineInfo)
               .then(data => resolve({ data, error: null }))
               .catch(err => resolve({ data: null, error: err }));
-          };
+
+          if (!supabaseDB.isOnline) {
+            return function (resolve: any, _reject: any) {
+              if (queueable) {
+                saveOffline(resolve);
+              } else {
+                resolve({ data: null, error: { message: 'Internet needed: this cannot be saved offline.', code: 'OFFLINE' } });
+              }
+            };
+          }
+
+          if (queueable) {
+            // The connection can drop between checks, so an entry that could not be sent is kept
+            return function (resolve: any, reject: any) {
+              return target.then((res: any) => {
+                if (isNetworkFailure(res?.error, res?.status)) {
+                  supabaseDB.isOnline = false;
+                  window.dispatchEvent(new CustomEvent('offline-network-failure'));
+                  saveOffline(resolve);
+                } else {
+                  resolve(res);
+                }
+              }, reject);
+            };
+          }
         }
       }
 
@@ -424,70 +450,129 @@ class SupabaseDatabase {
 
   // Offline support helper functions
   async handleOfflineWrite(info: any) {
-    const offline_uuid = crypto.randomUUID();
     const mode = getTableMode();
-    const { schema } = resolveSchemaAndTable(info.table);
+    const table = baseTableName(info.table);
+    const { schema } = resolveSchemaAndTable(table);
     const book_id = this.currentBookId || '';
-    const book_name = this.currentBookName || 'Unknown Book';
-    
+    let book_name = this.currentBookName || '';
+    if (!book_name) {
+      try {
+        const remembered = JSON.parse(localStorage.getItem(`offlineBook_${mode}`) || 'null');
+        book_name = remembered?.id === book_id ? remembered.book_code || remembered.name : '';
+      } catch {
+        book_name = '';
+      }
+    }
+    book_name = book_name || 'Unknown Book';
+
+    if (!book_id) {
+      throw new Error('Please select a book before saving offline.');
+    }
+
     const storageUser = this.getCurrentUserFromStorage();
     const user_id = this.currentUserId || storageUser?.id || 'unknown';
+    const now = Date.now();
+    const rows: any[] = Array.isArray(info.payload) ? info.payload : [info.payload || {}];
 
-    let payload = info.payload || {};
-    let targetId = '';
-    
-    const idFilter = info.filters.find((f: any) => f.field === 'id');
-    if (idFilter) {
-      targetId = idFilter.value;
-    }
-
-    if (info.operation_type === 'INSERT' || info.operation_type === 'UPSERT') {
-      if (Array.isArray(payload)) {
-        payload = payload.map(item => {
-          const itemId = item.id || crypto.randomUUID();
-          return {
-            ...item,
-            id: itemId,
-            book_id
-          };
-        });
-      } else {
-        payload.id = payload.id || offline_uuid;
-        payload.book_id = book_id;
+    // One queue item per row, so each entry can be fixed or sent on its own, in order
+    const saved = rows.map((row, index) => {
+      const offline_uuid = crypto.randomUUID();
+      const time = new Date(now + index).toISOString();
+      const payload = { ...row, id: row.id || offline_uuid, book_id };
+      if (table === 'cash_book') {
+        payload.created_at = payload.created_at || time;
+        payload.updated_at = payload.updated_at || time;
       }
-    } else if (info.operation_type === 'UPDATE') {
-      payload.id = payload.id || targetId;
-      payload.book_id = book_id;
-    } else if (info.operation_type === 'DELETE') {
-      payload = {
-        id: targetId,
-        book_id
+      return {
+        offline_uuid,
+        mode,
+        schema: schema as 'regular' | 'itr' | 'finance' | 'public',
+        book_id,
+        book_name,
+        user_id,
+        created_at: time,
+        operation_type: 'INSERT' as const,
+        table,
+        payload,
+        status: 'pending_sync' as const,
       };
-      if (info.table === 'cash_book') {
-        const storageUser = this.getCurrentUserFromStorage();
-        payload.deleted_by = storageUser?.username || 'offline_sync';
-      }
-    }
+    });
 
-    const op = {
-      offline_uuid,
-      mode,
-      schema: schema as 'regular' | 'itr' | 'finance' | 'public',
-      book_id,
-      book_name,
-      user_id,
-      created_at: new Date().toISOString(),
-      operation_type: info.operation_type,
-      table: info.table,
-      payload,
-      status: 'pending_sync' as const
-    };
-
-    await db.queued_operations.put(op);
-    toast.success('Saved Offline');
+    await db.queued_operations.bulkPut(saved);
+    toast.success('Saved on this computer. It will go to the server when the internet is back.', { id: 'saved-offline' });
     window.dispatchEvent(new CustomEvent('offline-queue-changed'));
 
-    return Array.isArray(payload) ? payload : { id: payload.id || targetId || offline_uuid, ...payload };
+    const payloads = saved.map(op => op.payload);
+    return Array.isArray(info.payload) ? payloads : payloads[0];
+  }
+
+  /** Changes an entry that has not reached the server yet. The change is kept and logged at sync. */
+  async updatePendingEntry(id: string, updates: Record<string, any>, editedBy: string): Promise<any | null> {
+    const op = await this.findPendingEntryOp(id);
+    if (!op) return null;
+    const fields = [
+      'acc_name', 'sub_acc_name', 'particulars', 'credit', 'debit', 'company_name', 'address', 'staff',
+      'users', 'sale_qty', 'purchase_qty', 'cb', 'c_date', 'payment_mode', 'report_category', 'head_of_account_id',
+    ];
+    const oldValues: Record<string, any> = {};
+    const newValues: Record<string, any> = {};
+    const numberFields = ['credit', 'debit', 'sale_qty', 'purchase_qty'];
+    for (const key of fields) {
+      if (!(key in updates)) continue;
+      const value = numberFields.includes(key) ? Number(updates[key]) || 0 : updates[key];
+      if (value !== op.payload[key]) {
+        oldValues[key] = op.payload[key];
+        newValues[key] = value;
+      }
+    }
+    const at = new Date().toISOString();
+    const payload = { ...op.payload, ...newValues, edited: Object.keys(newValues).length > 0 || op.payload.edited, updated_at: at };
+    await db.queued_operations.update(op.offline_uuid, {
+      payload,
+      status: op.status === 'conflict' || op.status === 'failed' ? 'pending_sync' : op.status,
+      error_message: undefined,
+      edit_history: Object.keys(newValues).length
+        ? [...(op.edit_history || []), { at, by: editedBy, old_values: oldValues, new_values: newValues }]
+        : op.edit_history,
+    });
+    window.dispatchEvent(new CustomEvent('offline-queue-changed'));
+    return { ...payload, pending_sync: true };
+  }
+
+  /** Removes an entry from the send list. It stays recorded in Sync Center under Discarded. */
+  async discardQueuedOperation(offlineUuid: string, discardedBy: string, reason: string): Promise<boolean> {
+    const op = await db.queued_operations.get(offlineUuid);
+    if (!op || op.status === 'synced' || op.status === 'syncing' || op.status === 'discarded') return false;
+    await db.queued_operations.update(offlineUuid, {
+      status: 'discarded',
+      discarded_by: discardedBy,
+      discarded_at: new Date().toISOString(),
+      discarded_reason: reason,
+    });
+    window.dispatchEvent(new CustomEvent('offline-queue-changed'));
+    return true;
+  }
+
+  async discardPendingEntry(id: string, discardedBy: string, reason: string): Promise<boolean> {
+    const op = await this.findPendingEntryOp(id);
+    return op ? this.discardQueuedOperation(op.offline_uuid, discardedBy, reason) : false;
+  }
+
+  private async findPendingEntryOp(id: string): Promise<QueuedOperation | undefined> {
+    return db.queued_operations
+      .where('status')
+      .anyOf(['pending_sync', 'failed', 'conflict'])
+      .and(op => baseTableName(op.table) === 'cash_book' && !Array.isArray(op.payload) && op.payload?.id === id)
+      .first();
+  }
+
+  private async pendingMasterRows(table: string): Promise<any[]> {
+    const ops = await db.queued_operations
+      .where('status')
+      .anyOf(['pending_sync', 'syncing', 'failed', 'conflict'])
+      .and(op => baseTableName(op.table) === table && op.book_id === this.currentBookId)
+      .toArray();
+    return ops.map(op => ({ ...op.payload, created_at: op.created_at, updated_at: op.created_at, pending_sync: true }));
   }
 
   async mergeOfflineOperations<T extends { id: string; pending_sync?: boolean }>(
@@ -497,8 +582,8 @@ class SupabaseDatabase {
     try {
       const pendingOps = await db.queued_operations
         .where('status')
-        .equals('pending_sync')
-        .and(op => op.table === table && op.book_id === this.currentBookId)
+        .anyOf(['pending_sync', 'syncing', 'failed', 'conflict'])
+        .and(op => baseTableName(op.table) === table && op.book_id === this.currentBookId)
         .toArray();
 
       if (pendingOps.length === 0) {
@@ -557,57 +642,34 @@ class SupabaseDatabase {
     }
   }
 
-  async syncOfflineQueue(): Promise<void> {
-    console.log('🔄 Offline queue synchronization starting...');
+  async syncOfflineQueue(): Promise<SyncResult | null> {
     const storageUser = this.getCurrentUserFromStorage();
-    const isAuthenticated = !!(this.currentUserId || storageUser);
-    if (!isAuthenticated) {
+    if (!(this.currentUserId || storageUser)) {
       console.warn('⚠️ Sync deferred: user is not authenticated.');
-      return;
-    }
-    
-    const pendingOps = await db.queued_operations
-      .where('status')
-      .anyOf(['pending_sync', 'failed'])
-      .sortBy('created_at');
-
-    if (pendingOps.length === 0) {
-      console.log('✅ Offline queue is empty or already synced.');
-      return;
+      return null;
     }
 
-    console.log(`📦 Found ${pendingOps.length} unsynced operations. Processing...`);
+    const store: SyncStore = {
+      all: () => db.queued_operations.toArray() as Promise<SyncOp[]>,
+      update: async (id, patch) => {
+        await db.queued_operations.update(id, patch as Partial<QueuedOperation>);
+        window.dispatchEvent(new CustomEvent('offline-queue-changed'));
+      },
+    };
+    const run = () => runOfflineSync(store, rawSupabase as any, op => this.syncOperation(op as QueuedOperation));
 
-    for (const op of pendingOps) {
-      await db.queued_operations.update(op.offline_uuid, { status: 'syncing' });
-      window.dispatchEvent(new CustomEvent('offline-queue-changed'));
-
-      try {
-        await this.syncOperation(op);
-        await db.queued_operations.update(op.offline_uuid, {
-          status: 'synced',
-          synced_at: new Date().toISOString(),
-          error_message: undefined
-        });
-        console.log(`✅ Synced operation ${op.offline_uuid} (${op.operation_type} on ${op.table})`);
-      } catch (err: any) {
-        console.error(`❌ Sync failed for operation ${op.offline_uuid}:`, err);
-        const errMsg = err.message || String(err);
-        const isDbRejection = err.code && typeof err.code === 'string' && err.code.length === 5;
-        
-        await db.queued_operations.update(op.offline_uuid, {
-          status: isDbRejection ? 'conflict' : 'failed',
-          error_message: errMsg
-        });
-      }
-      window.dispatchEvent(new CustomEvent('offline-queue-changed'));
-    }
+    // Only one browser tab sends at a time
+    const locks = (navigator as any).locks;
+    const result: SyncResult | null = locks
+      ? await locks.request('thirumala-offline-sync', { ifAvailable: true }, (lock: unknown) => (lock ? run() : null))
+      : await run();
 
     try {
       window.dispatchEvent(new CustomEvent('offline-sync-complete'));
     } catch (e) {
       console.error('Error dispatching offline-sync-complete:', e);
     }
+    return result;
   }
 
   async syncOperation(item: QueuedOperation): Promise<void> {
@@ -1077,7 +1139,7 @@ class SupabaseDatabase {
       const tableMode = getTableMode();
       const mode = tableMode === 'itr' ? 'itr' : 'regular';
       const tableName = mode === 'itr' ? 'company_main_accounts_itr' : 'company_main_accounts';
-      return await getCachedMasterData(tableName, mode);
+      return [...(await this.pendingMasterRows('company_main_accounts')), ...(await getCachedMasterData(tableName, mode))];
     }
     const { data, error } = await supabase
       .from(getTableName('company_main_accounts'))
@@ -1097,7 +1159,7 @@ class SupabaseDatabase {
       const tableMode = getTableMode();
       const mode = tableMode === 'itr' ? 'itr' : 'regular';
       const tableName = mode === 'itr' ? 'company_main_accounts_itr' : 'company_main_accounts';
-      const cached = await getCachedMasterData(tableName, mode);
+      const cached = [...(await this.pendingMasterRows('company_main_accounts')), ...(await getCachedMasterData(tableName, mode))];
       return cached.filter((acc: any) => acc.company_name === companyName);
     }
     const { data, error } = await supabase
@@ -1247,7 +1309,7 @@ class SupabaseDatabase {
       const tableMode = getTableMode();
       const mode = tableMode === 'itr' ? 'itr' : 'regular';
       const tableName = mode === 'itr' ? 'company_main_sub_acc_itr' : 'company_main_sub_acc';
-      return await getCachedMasterData(tableName, mode);
+      return [...(await this.pendingMasterRows('company_main_sub_acc')), ...(await getCachedMasterData(tableName, mode))];
     }
     const { data, error } = await supabase
       .from(getTableName('company_main_sub_acc'))
@@ -1432,6 +1494,9 @@ class SupabaseDatabase {
 
   // Cash Book operations
   async getCashBookEntries(limit: number = 1000, offset: number = 0): Promise<CashBookEntry[]> {
+    if (!this.isOnline) {
+      return this.mergeOfflineOperations('cash_book', []);
+    }
     try {
       console.log(`🔄 Fetching cash book entries (limit: ${limit}, offset: ${offset})...`);
       
@@ -1449,7 +1514,7 @@ class SupabaseDatabase {
 
       if (error) {
         console.error(`❌ Error fetching cash book entries (offset: ${offset}, limit: ${limit}):`, error);
-        return [];
+        return this.mergeOfflineOperations('cash_book', []);
       }
 
       const resultCount = data?.length || 0;
@@ -1946,15 +2011,18 @@ class SupabaseDatabase {
       throw new Error(`Invalid entry: ${validation.errors.join(', ')}`);
     }
 
-    // Get next serial number
-    const { data: lastEntry } = await supabase
-      .from(getTableName('cash_book'))
-      .select('sno')
-      .order('sno', { ascending: false })
-      .limit(1);
-
-    const nextSno =
-      lastEntry && lastEntry.length > 0 ? lastEntry[0].sno + 1 : 1;
+    // Get next serial number. Offline, or if it cannot be read, S.No is given at sync.
+    let nextSno: number | undefined;
+    if (this.isOnline) {
+      const { data: lastEntry, error: lastEntryError } = await supabase
+        .from(getTableName('cash_book'))
+        .select('sno')
+        .order('sno', { ascending: false })
+        .limit(1);
+      if (!lastEntryError) {
+        nextSno = lastEntry && lastEntry.length > 0 ? lastEntry[0].sno + 1 : 1;
+      }
+    }
 
     // Filter out undefined values to allow database defaults to work
     // CRITICAL: Always include payment_mode field to ensure it's saved correctly
@@ -2001,7 +2069,8 @@ class SupabaseDatabase {
     // CRITICAL: Ensure payment_mode is always included in insertData
     const insertData: Record<string, any> = {
       ...filteredEntry,
-      sno: nextSno,
+      id: crypto.randomUUID(),
+      ...(nextSno !== undefined ? { sno: nextSno } : {}),
       entry_time: new Date().toISOString(),
       approved: false, // Set to pending by default (boolean)
       edited: false,
@@ -2151,6 +2220,11 @@ class SupabaseDatabase {
 
   // Fetch entries by exact date (YYYY-MM-DD) (used by hooks)
   async getCashBookEntriesByDate(date: string): Promise<CashBookEntry[]> {
+    const pendingForDate = async (list: CashBookEntry[]) =>
+      (await this.mergeOfflineOperations('cash_book', list)).filter(e => e.c_date === date);
+    if (!this.isOnline) {
+      return pendingForDate([]);
+    }
     const { data, error } = await supabase
       .from(getTableName('cash_book'))
       .select('*') // Select all columns including payment_mode
@@ -2159,7 +2233,7 @@ class SupabaseDatabase {
 
     if (error) {
       console.error('Error fetching entries by date:', error);
-      return this.mergeOfflineOperations('cash_book', []);
+      return pendingForDate([]);
     }
     
     // Clean fields and normalize approved to strict boolean
@@ -2215,7 +2289,7 @@ class SupabaseDatabase {
       };
     });
     
-    return this.mergeOfflineOperations('cash_book', cleanedData as CashBookEntry[]);
+    return pendingForDate(cleanedData as CashBookEntry[]);
   }
 
   // Bulk insert/update operations for dual entry create (used by hooks)
@@ -2245,6 +2319,7 @@ class SupabaseDatabase {
         
         // Ensure default flags are set for new inserts (pending by default)
         return {
+          id: crypto.randomUUID(),
           approved: false,
           edited: false,
           e_count: 0,

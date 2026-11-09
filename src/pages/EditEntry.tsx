@@ -144,7 +144,7 @@ const EditEntry: React.FC = () => {
   const canDelete = isAdmin || !!(user?.features?.includes('delete_entry'));
   const { mode: tableMode } = useTableMode();
   const { currentBook } = useBook();
-  const { isOnline } = useOffline();
+  const { isOnline, askInternet } = useOffline();
   const [isCacheSyncing, setIsCacheSyncing] = useState(false);
   const queryClient = useQueryClient();
   const formRef = useRef<HTMLFormElement>(null);
@@ -473,6 +473,11 @@ const EditEntry: React.FC = () => {
     initializeData();
   }, []); // Remove dependencies to prevent re-initialization on filter changes
 
+  // Going offline or coming back changes which entries can be shown
+  useEffect(() => {
+    loadEntries();
+  }, [isOnline]);
+
   // Refresh entries when table mode or book changes
   useEffect(() => {
     console.log('🔄 Table mode or book changed in EditEntry, reloading entries... Mode:', tableMode);
@@ -682,6 +687,14 @@ const EditEntry: React.FC = () => {
   // Filter options are derived client-side via useMemo, so no database helper functions are needed here.
 
   const loadEntries = async () => {
+    // Offline, only entries that have not reached the server can be seen or fixed
+    if (!supabaseDB.isOnline) {
+      const waiting = await supabaseDB.getCashBookEntries(pageSize, 0);
+      setEntries(waiting);
+      setTotalEntries(waiting.length);
+      setEntriesForSelectedDate([]);
+      return waiting;
+    }
     try {
       console.log('🔍 Loading entries from database...');
       console.log('🔍 Supabase URL:', import.meta.env.VITE_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '');
@@ -748,7 +761,7 @@ const EditEntry: React.FC = () => {
       );
 
       // Load all entries for both ITR and regular modes
-      const allEntries = await supabaseDB.getAllCashBookEntries();
+      const allEntries = await supabaseDB.mergeOfflineOperations('cash_book', await supabaseDB.getAllCashBookEntries());
       console.log('✅ All entries fetched:', allEntries.length);
       
       // Get total count for pagination info
@@ -979,6 +992,10 @@ const EditEntry: React.FC = () => {
   // Debug function to test RLS and data access
 
   const handleEdit = async (entry: any) => {
+    if (!isOnline && !entry.pending_sync) {
+      askInternet('Editing a saved entry');
+      return;
+    }
     // TODO: Implement locked check when Supabase schema supports it
     setSelectedEntry({ ...entry });
     setEditMode(true);
@@ -1087,8 +1104,34 @@ const EditEntry: React.FC = () => {
 
     const isoDateStr = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 
+    if (!isOnline && !selectedEntry.pending_sync) {
+      askInternet('Editing a saved entry');
+      return;
+    }
+
     setLoading(true);
     try {
+      // Not on the server yet: the change is made here and goes with the entry at sync
+      if (selectedEntry.pending_sync) {
+        const fixed = await supabaseDB.updatePendingEntry(
+          selectedEntry.id,
+          { ...selectedEntry, c_date: isoDateStr },
+          user?.username || 'admin'
+        );
+        if (fixed) {
+          await loadEntries();
+          setEditMode(false);
+          setSelectedEntry(fixed);
+          toast.success('Entry updated on this computer. It will go to the server when the internet is back.');
+          window.dispatchEvent(new CustomEvent('dashboard-refresh'));
+        } else {
+          toast.error('This entry has just been sent to the server. Please refresh and try again.');
+          await loadEntries();
+          setEditMode(false);
+        }
+        return;
+      }
+
       // If the entry was approved or rejected, set it to pending on edit
       const updates = { ...selectedEntry, c_date: isoDateStr };
       if (
@@ -1130,6 +1173,27 @@ const EditEntry: React.FC = () => {
 
     if (currentBook?.is_locked) {
       toast.error('This Book is Locked (Read Only). Deletion is blocked.');
+      return;
+    }
+
+    if (!isOnline && !entry.pending_sync) {
+      askInternet('Deleting a saved entry');
+      return;
+    }
+
+    if (entry.pending_sync) {
+      if (window.confirm('This entry has not reached the server yet. Remove it? It stays listed in Sync Center under Discarded.')) {
+        const removed = await supabaseDB.discardPendingEntry(entry.id, user?.username || 'admin', 'Removed in Edit Entry before it reached the server');
+        if (removed) {
+          toast.success('Entry removed. It is listed in Sync Center under Discarded.');
+          setEditMode(false);
+          setSelectedEntry(null);
+          window.dispatchEvent(new CustomEvent('dashboard-refresh'));
+        } else {
+          toast.error('This entry has just been sent to the server. Please refresh and try again.');
+        }
+        await loadEntries();
+      }
       return;
     }
 
@@ -1473,6 +1537,11 @@ const EditEntry: React.FC = () => {
             </h1>
             <ModeLabel />
           </div>
+          {!isOnline && (
+            <p className='text-amber-800 font-semibold'>
+              Offline: only entries that have not reached the server are shown, and those can be fixed here. Saved entries need internet.
+            </p>
+          )}
           <p className='text-gray-600'>
             , edit, and manage cash book entries with complete history tracking
           </p>
@@ -1845,6 +1914,9 @@ const EditEntry: React.FC = () => {
                       <td className='px-1 py-1 font-medium text-sm font-bold'>{index + 1}</td>
                       <td className='px-1 py-1 text-sm font-bold fit-nowrap'>
                         {format(new Date(entry.c_date), 'dd/MM/yyyy')}
+                        {entry.pending_sync && (
+                          <div className='text-xs font-bold text-amber-700' title='Not on the server yet'>Pending</div>
+                        )}
                       </td>
                       <td className='px-1 py-1 font-medium text-blue-600 text-sm font-bold fit-name' title={entry.company_name}>
                         {entry.company_name}
@@ -2179,7 +2251,7 @@ const EditEntry: React.FC = () => {
                     : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-100'
                 }`}
               >
-                <div className='font-medium'>Entry #{entry.sno}</div>
+                <div className='font-medium'>Entry #{entry.sno ?? 'Pending'}</div>
                 <div className='text-gray-500'>{entry.company_name}</div>
                 <div className='text-gray-500'>{entry.acc_name}</div>
                 {entry.credit > 0 && <div className='text-green-600'>Credit: {entry.credit}</div>}
@@ -2198,7 +2270,7 @@ const EditEntry: React.FC = () => {
             <div className='p-6 border-b border-gray-200 flex-shrink-0'>
               <div className='flex items-center justify-between'>
                 <h3 className='text-lg font-semibold'>
-                  {editMode ? 'Edit Entry' : 'View Entry'} #{selectedEntry.sno}
+                  {editMode ? 'Edit Entry' : 'View Entry'} #{selectedEntry.sno ?? 'Pending'}
                 </h3>
                 <div className='flex items-center gap-2'>
                   {!editMode && (

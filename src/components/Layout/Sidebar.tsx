@@ -31,6 +31,7 @@ import {
   CalendarCheck,
 } from 'lucide-react';
 import { supabaseDB } from '../../lib/supabaseDatabase';
+import { useOffline } from '../../contexts/OfflineContext';
 
 interface MenuItem {
   icon: React.ComponentType<any>;
@@ -46,6 +47,13 @@ const Sidebar: React.FC = () => {
   const { user, logout } = useAuth();
   const { isFinanceMode, mode: tableMode } = useTableMode();
   const navigate = useNavigate();
+  const { pendingCount, attentionCount, isOnline } = useOffline();
+  const [confirmLogout, setConfirmLogout] = React.useState(false);
+  const unsynced = pendingCount + attentionCount;
+  const handleLogout = () => {
+    if (unsynced > 0 || !isOnline) setConfirmLogout(true);
+    else logout();
+  };
   const [activeRemindersCount, setActiveRemindersCount] = React.useState<number>(0);
 
   React.useEffect(() => {
@@ -332,13 +340,38 @@ const Sidebar: React.FC = () => {
       {/* Sticky Logout at Bottom */}
       <div className='p-4 bg-gradient-to-t from-blue-50 to-transparent border-t border-blue-100'>
         <button
-          onClick={logout}
+          onClick={handleLogout}
           className="flex items-center gap-3 w-full px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors shadow-sm finance-section-heading"
         >
           <LogOut className='w-5 h-5' />
           Logout
         </button>
       </div>
+      {confirmLogout && (
+        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]' role='alertdialog' aria-label='Log out'>
+          <div className='bg-white rounded-xl shadow-2xl max-w-md w-full p-6'>
+            <h2 className='text-xl font-bold text-gray-900'>Log out?</h2>
+            {unsynced > 0 && (
+              <p className='text-gray-700 mt-2'>
+                <strong>{unsynced} {unsynced === 1 ? 'entry has' : 'entries have'} not reached the server.</strong>{' '}
+                They stay safe on this computer and go when someone logs in here with internet. Do not clear this
+                browser's data until then.
+              </p>
+            )}
+            {!isOnline && (
+              <p className='text-gray-700 mt-2'>You are offline, and logging in again needs internet.</p>
+            )}
+            <div className='flex justify-end gap-2 mt-5'>
+              <button type='button' onClick={() => setConfirmLogout(false)} className='px-4 py-2 rounded-lg bg-gray-200 text-gray-900 font-semibold hover:bg-gray-300'>
+                Stay Logged In
+              </button>
+              <button type='button' onClick={() => { setConfirmLogout(false); logout(); }} className='px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700'>
+                Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };

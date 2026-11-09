@@ -27,7 +27,7 @@ export const useTableMode = () => {
 export const TableModeProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { user, reloadPermissions } = useAuth();
+  const { user, loading: authLoading, reloadPermissions } = useAuth();
 
   // Load mode from sessionStorage or localStorage, default to null (no mode selected)
   const [mode, setMode] = useState<TableMode>(() => {
@@ -40,10 +40,12 @@ export const TableModeProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Reset mode when user logs out
   useEffect(() => {
-    if (!user) {
+    // While the session is still being checked at startup there is no user yet,
+    // and that must not erase the saved mode
+    if (!authLoading && !user) {
       setMode(null);
     }
-  }, [user]);
+  }, [user, authLoading]);
 
   // Save to storage whenever mode changes
   useEffect(() => {

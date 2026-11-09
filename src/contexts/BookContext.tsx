@@ -87,11 +87,17 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true);
 
       // Offline fallback: load selected book from localStorage if offline to prevent clearing selection
-      if (!navigator.onLine) {
+      const useOfflineBook = () => {
         const storageKey = activeBookMode === 'itr' ? 'itrSelectedBook' : 'regularSelectedBook';
         const storedBookId = localStorage.getItem(storageKey);
         if (storedBookId) {
-          const dummyBook: Book = {
+          let remembered: Book | null = null;
+          try {
+            remembered = JSON.parse(localStorage.getItem(`offlineBook_${activeBookMode}`) || 'null');
+          } catch {
+            remembered = null;
+          }
+          const dummyBook: Book = remembered?.id === storedBookId ? remembered : {
             id: storedBookId,
             book_code: 'OFFLINE',
             name: activeBookMode === 'itr' ? 'ITR Mode' : 'Regular Mode',
@@ -105,10 +111,15 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setCurrentBook(dummyBook);
           setBooks([dummyBook]);
           supabaseDB.setBookId(storedBookId);
-          supabaseDB.setBookLocked(false);
+          supabaseDB.setBookLocked(dummyBook.is_locked);
           setLoading(false);
-          return;
+          return true;
         }
+        return false;
+      };
+
+      if ((!navigator.onLine || !supabaseDB.isOnline) && useOfflineBook()) {
+        return;
       }
 
       // Query books filtering out deleted ones.
@@ -130,6 +141,7 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         console.error('❌ Error fetching books:', error);
+        useOfflineBook();
         return;
       }
 
@@ -154,6 +166,7 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (selected) {
         setCurrentBook(selected);
         localStorage.setItem(storageKey, selected.id);
+        localStorage.setItem(`offlineBook_${activeBookMode}`, JSON.stringify(selected));
         
         // Sync database client with current book ID and lock status
         supabaseDB.setBookId(selected.id);

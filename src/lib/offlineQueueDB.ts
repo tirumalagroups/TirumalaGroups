@@ -12,8 +12,13 @@ export interface QueuedOperation {
   operation_type: 'INSERT' | 'UPDATE' | 'DELETE' | 'UPSERT';
   table: string; // base table name
   payload: any; // data payload
-  status: 'pending_sync' | 'syncing' | 'synced' | 'failed' | 'conflict';
+  status: 'pending_sync' | 'syncing' | 'synced' | 'failed' | 'conflict' | 'discarded';
   error_message?: string;
+  /** Fixes made before the entry reached the server; saved to the edit log at sync */
+  edit_history?: { at: string; by: string; old_values: any; new_values: any }[];
+  discarded_by?: string;
+  discarded_at?: string;
+  discarded_reason?: string;
 }
 
 export interface OfflineMasterData {
