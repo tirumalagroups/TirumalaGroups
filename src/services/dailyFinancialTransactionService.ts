@@ -412,7 +412,7 @@ export const dailyFinancialTransactionService = {
               transactionDate: transDate,
               headOfAccount: headPrin,
               particulars: splits.interest > 0 || splits.penalty > 0 
-                ? `${baseParticulars} [Principal: ₹${splits.principal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}]`
+                ? `${baseParticulars} [Principal: ${splits.principal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}]`
                 : baseParticulars,
               receiptOrVoucherNo: lt.receipt_no || null,
               accountOrLoanNo: loanAcc,
@@ -437,7 +437,7 @@ export const dailyFinancialTransactionService = {
               sourceRecordId: lt.id,
               transactionDate: transDate,
               headOfAccount: headInt,
-              particulars: `${baseParticulars} [Interest: ₹${splits.interest.toLocaleString('en-IN', { minimumFractionDigits: 2 })}]`,
+              particulars: `${baseParticulars} [Interest: ${splits.interest.toLocaleString('en-IN', { minimumFractionDigits: 2 })}]`,
               receiptOrVoucherNo: lt.receipt_no || null,
               accountOrLoanNo: loanAcc,
               debit: 0,
@@ -461,7 +461,7 @@ export const dailyFinancialTransactionService = {
               sourceRecordId: lt.id,
               transactionDate: transDate,
               headOfAccount: headPen,
-              particulars: `${baseParticulars} [Penalty: ₹${splits.penalty.toLocaleString('en-IN', { minimumFractionDigits: 2 })}]`,
+              particulars: `${baseParticulars} [Penalty: ${splits.penalty.toLocaleString('en-IN', { minimumFractionDigits: 2 })}]`,
               receiptOrVoucherNo: lt.receipt_no || null,
               accountOrLoanNo: loanAcc,
               debit: 0,
@@ -485,7 +485,7 @@ export const dailyFinancialTransactionService = {
               sourceRecordId: lt.id,
               transactionDate: transDate,
               headOfAccount: headDoc,
-              particulars: `${baseParticulars} [Doc Charges: ₹${splits.docCharges.toLocaleString('en-IN', { minimumFractionDigits: 2 })}]`,
+              particulars: `${baseParticulars} [Doc Charges: ${splits.docCharges.toLocaleString('en-IN', { minimumFractionDigits: 2 })}]`,
               receiptOrVoucherNo: lt.receipt_no || null,
               accountOrLoanNo: loanAcc,
               debit: 0,
@@ -592,7 +592,7 @@ export const dailyFinancialTransactionService = {
           if (woPrincipal < 0) { woPrincipal = 0; woInterest = r2(waivedAmt - woPenalty); }
 
           const groupId = `NPA:${npa.loan_id || npa.id}:${matchedReceipt || closedDate}`;
-          const writeoffParticulars = `NPA CLOSE - ${loanNo} - ${npa.customer_name}\nPrincipal: ₹${woPrincipal.toFixed(2)}  Interest: ₹${woInterest.toFixed(2)}  Penalty: ₹${woPenalty.toFixed(2)}\nWritten off as loss: ₹${waivedAmt.toFixed(2)}${amt > 0 ? ` (amount received: ₹${amt.toFixed(2)})` : ' (no amount received)'}${npa.reason ? `\nReason: ${npa.reason}` : ''}`;
+          const writeoffParticulars = `NPA CLOSE - ${loanNo} - ${npa.customer_name}\nPrincipal: ${woPrincipal.toFixed(2)}  Interest: ${woInterest.toFixed(2)}  Penalty: ${woPenalty.toFixed(2)}\nWritten off as loss: ${waivedAmt.toFixed(2)}${amt > 0 ? ` (amount received: ${amt.toFixed(2)})` : ' (no amount received)'}${npa.reason ? `\nReason: ${npa.reason}` : ''}`;
           const common = {
             sourceType: 'CD_LEDGER' as const,
             sourceRecordId: npa.id,

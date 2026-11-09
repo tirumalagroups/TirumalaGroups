@@ -24,7 +24,7 @@ import {
 import toast from 'react-hot-toast';
 
 const getAdaptiveCardFontSize = (amount: number, minimumFractionDigits = 0) => {
-  const str = `₹ ${amount.toLocaleString('en-IN', { minimumFractionDigits })}`;
+  const str = `${amount.toLocaleString('en-IN', { minimumFractionDigits })}`;
   const len = str.length;
   if (len >= 18) return 'text-[15px] sm:text-[17px] xl:text-[19px]';
   if (len >= 15) return 'text-[17px] sm:text-[19px] xl:text-[21px]';
@@ -33,7 +33,7 @@ const getAdaptiveCardFontSize = (amount: number, minimumFractionDigits = 0) => {
 };
 
 const getPillNumberClass = (amount: number) => {
-  const str = `₹${amount.toLocaleString('en-IN')}`;
+  const str = `${amount.toLocaleString('en-IN')}`;
   const len = str.length;
   if (len >= 13) return 'text-[13px] min-[1600px]:text-[14px] font-extrabold font-mono tabular-nums leading-tight whitespace-nowrap block';
   if (len >= 10) return 'text-[13px] min-[1600px]:text-[15px] font-extrabold font-mono tabular-nums leading-tight whitespace-nowrap block';
@@ -221,7 +221,7 @@ const FinanceDashboard: React.FC = () => {
                 <Wallet className="w-4 h-4 text-slate-400 shrink-0" />
               </div>
               <div className={`font-black font-mono text-slate-900 tracking-tight leading-none ${getAdaptiveCardFontSize(metrics.totalDisbursed)}`}>
-                ₹ {metrics.totalDisbursed.toLocaleString('en-IN')}
+                {metrics.totalDisbursed.toLocaleString('en-IN')}
               </div>
             </div>
 
@@ -236,11 +236,11 @@ const FinanceDashboard: React.FC = () => {
               </div>
               <div className="bg-slate-50 px-2 py-1.5 rounded border border-slate-100 overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-slate-400 block">Avg Loan</span>
-                <span className={getPillNumberClass(metrics.avgLoanAmount)}>₹{metrics.avgLoanAmount.toLocaleString('en-IN')}</span>
+                <span className={getPillNumberClass(metrics.avgLoanAmount)}>{metrics.avgLoanAmount.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-slate-50 px-2 py-1.5 rounded border border-slate-100 overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-slate-400 block">Max Loan</span>
-                <span className={getPillNumberClass(metrics.largestLoanAmount)}>₹{metrics.largestLoanAmount.toLocaleString('en-IN')}</span>
+                <span className={getPillNumberClass(metrics.largestLoanAmount)}>{metrics.largestLoanAmount.toLocaleString('en-IN')}</span>
               </div>
             </div>
             <p className="text-[11px] text-slate-400 font-semibold">Total principal disbursed across valid loans</p>
@@ -256,26 +256,26 @@ const FinanceDashboard: React.FC = () => {
                 <TrendingUp className="w-4 h-4 text-rose-500 shrink-0" />
               </div>
               <div className={`font-black font-mono text-rose-700 tracking-tight leading-none ${getAdaptiveCardFontSize(metrics.totalOutstanding)}`}>
-                ₹ {metrics.totalOutstanding.toLocaleString('en-IN')}
+                {metrics.totalOutstanding.toLocaleString('en-IN')}
               </div>
             </div>
 
             <div className="grid grid-cols-1 min-[1600px]:grid-cols-2 gap-1.5 pt-2 border-t border-rose-100">
               <div className="bg-rose-50/50 px-2 py-1.5 rounded border border-rose-100 overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-rose-500 block">Principal</span>
-                <span className={`${getPillNumberClass(metrics.outstandingPrincipal)} text-rose-900`}>₹{metrics.outstandingPrincipal.toLocaleString('en-IN')}</span>
+                <span className={`${getPillNumberClass(metrics.outstandingPrincipal)} text-rose-900`}>{metrics.outstandingPrincipal.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-rose-50/50 px-2 py-1.5 rounded border border-rose-100 overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-rose-500 block">Interest</span>
-                <span className={`${getPillNumberClass(metrics.pendingInterest)} text-rose-900`}>₹{metrics.pendingInterest.toLocaleString('en-IN')}</span>
+                <span className={`${getPillNumberClass(metrics.pendingInterest)} text-rose-900`}>{metrics.pendingInterest.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-rose-50/50 px-2 py-1.5 rounded border border-rose-100 overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-rose-500 block">Penalty</span>
-                <span className={`${getPillNumberClass(metrics.pendingPenalty)} text-rose-900`}>₹{metrics.pendingPenalty.toLocaleString('en-IN')}</span>
+                <span className={`${getPillNumberClass(metrics.pendingPenalty)} text-rose-900`}>{metrics.pendingPenalty.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-rose-50/50 px-2 py-1.5 rounded border border-rose-100 overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-rose-500 block">Charges</span>
-                <span className={`${getPillNumberClass(metrics.pendingCharges)} text-rose-900`}>₹{metrics.pendingCharges.toLocaleString('en-IN')}</span>
+                <span className={`${getPillNumberClass(metrics.pendingCharges)} text-rose-900`}>{metrics.pendingCharges.toLocaleString('en-IN')}</span>
               </div>
             </div>
             <p className="text-[11px] text-rose-500/80 font-semibold">Actual collectible receivable across active accounts</p>
@@ -291,26 +291,26 @@ const FinanceDashboard: React.FC = () => {
                 <DollarSign className="w-4 h-4 text-emerald-500 shrink-0" />
               </div>
               <div className={`font-black font-mono text-emerald-700 tracking-tight leading-none ${getAdaptiveCardFontSize(metrics.collectedTodayTotal)}`}>
-                ₹ {metrics.collectedTodayTotal.toLocaleString('en-IN')}
+                {metrics.collectedTodayTotal.toLocaleString('en-IN')}
               </div>
             </div>
 
             <div className="grid grid-cols-1 min-[1600px]:grid-cols-2 gap-1.5 pt-2 border-t border-emerald-100">
               <div className="bg-emerald-50/50 px-2 py-1.5 rounded border border-emerald-100 overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-emerald-600 block">Principal</span>
-                <span className={`${getPillNumberClass(metrics.collectedTodayPrincipal)} text-emerald-900`}>₹{metrics.collectedTodayPrincipal.toLocaleString('en-IN')}</span>
+                <span className={`${getPillNumberClass(metrics.collectedTodayPrincipal)} text-emerald-900`}>{metrics.collectedTodayPrincipal.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-emerald-50/50 px-2 py-1.5 rounded border border-emerald-100 overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-emerald-600 block">Interest</span>
-                <span className={`${getPillNumberClass(metrics.collectedTodayInterest)} text-emerald-900`}>₹{metrics.collectedTodayInterest.toLocaleString('en-IN')}</span>
+                <span className={`${getPillNumberClass(metrics.collectedTodayInterest)} text-emerald-900`}>{metrics.collectedTodayInterest.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-emerald-50/50 px-2 py-1.5 rounded border border-emerald-100 overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-emerald-600 block">Penalty</span>
-                <span className={`${getPillNumberClass(metrics.collectedTodayPenalty)} text-emerald-900`}>₹{metrics.collectedTodayPenalty.toLocaleString('en-IN')}</span>
+                <span className={`${getPillNumberClass(metrics.collectedTodayPenalty)} text-emerald-900`}>{metrics.collectedTodayPenalty.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-emerald-50/50 px-2 py-1.5 rounded border border-emerald-100 overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-emerald-600 block">Charges</span>
-                <span className={`${getPillNumberClass(metrics.collectedTodayCharges)} text-emerald-900`}>₹{metrics.collectedTodayCharges.toLocaleString('en-IN')}</span>
+                <span className={`${getPillNumberClass(metrics.collectedTodayCharges)} text-emerald-900`}>{metrics.collectedTodayCharges.toLocaleString('en-IN')}</span>
               </div>
             </div>
             <p className="text-[11px] text-emerald-600/80 font-semibold">Total collections received on today's business date</p>
@@ -333,11 +333,11 @@ const FinanceDashboard: React.FC = () => {
             <div className="grid grid-cols-1 min-[1600px]:grid-cols-2 gap-1.5 pt-2 border-t border-amber-100">
               <div className="min-[1600px]:col-span-2 bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100 flex justify-between items-center overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-amber-700">Total Due</span>
-                <span className={`${getPillNumberClass(metrics.totalOverdueAmount)} text-amber-900`}>₹{metrics.totalOverdueAmount.toLocaleString('en-IN')}</span>
+                <span className={`${getPillNumberClass(metrics.totalOverdueAmount)} text-amber-900`}>{metrics.totalOverdueAmount.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100 overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-amber-700 block">Highest Due</span>
-                <span className={`${getPillNumberClass(metrics.highestOverdueAmount)} text-amber-900`}>₹{metrics.highestOverdueAmount.toLocaleString('en-IN')}</span>
+                <span className={`${getPillNumberClass(metrics.highestOverdueAmount)} text-amber-900`}>{metrics.highestOverdueAmount.toLocaleString('en-IN')}</span>
               </div>
               <div className="bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100">
                 <span className="text-[11px] font-bold uppercase text-amber-700 block">Critical (&gt;90d)</span>
@@ -441,7 +441,7 @@ const FinanceDashboard: React.FC = () => {
                           })}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-[13px] min-[1600px]:text-[14px] text-right text-slate-900 font-bold font-mono tabular-nums">
-                          ₹{Number(loan.amount).toLocaleString('en-IN')}
+                          {Number(loan.amount).toLocaleString('en-IN')}
                         </td>
                         <td className="px-3 py-2 text-[13px] min-[1600px]:text-[14px] text-center font-bold uppercase text-slate-600">
                           {loan.loan_category?.trim().toUpperCase() || 'CD'}

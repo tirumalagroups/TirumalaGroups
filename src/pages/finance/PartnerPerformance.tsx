@@ -276,7 +276,7 @@ const PartnerPerformance: React.FC = () => {
               <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Partner Performance Split</h3>
             </div>
             <span className="text-xs font-mono font-black text-blue-900 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-100">
-              Total Financed: ₹ {grandTotals.principalFinanced.toLocaleString('en-IN')}
+              Total Financed: {grandTotals.principalFinanced.toLocaleString('en-IN')}
             </span>
           </div>
 
@@ -290,7 +290,7 @@ const PartnerPerformance: React.FC = () => {
                     <span className="text-[10px] text-slate-400 font-semibold">({p.role})</span>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0 font-sans tabular-nums">
-                    <span className="text-[12px] min-[1600px]:text-[14px] text-slate-700 font-bold whitespace-nowrap">₹ {p.principalFinanced.toLocaleString('en-IN')}</span>
+                    <span className="text-[12px] min-[1600px]:text-[14px] text-slate-700 font-bold whitespace-nowrap">{p.principalFinanced.toLocaleString('en-IN')}</span>
                     <span className={`text-[11px] min-[1600px]:text-[12px] font-black px-1.5 py-0.2 rounded border whitespace-nowrap ${p.color.badge}`}>
                       {p.pctFormatted}
                     </span>
@@ -330,14 +330,14 @@ const PartnerPerformance: React.FC = () => {
               <thead className="bg-slate-100/90 text-slate-700 uppercase tracking-wider text-[11px] min-[1600px]:text-[12px] font-bold border-b border-slate-200 sticky top-0 z-10 leading-tight">
                 <tr>
                   <th className="px-1.5 py-2.5 text-left align-bottom">Partner Name</th>
-                  <th className="px-1.5 py-2.5 text-right text-slate-700 align-bottom">Capital (₹)</th>
+                  <th className="px-1.5 py-2.5 text-right text-slate-700 align-bottom">Capital</th>
                   <th className="px-1.5 py-2.5 text-center text-slate-600 align-bottom">Introduced</th>
-                  <th className="px-1.5 py-2.5 text-right text-blue-900 align-bottom">Financed (₹)</th>
-                  <th className="px-1.5 py-2.5 text-right text-emerald-800 align-bottom">Collected (₹)</th>
-                  <th className="px-1.5 py-2.5 text-right text-emerald-800 align-bottom">Int Earned (₹)</th>
-                  <th className="px-1.5 py-2.5 text-right text-emerald-800 align-bottom">Pen Earned (₹)</th>
-                  <th className="px-1.5 py-2.5 text-right text-rose-800 align-bottom">Outstanding (₹)</th>
-                  <th className="px-1.5 py-2.5 text-right text-rose-800 align-bottom">Present Due (₹)</th>
+                  <th className="px-1.5 py-2.5 text-right text-blue-900 align-bottom">Financed</th>
+                  <th className="px-1.5 py-2.5 text-right text-emerald-800 align-bottom">Collected</th>
+                  <th className="px-1.5 py-2.5 text-right text-emerald-800 align-bottom">Int Earned</th>
+                  <th className="px-1.5 py-2.5 text-right text-emerald-800 align-bottom">Pen Earned</th>
+                  <th className="px-1.5 py-2.5 text-right text-rose-800 align-bottom">Outstanding</th>
+                  <th className="px-1.5 py-2.5 text-right text-rose-800 align-bottom">Present Due</th>
                   <th className="px-1.5 py-2.5 text-center text-emerald-900 bg-emerald-50/80 align-bottom">Recovery %</th>
                   <th className="px-1.5 py-2.5 text-center text-rose-800 align-bottom">NPA</th>
                   <th className="px-1.5 py-2.5 text-center text-slate-700 align-bottom">Act / Cls</th>

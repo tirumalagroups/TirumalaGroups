@@ -10,7 +10,6 @@ import {
   AttendanceStaff,
   AttendanceStatus,
   isEmployedOn,
-  isSunday,
   monthOf,
   needsReason,
   relationText,
@@ -72,10 +71,9 @@ const MarkTab: React.FC<{
   }, [date]);
 
   const holiday = holidays.find(h => h.holiday_date === date);
-  const sunday = isSunday(date);
   const locked = locks.some(l => l.month === monthOf(date));
   const future = date > today;
-  const readOnly = locked || future || sunday || !!holiday;
+  const readOnly = locked || future || !!holiday;
 
   const rows = useMemo(() => staff.filter(s => isEmployedOn(s, date)), [staff, date]);
   const visible = useMemo(() => {
@@ -204,10 +202,9 @@ const MarkTab: React.FC<{
         </div>
       </div>
 
-      {(sunday || holiday) && (
+      {holiday && (
         <div className='p-4 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 font-semibold'>
-          {fmtDate(date)} is a week off ({holiday ? holiday.name : 'Sunday'}). It is paid automatically, so nobody
-          needs marking.
+          {fmtDate(date)} is a holiday ({holiday.name}). It is taken out of the month, so nobody needs marking.
         </div>
       )}
       {locked && (

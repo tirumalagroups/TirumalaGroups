@@ -1,7 +1,8 @@
+import LoadMoreBar, { LOAD_STEP } from '../../components/UI/LoadMoreBar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
-import { AlertCircle, Book, Calendar, Check, Eye, Loader2, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { AlertCircle, Book, Calendar, Check, Eye, Loader2, RotateCcw, Search, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabaseFinance, FinanceTransactionReview } from '../../lib/supabaseFinance';
 import { supabase } from '../../lib/supabase';
@@ -19,7 +20,6 @@ import { displayHeadName } from '../../utils/financeLabels';
  * approveTransactionsBulk, rejectTransactionReview and getTransactionReviewDetails.
  */
 
-const RECORDS_PER_PAGE = 50;
 const todayISO = () => new Date().toISOString().split('T')[0];
 
 type LoanJoin = { loan_id?: string; customer?: { name?: string } | null } | null;
@@ -74,26 +74,9 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   return <span className={`inline-flex px-2 py-0.5 rounded-full border font-bold ${tone}`}>{status}</span>;
 };
 
-const Pager: React.FC<{ page: number; total: number; onPage: (p: number) => void }> = ({ page, total, onPage }) => {
-  const totalPages = Math.max(1, Math.ceil(total / RECORDS_PER_PAGE));
-  return (
-    <div className='flex items-center justify-between px-4 py-3 border-t border-gray-200'>
-      <p className='text-sm text-gray-700'>
-        Showing <span className='font-semibold'>{total === 0 ? 0 : (page - 1) * RECORDS_PER_PAGE + 1}</span> to{' '}
-        <span className='font-semibold'>{Math.min(page * RECORDS_PER_PAGE, total)}</span> of{' '}
-        <span className='font-semibold'>{total}</span> results
-      </p>
-      <div className='flex items-center gap-2'>
-        <Button variant='secondary' onClick={() => onPage(Math.max(1, page - 1))} disabled={page <= 1}>Previous</Button>
-        <Button variant='secondary' onClick={() => onPage(Math.min(totalPages, page + 1))} disabled={page >= totalPages}>Next</Button>
-      </div>
-    </div>
-  );
-};
-
 interface ReviewTableProps {
   rows: ReviewRow[];
-  page: number;
+  visible: number;
   selectable?: boolean;
   selected?: Set<string>;
   allSelected?: boolean;
@@ -101,20 +84,19 @@ interface ReviewTableProps {
   onToggleAll?: () => void;
   onView: (r: ReviewRow) => void;
   onApprove?: (id: string) => void;
-  onReject?: (id: string) => void;
   actioningId?: string | null;
   canApprove?: boolean;
   showDecision?: boolean;
 }
 
 const ReviewTable: React.FC<ReviewTableProps> = ({
-  rows, page, selectable, selected, allSelected, onToggle, onToggleAll,
-  onView, onApprove, onReject, actioningId, canApprove, showDecision,
+  rows, visible, selectable, selected, allSelected, onToggle, onToggleAll,
+  onView, onApprove, actioningId, canApprove, showDecision,
 }) => {
   const th = 'px-2 py-2 font-medium text-gray-700';
-  const pageRows = rows.slice((page - 1) * RECORDS_PER_PAGE, page * RECORDS_PER_PAGE);
+  const pageRows = rows.slice(0, visible);
   return (
-    <table className='fit-table'>
+    <table className='fit-table' data-no-load-more>
       <thead className='bg-gray-50 border-b border-gray-200'>
         <tr>
           {selectable && (
@@ -151,7 +133,7 @@ const ReviewTable: React.FC<ReviewTableProps> = ({
                 <input type='checkbox' checked={!!selected?.has(r.id)} onChange={() => onToggle?.(r.id)} className='h-4 w-4 rounded border-gray-300' aria-label='Select record' />
               </td>
             )}
-            <td className='fit-nowrap px-2 py-2 font-medium'>{(page - 1) * RECORDS_PER_PAGE + i + 1}</td>
+            <td className='fit-nowrap px-2 py-2 font-medium'>{i + 1}</td>
             <td className='fit-nowrap px-2 py-2'>{fmtDate(r.transaction_date)}</td>
             <td className='fit-nowrap px-2 py-2 font-bold text-blue-700'>{loanNoOf(r)}</td>
             <td className='fit-nowrap px-2 py-2'>{r.receipt_number || '—'}</td>
@@ -178,14 +160,9 @@ const ReviewTable: React.FC<ReviewTableProps> = ({
                   <Eye className='w-3.5 h-3.5' /> <span className='max-[1399px]:hidden'>View</span>
                 </button>
                 {r.review_status === 'PENDING' && canApprove && (
-                  <>
                     <button type='button' onClick={() => onApprove?.(r.id)} disabled={actioningId === r.id} title='Approve Transaction' className='inline-flex items-center gap-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-50'>
                       {actioningId === r.id ? <Loader2 className='w-3.5 h-3.5 animate-spin' /> : <Check className='w-3.5 h-3.5' />} <span className='max-[1399px]:hidden'>Approve</span>
                     </button>
-                    <button type='button' onClick={() => onReject?.(r.id)} disabled={actioningId === r.id} title='Reject Transaction' className='inline-flex items-center gap-1 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold disabled:opacity-50'>
-                      {actioningId === r.id ? <Loader2 className='w-3.5 h-3.5 animate-spin' /> : <Trash2 className='w-3.5 h-3.5' />} <span className='max-[1399px]:hidden'>Reject</span>
-                    </button>
-                  </>
                 )}
               </div>
             </td>
@@ -207,9 +184,9 @@ const FinanceApproveRecords: React.FC = () => {
   const [queryError, setQueryError] = useState<string | null>(null);
   const [actioningId, setActioningId] = useState<string | null>(null);
 
-  const [pendingPage, setPendingPage] = useState(1);
-  const [approvedPage, setApprovedPage] = useState(1);
-  const [rejectedPage, setRejectedPage] = useState(1);
+  const [pendingVisible, setPendingVisible] = useState(LOAD_STEP);
+  const [approvedVisible, setApprovedVisible] = useState(LOAD_STEP);
+  const [rejectedVisible, setRejectedVisible] = useState(LOAD_STEP);
 
   // Bulk approval
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -266,9 +243,9 @@ const FinanceApproveRecords: React.FC = () => {
       setPendingRows(pending as ReviewRow[]);
       setApprovedRows(approved as ReviewRow[]);
       setRejectedRows(rejected as ReviewRow[]);
-      setPendingPage(1);
-      setApprovedPage(1);
-      setRejectedPage(1);
+      setPendingVisible(LOAD_STEP);
+      setApprovedVisible(LOAD_STEP);
+      setRejectedVisible(LOAD_STEP);
     } catch (err: any) {
       console.error('Error fetching transaction reviews:', err);
       setQueryError(err?.message || 'Failed to load transaction reviews');
@@ -436,31 +413,6 @@ const FinanceApproveRecords: React.FC = () => {
     }
   };
 
-  const handleReject = async (id: string) => {
-    if (!canApprove) {
-      toast.error('Access Denied: You do not have permission to reject transactions.');
-      return;
-    }
-    if (!window.confirm('Are you sure you want to REJECT this transaction?')) return;
-    try {
-      setActioningId(id);
-      const ok = await supabaseFinance.rejectTransactionReview(id, user!.username);
-      if (ok) {
-        toast.success('Transaction review status marked as REJECTED');
-        setViewRow(null);
-        fetchReviews();
-        fetchMeta();
-      } else {
-        toast.error('Failed to reject transaction');
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error('Error occurred during rejection');
-    } finally {
-      setActioningId(null);
-    }
-  };
-
   const allSelected = pendingRows.length > 0 && pendingRows.every(r => selectedIds.has(r.id));
   const toggleOne = (id: string) => {
     const next = new Set(selectedIds);
@@ -483,11 +435,11 @@ const FinanceApproveRecords: React.FC = () => {
     setShowBulkConfirm(true);
   };
 
-  const runBulk = async () => {
+  const runBulk = async (ids: string[]) => {
     try {
       setIsBulkApproving(true);
       const result = await supabaseFinance.approveTransactionsBulk({
-        transactionIds: bulkTargetIds,
+        transactionIds: ids,
         approvedBy: user?.username || 'System',
       });
       setBulkResult(result);
@@ -502,6 +454,20 @@ const FinanceApproveRecords: React.FC = () => {
       setIsBulkApproving(false);
       setShowBulkConfirm(false);
     }
+  };
+
+  const approveAllNow = () => {
+    if (!canApprove) {
+      toast.error('Access Denied: You do not have permission to bulk approve transactions.');
+      return;
+    }
+    if (isBulkApproving) return;
+    const ids = pendingRows.map(r => r.id);
+    if (ids.length === 0) {
+      toast.error('No pending transactions available to approve.');
+      return;
+    }
+    runBulk(ids);
   };
 
   const bulkBreakdown = useMemo(() => {
@@ -665,7 +631,7 @@ const FinanceApproveRecords: React.FC = () => {
           {/* Records for Approval */}
           <Card
             title='Records for Approval'
-            subtitle={`Showing ${Math.min(pendingRows.length, RECORDS_PER_PAGE)} of ${pendingRows.length} records${selectedIds.size ? ` · ${selectedIds.size} selected` : ''}`}
+            subtitle={`Showing ${Math.min(pendingRows.length, pendingVisible)} of ${pendingRows.length} records${selectedIds.size ? ` · ${selectedIds.size} selected` : ''}`}
             headerActions={canApprove && pendingRows.length > 0 ? (
               <div className='flex flex-wrap items-center gap-2'>
                 {selectedIds.size > 0 && (
@@ -674,7 +640,10 @@ const FinanceApproveRecords: React.FC = () => {
                     <Button size='sm' onClick={() => startBulk('SELECTED')}>Approve Selected ({selectedIds.size})</Button>
                   </>
                 )}
-                <Button size='sm' onClick={() => startBulk('ALL_FILTERED')}>Approve All Filtered ({pendingRows.length})</Button>
+                <Button size='sm' onClick={() => startBulk('ALL_FILTERED')} disabled={isBulkApproving}>Approve All With Confirmation ({pendingRows.length})</Button>
+                <Button size='sm' variant='danger' onClick={approveAllNow} disabled={isBulkApproving} title='Approves every record in the current filters straight away. There is no confirmation and no undo.'>
+                  {isBulkApproving ? 'Approving...' : `Approve All Without Confirmation (${pendingRows.length})`}
+                </Button>
               </div>
             ) : undefined}
           >
@@ -684,7 +653,7 @@ const FinanceApproveRecords: React.FC = () => {
               <>
                 <ReviewTable
                   rows={pendingRows}
-                  page={pendingPage}
+                  visible={pendingVisible}
                   selectable={canApprove}
                   selected={selectedIds}
                   allSelected={allSelected}
@@ -692,35 +661,34 @@ const FinanceApproveRecords: React.FC = () => {
                   onToggleAll={toggleAll}
                   onView={openView}
                   onApprove={handleApprove}
-                  onReject={handleReject}
                   actioningId={actioningId}
                   canApprove={canApprove}
                 />
-                <Pager page={pendingPage} total={pendingRows.length} onPage={setPendingPage} />
+                <LoadMoreBar shown={Math.min(pendingVisible, pendingRows.length)} total={pendingRows.length} onMore={() => setPendingVisible(v => v + LOAD_STEP)} onRefresh={() => setPendingVisible(LOAD_STEP)} />
               </>
             )}
           </Card>
 
           {/* Approved Records */}
-          <Card title='Approved Records' subtitle={`Showing ${Math.min(approvedRows.length, RECORDS_PER_PAGE)} of ${approvedRows.length} records`}>
+          <Card title='Approved Records' subtitle={`Showing ${Math.min(approvedRows.length, approvedVisible)} of ${approvedRows.length} records`}>
             {approvedRows.length === 0 ? (
               <p className='p-6 text-center text-gray-500'>No approved records for these filters.</p>
             ) : (
               <>
-                <ReviewTable rows={approvedRows} page={approvedPage} onView={openView} showDecision />
-                <Pager page={approvedPage} total={approvedRows.length} onPage={setApprovedPage} />
+                <ReviewTable rows={approvedRows} visible={approvedVisible} onView={openView} showDecision />
+                <LoadMoreBar shown={Math.min(approvedVisible, approvedRows.length)} total={approvedRows.length} onMore={() => setApprovedVisible(v => v + LOAD_STEP)} onRefresh={() => setApprovedVisible(LOAD_STEP)} />
               </>
             )}
           </Card>
 
           {/* Rejected Records */}
-          <Card title='Rejected Records' subtitle={`Showing ${Math.min(rejectedRows.length, RECORDS_PER_PAGE)} of ${rejectedRows.length} records`}>
+          <Card title='Rejected Records' subtitle={`Showing ${Math.min(rejectedRows.length, rejectedVisible)} of ${rejectedRows.length} records`}>
             {rejectedRows.length === 0 ? (
               <p className='p-6 text-center text-gray-500'>No rejected records for these filters.</p>
             ) : (
               <>
-                <ReviewTable rows={rejectedRows} page={rejectedPage} onView={openView} showDecision />
-                <Pager page={rejectedPage} total={rejectedRows.length} onPage={setRejectedPage} />
+                <ReviewTable rows={rejectedRows} visible={rejectedVisible} onView={openView} showDecision />
+                <LoadMoreBar shown={Math.min(rejectedVisible, rejectedRows.length)} total={rejectedRows.length} onMore={() => setRejectedVisible(v => v + LOAD_STEP)} onRefresh={() => setRejectedVisible(LOAD_STEP)} />
               </>
             )}
           </Card>
@@ -807,10 +775,7 @@ const FinanceApproveRecords: React.FC = () => {
             </div>
             <div className='flex justify-end gap-2 px-5 py-3 border-t'>
               {viewRow.review_status === 'PENDING' && canApprove && (
-                <>
-                  <Button variant='danger' onClick={() => handleReject(viewRow.id)} disabled={actioningId === viewRow.id}>Reject</Button>
-                  <Button onClick={() => handleApprove(viewRow.id)} disabled={actioningId === viewRow.id}>Approve</Button>
-                </>
+                <Button onClick={() => handleApprove(viewRow.id)} disabled={actioningId === viewRow.id}>Approve</Button>
               )}
               <Button variant='secondary' onClick={() => setViewRow(null)}>Close</Button>
             </div>
@@ -839,7 +804,7 @@ const FinanceApproveRecords: React.FC = () => {
             </div>
             <div className='bg-gray-50 px-5 py-3 border-t flex justify-end gap-2'>
               <Button variant='secondary' onClick={() => setShowBulkConfirm(false)} disabled={isBulkApproving}>Cancel</Button>
-              <Button onClick={runBulk} disabled={isBulkApproving}>{isBulkApproving ? 'Approving...' : 'Confirm Approve'}</Button>
+              <Button onClick={() => runBulk(bulkTargetIds)} disabled={isBulkApproving}>{isBulkApproving ? 'Approving...' : 'Confirm Approve'}</Button>
             </div>
           </div>
         </div>

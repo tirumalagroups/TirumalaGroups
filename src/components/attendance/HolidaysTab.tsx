@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { Plus, Trash2 } from 'lucide-react';
 import Button from '../UI/Button';
 import Input from '../UI/Input';
-import { AttendanceHoliday, isSunday, monthOf } from '../../utils/attendanceCalc';
+import { AttendanceHoliday, monthOf } from '../../utils/attendanceCalc';
 import { addHoliday, AttendanceLock, removeHoliday } from '../../services/attendanceService';
 import { errorText, fmtDate } from './common';
 
@@ -20,7 +20,6 @@ const HolidaysTab: React.FC<{
 
   const add = async () => {
     if (!name.trim()) return toast.error('Enter the holiday name');
-    if (isSunday(date)) return toast.error('That date is a Sunday, which is already a week off');
     setBusy(true);
     try {
       await addHoliday(date, name.trim(), username);
@@ -52,7 +51,8 @@ const HolidaysTab: React.FC<{
   return (
     <div className='space-y-4'>
       <p className='text-sm text-gray-600'>
-        Sundays are week offs automatically. Add other holidays here. They are paid and apply to everyone.
+        There are no holidays by default. A holiday added here is taken out of the month for everyone, so nobody loses
+        pay for it.
       </p>
       <div className='flex flex-wrap items-end gap-3'>
         <Input label='Date' type='date' value={date} onChange={setDate} className='w-44' />

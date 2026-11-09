@@ -544,7 +544,7 @@ const Reminders: React.FC = () => {
           </p>
         </div>
         
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center justify-end gap-2.5 min-w-0">
           {/* Sound Settings in Reminders Toolbar */}
           <div className="flex items-center gap-1.5 bg-gray-100 border border-gray-200 p-1 rounded-xl shadow-sm">
             <button

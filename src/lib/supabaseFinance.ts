@@ -1054,11 +1054,11 @@ class SupabaseFinance {
       if (params.settlementAmount > 0) {
         const particularsLines = [
           `NPA Closed Payment - ${params.loanIdStr} - ${params.customerName}`,
-          `Principal Paid: ₹${params.principalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-          `Interest Paid: ₹${params.interestPaid.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-          `Penalty Paid: ₹${params.penaltyPaid.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-          ...((params.docChargesPaid || 0) > 0 ? [`Document Charges: ₹${(params.docChargesPaid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`] : []),
-          `Total Received: ₹${params.settlementAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          `Principal Paid: ${params.principalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          `Interest Paid: ${params.interestPaid.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          `Penalty Paid: ${params.penaltyPaid.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          ...((params.docChargesPaid || 0) > 0 ? [`Document Charges: ${(params.docChargesPaid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`] : []),
+          `Total Received: ${params.settlementAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
           `Receipt: ${receiptNo}`,
           ...(params.reason ? [`Reason: ${params.reason}`] : [])
         ];
@@ -1125,9 +1125,9 @@ class SupabaseFinance {
       if (params.waivedAmount > 0) {
         const writeoffParticularsLines = [
           `NPA CLOSURE / WRITE-OFF / WAIVER - ${params.loanIdStr} - ${params.customerName}`,
-          `Total Outstanding: ₹${params.totalOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-          `Actual Paid: ₹${params.settlementAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-          `Waived / Written Off: ₹${params.waivedAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          `Total Outstanding: ${params.totalOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          `Actual Paid: ${params.settlementAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          `Waived / Written Off: ${params.waivedAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
           ...(params.reason ? [`Reason: ${params.reason}`] : [])
         ];
         const writeoffParticulars = writeoffParticularsLines.join('\n');
@@ -1219,7 +1219,7 @@ class SupabaseFinance {
     reason: string;
   }): Promise<{ success: boolean; error?: string; receiptNo?: string; loss?: number }> {
     const r2 = (v: number) => Number((Number(v) || 0).toFixed(2));
-    const fmt = (v: number) => `₹${r2(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const fmt = (v: number) => `${r2(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const inserted: string[] = [];
     try {
       const entryDate = params.paymentDate.split('T')[0];

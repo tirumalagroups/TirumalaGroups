@@ -449,7 +449,7 @@ const CapitalEntry: React.FC = () => {
           </Card>
 
           {/* Bulk Distribution compact toolbar */}
-          <div className="bg-white border border-slate-200 rounded p-3 shadow-sm flex flex-col sm:flex-row items-center gap-3">
+          <div className="bg-white border border-slate-200 rounded p-3 shadow-sm flex flex-col sm:flex-row sm:flex-wrap items-center gap-3">
             <div className="text-[15px] font-bold text-slate-800 uppercase shrink-0">Bulk Distribution:</div>
             
             {/* Credit All */}
@@ -486,7 +486,7 @@ const CapitalEntry: React.FC = () => {
                 type="button"
                 onClick={() => handleBulkSubmit('Debit')}
                 disabled={bulkPosting}
-                className="px-3 h-[44px] bg-rose-650 hover:bg-rose-700 text-white rounded font-bold text-xs uppercase"
+                className="px-3 h-[44px] bg-rose-600 hover:bg-rose-700 text-white rounded font-bold text-xs uppercase"
               >
                 Debit All
               </button>

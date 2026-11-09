@@ -87,7 +87,8 @@ const Header: React.FC = () => {
             </h2>
             <div className="flex items-center gap-2 text-gray-500 finance-input whitespace-nowrap">
               <Calendar className='w-4 h-4' />
-              {format(today, 'EEEE, MMMM do, yyyy')}
+              <span className='max-[1399px]:hidden'>{format(today, 'EEEE, MMMM do, yyyy')}</span>
+              <span className='min-[1400px]:hidden'>{format(today, 'dd MMM yyyy')}</span>
             </div>
           </div>
 
@@ -231,7 +232,7 @@ const Header: React.FC = () => {
 
 
             <div className="flex items-center gap-2 finance-input">
-              <span className='text-gray-600'>Welcome,</span>
+              <span className='text-gray-600 max-[1399px]:hidden'>Welcome,</span>
               <span className="text-gray-900 font-bold">{user?.username}</span>
             </div>
           </div>

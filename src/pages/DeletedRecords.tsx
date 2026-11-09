@@ -1,3 +1,4 @@
+import LoadMoreBar, { LOAD_STEP } from '../components/UI/LoadMoreBar';
 import React, { useState, useEffect, useMemo } from 'react';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
@@ -66,8 +67,7 @@ const DeletedRecords: React.FC = () => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   
   // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const [recordsPerPage] = useState(50);
+  const [visibleCount, setVisibleCount] = useState(LOAD_STEP);
 
   useEffect(() => {
     loadDeletedRecords();
@@ -267,7 +267,7 @@ const DeletedRecords: React.FC = () => {
     }
 
     setFilteredRecords(filtered);
-    setCurrentPage(1); // Reset to first page when filters change
+    setVisibleCount(LOAD_STEP); // Back to the first 50 when filters change
   };
 
   const restoreRecord = async (record: DeletedRecord) => {
@@ -352,11 +352,7 @@ const DeletedRecords: React.FC = () => {
     toast.success('Deleted records exported successfully!');
   };
 
-  // Pagination
-  const totalPages = Math.ceil(filteredRecords.length / recordsPerPage);
-  const startIndex = (currentPage - 1) * recordsPerPage;
-  const endIndex = startIndex + recordsPerPage;
-  const currentRecords = filteredRecords.slice(startIndex, endIndex);
+  const currentRecords = filteredRecords.slice(0, visibleCount);
 
   const getStatusIcon = (record: DeletedRecord) => {
     if (record.approved) {
@@ -712,11 +708,11 @@ const DeletedRecords: React.FC = () => {
                   Deleted Records ({filteredRecords.length})
                 </div>
                 <div className='text-sm text-gray-600'>
-                  Showing {startIndex + 1}-{Math.min(endIndex, filteredRecords.length)} of {filteredRecords.length}
+                  Showing {currentRecords.length} of {filteredRecords.length}
                 </div>
               </div>
 
-              <table className='fit-table'>
+              <table className='fit-table' data-no-load-more>
                 <thead className='bg-red-50 border-b border-red-200'>
                   <tr>
                     <th className='px-1 py-1 text-left font-medium text-gray-700'>S.No</th>
@@ -736,7 +732,7 @@ const DeletedRecords: React.FC = () => {
                 </thead>
                 <tbody>
                   {currentRecords.map((record, idx) => {
-                    const serialNumber = startIndex + idx + 1;
+                    const serialNumber = idx + 1;
                     return (
                       <tr
                         key={record.id}
@@ -788,32 +784,7 @@ const DeletedRecords: React.FC = () => {
                 </tbody>
               </table>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className='flex items-center justify-between mt-4 pt-4 border-t border-gray-200'>
-                  <div className='text-sm text-gray-600'>
-                    Page {currentPage} of {totalPages}
-                  </div>
-                  <div className='flex gap-2'>
-                    <Button
-                      size='sm'
-                      variant='secondary'
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      size='sm'
-                      variant='secondary'
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                      disabled={currentPage === totalPages}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <LoadMoreBar shown={currentRecords.length} total={filteredRecords.length} onMore={() => setVisibleCount(v => v + LOAD_STEP)} onRefresh={() => setVisibleCount(LOAD_STEP)} />
             </>
           )}
         </Card>

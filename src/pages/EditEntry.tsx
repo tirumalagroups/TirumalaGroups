@@ -1705,10 +1705,10 @@ const EditEntry: React.FC = () => {
               value={filterPaymentMode}
               onChange={setFilterPaymentMode}
               options={paymentModeOptions}
-              placeholder='Select payment mode...'
+              placeholder='Select mode...'
             />
           </div>
-          
+
           {/* User */}
           <div className='col-span-1'>
             <SearchableSelect

@@ -78,7 +78,7 @@ const Attendance: React.FC = () => {
           <CalendarCheck className='w-8 h-8 text-blue-600' />
           Attendance
         </h1>
-        <p className='text-gray-500 mt-1'>Daily attendance and monthly salary. Sundays and holidays are paid week offs.</p>
+        <p className='text-gray-500 mt-1'>Daily attendance and monthly salary. Sundays are normal days. Holidays added by hand are taken out of the month.</p>
       </div>
 
       {state === 'loading' && <div className='py-16 text-center text-gray-500'>Loading...</div>}

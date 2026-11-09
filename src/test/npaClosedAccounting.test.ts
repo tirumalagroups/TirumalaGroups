@@ -96,7 +96,7 @@ describe('NPA Closed Accounting & Reporting Logic Tests', () => {
     expect(lossDebitEntry.credit).toBe(0);
     expect(lossDebitEntry.entry_type).toBe('NPA_WRITEOFF');
     expect(lossDebitEntry.particulars).toContain('NPA CLOSURE / WRITE-OFF / WAIVER');
-    expect(lossDebitEntry.particulars).toContain('Waived / Written Off: ₹45,000.00');
+    expect(lossDebitEntry.particulars).toContain('Waived / Written Off: 45,000.00');
 
     // Entry 3: Write-off Credit side (CD Receivable reduction) Cr ₹45,000
     const receivableCreditEntry = cdLedgerEntries.find(e => e.account_name === 'CD LOAN RECEIVABLE A/C');

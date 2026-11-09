@@ -235,3 +235,39 @@
     @apply text-[15px] font-extrabold text-slate-950 leading-[1.33] tracking-[0.16px];
   }
 }
+
+/* Only the main page scrolls: see utils/tableFit.ts */
+@media screen {
+  [data-fit-open] {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+  tr[data-fit-hidden] {
+    display: none !important;
+  }
+  table[data-fit-table] {
+    min-width: 0 !important;
+    max-width: 100%;
+  }
+  table[data-fit-wrap] [data-fit-text],
+  table[data-fit-wrap] [data-fit-text] * {
+    white-space: normal !important;
+  }
+  table[data-fit-font] th,
+  table[data-fit-font] td,
+  table[data-fit-font] th *,
+  table[data-fit-font] td * {
+    font-size: var(--fit-font) !important;
+  }
+  table[data-fit-font][data-fit-font] th,
+  table[data-fit-font][data-fit-font] td {
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+  }
+}
+@media print {
+  [data-fit-bar] {
+    display: none !important;
+  }
+}
