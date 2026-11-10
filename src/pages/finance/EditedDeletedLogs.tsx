@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { exportToExcel } from '../../utils/excel';
 import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
+import FinanceEditBeforeAfterTable from '../../components/finance/FinanceEditBeforeAfterTable';
 
 export const ignoredKeys = new Set([
   'id',
@@ -577,10 +578,6 @@ const EditedDeletedLogs: React.FC = () => {
         }
       }
 
-      if (filterTableType !== 'all' && item.tableName !== filterTableType) {
-        return false;
-      }
-
       if (filterOperator !== 'all' && item.operator.toUpperCase() !== filterOperator.toUpperCase()) {
         return false;
       }
@@ -602,6 +599,21 @@ const EditedDeletedLogs: React.FC = () => {
       return true;
     });
   }, [groupedEditEvents, searchQuery, filterTableType, filterOperator, filterStartDate, filterEndDate]);
+
+  // Edited Logs show one record type at a time (Loans, Receipts, ...) in Before / After rows
+  const TYPE_ORDER = ['finance_loans', 'finance_transactions', 'finance_loans_collateral', 'finance_customers',
+    'finance_guarantors', 'finance_partners', 'finance_capital_entries', 'finance_cashbook_entries'];
+  const [editType, setEditType] = useState('');
+  const editTypes = useMemo(() => {
+    const present = Array.from(new Set(groupedEditEvents.map(e => e.tableName)));
+    const rank = (t: string) => (TYPE_ORDER.indexOf(t) === -1 ? 99 : TYPE_ORDER.indexOf(t));
+    return present.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  }, [groupedEditEvents]);
+  const activeEditType = editTypes.includes(editType) ? editType : (editTypes[0] || '');
+  const typeEvents = useMemo(
+    () => filteredEvents.filter(e => e.tableName === activeEditType),
+    [filteredEvents, activeEditType]
+  );
 
   // Helper for deleted log summary
   const getDeletedLogSummary = (log: FinanceDeletedLog): string => {
@@ -679,7 +691,7 @@ const EditedDeletedLogs: React.FC = () => {
           </Button>
           <Button onClick={() => {
             if (logType === 'edited') {
-              const data = filteredEvents.map(item => ({
+              const data = typeEvents.map(item => ({
                 Timestamp: formatDateHuman(item.timestamp),
                 Operator: item.operator,
                 Table: mapTableName(item.tableName),
@@ -748,6 +760,19 @@ const EditedDeletedLogs: React.FC = () => {
 
             {/* Table Type Selector */}
             <div className="w-full md:w-52">
+              {logType === 'edited' ? (
+              <select
+                value={activeEditType}
+                onChange={(e) => setEditType(e.target.value)}
+                title="Record type"
+                className="w-full py-2 px-3 border border-slate-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all uppercase"
+              >
+                {editTypes.length === 0 && <option value="">NO EDITS</option>}
+                {editTypes.map(t => (
+                  <option key={t} value={t}>{mapTableName(t)} ({filteredEvents.filter(e => e.tableName === t).length})</option>
+                ))}
+              </select>
+              ) : (
               <select
                 value={filterTableType}
                 onChange={(e) => setFilterTableType(e.target.value)}
@@ -761,6 +786,7 @@ const EditedDeletedLogs: React.FC = () => {
                 <option value="finance_partners">PARTNERS</option>
                 <option value="finance_capital_entries">CAPITAL ENTRIES</option>
               </select>
+              )}
             </div>
 
             {/* Operator Selector */}
@@ -836,84 +862,15 @@ const EditedDeletedLogs: React.FC = () => {
           <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-green-500"></div>
         </div>
       ) : logType === 'edited' ? (
-        /* Grouped Edited Logs Table View (1 Event = 1 Row) */
-        <Card title="EDITED RECORDS LOGS" className="shadow-md">
-          {filteredEvents.length === 0 ? (
-            <div className="text-center py-8 text-slate-400 uppercase font-bold text-xs">No transactions found.</div>
-          ) : (
-            <div className="border border-slate-200 rounded-xl">
-              <table className="w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">TIMESTAMP</th>
-                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">OPERATOR</th>
-                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">TABLE</th>
-                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">LOAN NO</th>
-                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">CUSTOMER</th>
-                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">CHANGED FIELDS</th>
-                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">SOURCE</th>
-                    <th className="px-3 py-3 text-right text-xs font-black text-slate-800 uppercase tracking-wider">ACTIONS</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-100">
-                  {filteredEvents.map((item) => {
-                    return (
-                      <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="px-3 py-3 min-w-[7.5rem] text-[13px] min-[1600px]:text-[14px] text-slate-700 font-mono tabular-nums">
-                          {formatDateHuman(item.timestamp)}
-                        </td>
-                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-slate-900 font-bold uppercase">
-                          {item.operator}
-                        </td>
-                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-slate-700 font-mono font-bold">
-                          {mapTableName(item.tableName)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-blue-900 font-mono font-black">
-                          {item.displayLoanNo}
-                        </td>
-                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-slate-900 font-bold">
-                          {item.displayCustomer}
-                        </td>
-                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] min-w-[11rem]">
-                          {item.eventType === 'CREATE' ? (
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
-                                RECORD CREATED
-                              </span>
-                              <span className="text-slate-500 font-medium">Initial Record Creation</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
-                                {item.changedFields.length} Field{item.changedFields.length > 1 ? 's' : ''} Edited
-                              </span>
-                              <span className="text-slate-700 font-medium">
-                                {item.changedFields.map(f => f.fieldLabel).join(', ')}
-                              </span>
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-3">
-                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase bg-slate-100 text-slate-600 border border-slate-200">
-                            {item.source}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 whitespace-nowrap text-right">
-                          <button
-                            onClick={() => setSelectedEventForModal(item)}
-                            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg !text-[12px] font-bold inline-flex items-center gap-1.5 transition-colors uppercase whitespace-nowrap"
-                          >
-                            <Database className="w-3.5 h-3.5" />
-                            VIEW<span className="hidden min-[1600px]:inline"> DETAILS</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+        /* Edited Logs: same look as Regular Edited Records (Before / After rows, changes highlighted) */
+        <Card title={`EDITED RECORDS LOGS · ${activeEditType ? mapTableName(activeEditType) : ''} (${typeEvents.length})`} className="shadow-md">
+          <FinanceEditBeforeAfterTable
+            events={typeEvents}
+            formatValue={formatLogValue}
+            formatDate={formatDateHuman}
+            labelFor={mapFieldLabel}
+            onView={(e) => setSelectedEventForModal(e)}
+          />
         </Card>
       ) : (
         /* Deleted Logs Table View */
