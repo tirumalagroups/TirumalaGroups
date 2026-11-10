@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { guardedFetch } from './sessionGuard';
 
 // Supabase configuration — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env
 const supabaseUrl =
@@ -18,12 +19,15 @@ export const rawSupabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: true,
+    detectSessionInUrl: false,
+    storageKey: 'thirumala-login',
   },
   global: {
     headers: {
       'X-Client-Info': 'thirumala-business-app',
     },
+    // Notices when the database refuses a request because the login ended (see sessionGuard)
+    fetch: guardedFetch,
   },
   db: {
     schema: 'public',

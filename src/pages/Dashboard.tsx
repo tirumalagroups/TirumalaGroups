@@ -45,6 +45,7 @@ import {
 import { canShowReminderNotification, getReminderColorStatus, calculateNextOccurrence } from '../utils/reminderHelper';
 import RemindersCalendar from '../components/UI/RemindersCalendar';
 import { useBook } from '../contexts/BookContext';
+import PasswordResetRequestsCard from '../components/auth/PasswordResetRequestsCard';
 
 
 const Dashboard: React.FC = () => {
@@ -580,7 +581,8 @@ const Dashboard: React.FC = () => {
       }
 
       // Fallback to localStorage if database fetch fails or returns empty
-      const credentials = JSON.parse(localStorage.getItem('user_credentials') || '[]');
+      localStorage.removeItem('user_credentials'); // passwords are no longer kept
+      const credentials: any[] = [];
       setUserCredentials(credentials.reverse()); // Show newest first
     };
 
@@ -625,7 +627,8 @@ const Dashboard: React.FC = () => {
       }
 
       // Fallback to localStorage
-      const credentials = JSON.parse(localStorage.getItem('user_credentials') || '[]');
+      localStorage.removeItem('user_credentials'); // passwords are no longer kept
+      const credentials: any[] = [];
       setUserCredentials(credentials.reverse()); // Show newest first
     };
 
@@ -812,6 +815,9 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Forgot-password requests waiting for an admin */}
+      <PasswordResetRequestsCard />
 
       {/* Welcome Header */}
       <div className='flex items-center justify-between'>

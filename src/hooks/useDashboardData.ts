@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabaseDB } from '../lib/supabaseDatabase';
-import { queryKeys } from '../lib/queryClient';
+import { queryKeys, FRESH_FOR_MS } from '../lib/queryClient';
 import { getTableMode } from '../lib/tableNames';
 import { useTableMode } from '../contexts/TableModeContext';
 
@@ -10,7 +10,7 @@ export const useDashboardStats = (selectedDate?: string) => {
   return useQuery({
     queryKey: queryKeys.dashboard.stats(selectedDate),
     queryFn: () => supabaseDB.getDashboardStats(selectedDate),
-    staleTime: 2 * 60 * 1000, // 2 minutes for stats
+    staleTime: FRESH_FOR_MS,
     gcTime: 5 * 60 * 1000, // 5 minutes cache
   });
 };
@@ -20,7 +20,7 @@ export const useRecentEntries = () => {
   return useQuery({
     queryKey: queryKeys.dashboard.recentEntries(),
     queryFn: () => supabaseDB.getTodaysCashBookEntries(),
-    staleTime: 2 * 60 * 1000,
+    staleTime: FRESH_FOR_MS,
     gcTime: 10 * 60 * 1000,
     keepPreviousData: true,
   });
@@ -37,7 +37,7 @@ export const useRecentEntriesByDate = (date: string) => {
       console.log('🔍 Fetching recent entries for date:', date, 'Mode:', tableMode);
       return supabaseDB.getCashBookEntriesByDate(date);
     },
-    staleTime: 2 * 60 * 1000,
+    staleTime: FRESH_FOR_MS,
     gcTime: 10 * 60 * 1000,
     keepPreviousData: true,
     enabled: !!date, // Only fetch if date is provided
@@ -55,7 +55,7 @@ export const useCompanyBalances = () => {
   return useQuery({
     queryKey: queryKeys.dashboard.companyBalances(),
     queryFn: () => supabaseDB.getCompanyClosingBalances(),
-    staleTime: 3 * 60 * 1000, // 3 minutes for company balances
+    staleTime: FRESH_FOR_MS,
     gcTime: 10 * 60 * 1000, // 10 minutes cache
   });
 };
@@ -79,35 +79,35 @@ export const useDropdownData = () => {
   const distinctCompaniesCountQuery = useQuery({
     queryKey: ['companies', 'distinctCount', tableMode], // Include table mode
     queryFn: () => supabaseDB.getDistinctCompaniesCount(),
-    staleTime: 10 * 60 * 1000, // 10 minutes for companies count
+    staleTime: FRESH_FOR_MS,
     gcTime: 30 * 60 * 1000,
   });
 
   const accountsQuery = useQuery({
     queryKey: queryKeys.dropdowns.accounts(),
     queryFn: () => supabaseDB.getAccounts(),
-    staleTime: 10 * 60 * 1000,
+    staleTime: FRESH_FOR_MS,
     gcTime: 30 * 60 * 1000,
   });
 
   const subAccountsQuery = useQuery({
     queryKey: queryKeys.dropdowns.subAccounts(),
     queryFn: () => supabaseDB.getSubAccounts(),
-    staleTime: 10 * 60 * 1000,
+    staleTime: FRESH_FOR_MS,
     gcTime: 30 * 60 * 1000,
   });
 
   const usersQuery = useQuery({
     queryKey: queryKeys.dropdowns.users(),
     queryFn: () => supabaseDB.getUsers(),
-    staleTime: 10 * 60 * 1000,
+    staleTime: FRESH_FOR_MS,
     gcTime: 30 * 60 * 1000,
   });
 
   const pendingApprovalsQuery = useQuery({
     queryKey: queryKeys.approvals.count(),
     queryFn: () => supabaseDB.getPendingApprovalsCount(),
-    staleTime: 1 * 60 * 1000, // 1 minute for pending approvals
+    staleTime: FRESH_FOR_MS,
     gcTime: 3 * 60 * 1000,
   });
 
@@ -143,7 +143,7 @@ export const useDropdownData = () => {
   const activeOperatorCountQuery = useQuery({
     queryKey: ['operators', 'activeCount'],
     queryFn: () => supabaseDB.getActiveOperatorCount(),
-    staleTime: 5 * 60 * 1000,
+    staleTime: FRESH_FOR_MS,
     gcTime: 15 * 60 * 1000,
   });
 

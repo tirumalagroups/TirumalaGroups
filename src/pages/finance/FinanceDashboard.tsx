@@ -22,6 +22,7 @@ import {
   ArrowUpRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import PasswordResetRequestsCard from '../../components/auth/PasswordResetRequestsCard';
 
 const getAdaptiveCardFontSize = (amount: number, minimumFractionDigits = 0) => {
   const str = `${amount.toLocaleString('en-IN', { minimumFractionDigits })}`;
@@ -144,6 +145,9 @@ const FinanceDashboard: React.FC = () => {
   return (
     <div className="space-y-4 w-full select-none pb-6 px-1 text-slate-900 font-sans">
       
+      {/* Forgot-password requests waiting for an admin */}
+      <PasswordResetRequestsCard managePath='/finance/user-access-management' />
+
       {/* Header & Main Operations Action Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white border border-slate-200 p-4 rounded-xl shadow-sm gap-4">
         <div>

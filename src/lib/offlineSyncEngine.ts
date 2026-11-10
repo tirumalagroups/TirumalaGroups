@@ -58,6 +58,10 @@ export const isNetworkFailure = (error: any, status?: number): boolean => {
   );
 };
 
+/** The login ended (another device, admin, midnight, no use): the entry waits for the next login. */
+export const isSessionEnded = (error: any): boolean =>
+  error?.code === 'PT401' || /SESSION_ENDED/.test(String(error?.message || ''));
+
 class NetworkStop extends Error {}
 
 const MASTER_NAMES: Record<string, { fields: string[]; label: string }> = {
@@ -67,7 +71,7 @@ const MASTER_NAMES: Record<string, { fields: string[]; label: string }> = {
 };
 
 const check = <T extends { data: any; error: any; status?: number }>(res: T): T => {
-  if (res.error && isNetworkFailure(res.error, res.status)) throw new NetworkStop();
+  if (res.error && (isNetworkFailure(res.error, res.status) || isSessionEnded(res.error))) throw new NetworkStop();
   return res;
 };
 
@@ -265,7 +269,7 @@ export async function runOfflineSync(
       if (table === 'cash_book') await sendEntry(op);
       else await sendMaster(op, table);
     } catch (err: any) {
-      if (err instanceof NetworkStop || isNetworkFailure(err)) {
+      if (err instanceof NetworkStop || isNetworkFailure(err) || isSessionEnded(err)) {
         await store.update(op.offline_uuid, { status: 'pending_sync' });
         result.stoppedByNetwork = true;
         break;

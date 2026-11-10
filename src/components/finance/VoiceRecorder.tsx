@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { RefreshCw, Download, Play, Pause, AlertCircle, Mic, Square } from 'lucide-react';
 import { convertTextToTelugu, hasEnglishLetters } from '../../utils/telugu';
+import { apiFetch } from '../../lib/apiClient';
 
 interface VoiceRecorderProps {
   onTranscriptionCompleted: (text: string) => void;
@@ -180,7 +181,7 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCompleted,
       const formData = new FormData();
       formData.append('file', blob, filename);
 
-      const response = await fetch('/api/transcribe', {
+      const response = await apiFetch('/api/transcribe', {
         method: 'POST',
         body: formData
       });
@@ -207,7 +208,7 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCompleted,
     }
 
     // Strategy 2 (local development only): direct Groq call with VITE_GROQ_API_KEY from .env.local
-    const devKey = ((import.meta.env.VITE_GROQ_API_KEY as string) || '').trim();
+    const devKey = import.meta.env.DEV ? ((import.meta.env.VITE_GROQ_API_KEY as string) || '').trim() : '';
     if (!success && devKey.length > 10 && failureReason !== 'No speech detected in audio recording.') {
       try {
         const clientFormData = new FormData();

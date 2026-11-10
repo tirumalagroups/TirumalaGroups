@@ -19,6 +19,8 @@ export interface Book {
   is_active: boolean;
   is_locked: boolean;
   is_archived: boolean;
+  /** Protected books cannot be deleted until an admin removes the protection */
+  is_protected?: boolean;
   display_order: number;
   color?: string;
   created_by?: string;
@@ -35,6 +37,9 @@ interface BookContextType {
   isBookLocked: boolean;
   createBook: (bookData: Omit<Book, 'id' | 'is_default' | 'is_active' | 'is_locked' | 'is_archived' | 'display_order' | 'created_at' | 'updated_at' | 'mode'>) => Promise<Book | null>;
   toggleLock: (bookId: string, isLocked: boolean) => Promise<void>;
+  setDefaultBook: (bookId: string) => Promise<void>;
+  toggleProtect: (bookId: string, isProtected: boolean) => Promise<void>;
+  booksDeletedToday: () => Promise<number>;
   toggleArchive: (bookId: string, isArchived: boolean) => Promise<void>;
   deleteBook: (bookId: string) => Promise<{ success: boolean; error?: string }>;
   refreshBooks: () => Promise<void>;
@@ -152,6 +157,8 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const storageKey = activeBookMode === 'itr' ? 'itrSelectedBook' : 'regularSelectedBook';
       const storedBookId = localStorage.getItem(storageKey);
 
+      // The book in use before this refresh, to notice when the choice changes by itself
+      const previousBookId = supabaseDB.currentBookId || '';
       let selected: Book | null = null;
 
       if (storedBookId) {
@@ -175,6 +182,13 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentBook(null);
         supabaseDB.setBookId('');
         supabaseDB.setBookLocked(false);
+      }
+
+      // A different book is now in use (for example the first book just created, or the saved one
+      // was deleted): open screens reload their lists instead of showing the old book until a page reload
+      if ((selected?.id || '') !== previousBookId) {
+        queryClient.invalidateQueries();
+        window.dispatchEvent(new CustomEvent('book-changed', { detail: selected }));
       }
     } catch (err) {
       console.error('❌ Error in refreshBooks:', err);
@@ -203,7 +217,7 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener('online', handleOnline);
   }, [refreshBooks]);
 
-  const selectBook = async (bookId: string) => {
+  const selectBook = async (bookId: string, knownBook?: Book) => {
     try {
       const count = await db.queued_operations
         .where('status')
@@ -217,7 +231,7 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Failed to check offline queue before switching book:', err);
     }
 
-    const selected = books.find(b => b.id === bookId);
+    const selected = books.find(b => b.id === bookId) || (knownBook?.id === bookId ? knownBook : undefined);
     if (selected) {
       // Clear all React Query cache so next render fetches fresh data for the new book
       queryClient.clear();
@@ -280,7 +294,7 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Select the newly created book
       if (data) {
-        selectBook(data.id);
+        await selectBook(data.id, data as Book);
       }
 
       return data as Book;
@@ -320,6 +334,74 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Makes this book the default of its mode (Regular or ITR); the old default stops being one.
+  // The new one is set first, so there is never a moment without a default.
+  const setDefaultBook = async (bookId: string) => {
+    if (!user?.is_admin) {
+      toast.error('Only administrators can change the default book.');
+      return;
+    }
+    try {
+      const now = new Date().toISOString();
+      const { error: setErr } = await supabase.from('books').update({ is_default: true, updated_at: now }).eq('id', bookId);
+      if (setErr) throw setErr;
+      const { error: clearErr } = await supabase
+        .from('books')
+        .update({ is_default: false, updated_at: now })
+        .eq('mode', activeBookMode)
+        .eq('is_default', true)
+        .neq('id', bookId);
+      if (clearErr) throw clearErr;
+      const name = books.find(b => b.id === bookId)?.name || 'Book';
+      toast.success(`"${name}" is now the default book.`);
+      await refreshBooks();
+    } catch (error: any) {
+      console.error('❌ Error setting default book:', error);
+      toast.error(error.message || 'Failed to set the default book');
+    }
+  };
+
+  // Protection: a protected book cannot be deleted. Needs the is_protected column (see the SQL).
+  const toggleProtect = async (bookId: string, isProtected: boolean) => {
+    if (!user?.is_admin) {
+      toast.error('Only administrators can protect books.');
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from('books')
+        .update({ is_protected: isProtected, updated_at: new Date().toISOString() })
+        .eq('id', bookId);
+      if (error) {
+        if (['PGRST204', '42703'].includes((error as any).code || '')) {
+          throw new Error('Book protection is not set up in the database yet. Run the book protection SQL first.');
+        }
+        throw error;
+      }
+      toast.success(isProtected ? 'Book protected: it cannot be deleted.' : 'Protection removed: the book can be deleted.');
+      await refreshBooks();
+    } catch (error: any) {
+      console.error('❌ Error updating book protection:', error);
+      toast.error(error.message || 'Failed to update book protection');
+    }
+  };
+
+  // How many books of this mode were deleted today, for the extra warning before another delete
+  const booksDeletedToday = async (): Promise<number> => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const { count, error } = await supabase
+      .from('books')
+      .select('id', { count: 'exact', head: true })
+      .eq('mode', activeBookMode)
+      .gte('deleted_at', startOfToday.toISOString());
+    if (error) {
+      console.error('❌ Error counting deleted books:', error);
+      return 0;
+    }
+    return count || 0;
+  };
+
   const toggleArchive = async (bookId: string, isArchived: boolean) => {
     if (!user?.is_admin) {
       toast.error('Only administrators can archive/unarchive books.');
@@ -356,6 +438,9 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (targetBook.is_default) {
       return { success: false, error: 'Cannot delete the default legacy book.' };
+    }
+    if (targetBook.is_protected) {
+      return { success: false, error: 'This book is protected. Remove the protection (shield) first.' };
     }
 
     try {
@@ -407,6 +492,9 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isBookLocked,
         createBook,
         toggleLock,
+        setDefaultBook,
+        toggleProtect,
+        booksDeletedToday,
         toggleArchive,
         deleteBook,
         refreshBooks,

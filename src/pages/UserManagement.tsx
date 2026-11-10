@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { rawSupabase } from '../lib/supabase';
-import { supabaseDB } from '../lib/supabaseDatabase';
 import Button from '../components/UI/Button';
 import Input from '../components/UI/Input';
 import Card from '../components/UI/Card';
 import toast from 'react-hot-toast';
-import bcrypt from 'bcryptjs';
-import { Navigate } from 'react-router-dom';
+import { apiPost } from '../lib/apiClient';
+import { USER_COLUMNS, OPTIONAL_PROFILE_COLUMNS } from '../lib/userColumns';
+import LoginSecurityPanel, { LoginSecurityTab } from '../components/users/LoginSecurityPanel';
+import { MIN_PASSWORD } from '../contexts/AuthContext';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTableMode } from '../contexts/TableModeContext';
 import {
@@ -299,6 +301,11 @@ const UserManagement: React.FC = () => {
   const [modeColumn, setModeColumn] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  // Two tabs: Users (the list, as before) and Login Security. ?tab=security&show=requests opens the second.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pageTab: 'users' | 'security' = searchParams.get('tab') === 'security' ? 'security' : 'users';
+  const securityShow = (searchParams.get('show') || undefined) as LoginSecurityTab | undefined;
+  const openTab = (t: 'users' | 'security') => setSearchParams(t === 'security' ? { tab: 'security' } : {}, { replace: true });
   const [newUser, setNewUser] = useState(emptyNewUser);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -320,10 +327,13 @@ const UserManagement: React.FC = () => {
       const { data: roleRows } = await db().from('user_types').select('id, user_type').order('user_type');
       setRoles(roleRows || []);
 
-      const { data: dbUsers, error: usersErr } = await db()
-        .from('users')
-        .select('*, user_types(user_type)')
-        .order('created_at', { ascending: false });
+      const readUsers = (cols: string) =>
+        db().from('users').select(`${cols}, user_types(user_type)`).order('created_at', { ascending: false });
+      let { data: dbUsers, error: usersErr } = await readUsers(`${USER_COLUMNS}, ${OPTIONAL_PROFILE_COLUMNS}`);
+      // This database has no profile columns: list the users without them
+      if (usersErr && ['42703', 'PGRST204'].includes((usersErr as any).code || '')) {
+        ({ data: dbUsers, error: usersErr } = await readUsers(USER_COLUMNS));
+      }
       if (usersErr) throw usersErr;
 
       let accessRows: any[] = [];
@@ -601,10 +611,10 @@ const UserManagement: React.FC = () => {
         is_active: target === 'Active',
         updated_at: new Date().toISOString(),
       };
-      // Unlocking clears the wrong-password count, otherwise the next mistake locks it again
-      if (target === 'Active' && 'failed_login_attempts' in u.raw) updates.failed_login_attempts = 0;
       const { error } = await db().from('users').update(updates).eq('id', u.id);
       if (error) throw error;
+      // Unlocking clears the wrong-password count and lock, otherwise the next mistake locks it again
+      if (target === 'Active') await rawSupabase.rpc('admin_unlock_user', { p_user_id: u.id });
       await logAudit(u, 'status', u.status, target, reason);
       toast.success(`User status updated to ${target}`);
       await refreshExpanded(u.id);
@@ -615,23 +625,16 @@ const UserManagement: React.FC = () => {
     const u = passwordFor;
     if (!u) return;
     const temp = passwordText.trim();
-    if (temp.length < 6) {
-      toast.error('Password must be at least 6 characters');
+    if (temp.length < MIN_PASSWORD) {
+      toast.error(`Password must be at least ${MIN_PASSWORD} characters`);
       return;
     }
     setPasswordFor(null);
     setPasswordText('');
     askReason(`Reset password of ${u.username}`, async reason => {
-      const hash = await bcrypt.hash(temp, 10);
-      const { error } = await db().from('users').update({
-        password_hash: hash,
-        temp_password: temp,
-        password_expired: true,
-        last_password_change: new Date().toISOString(),
-      }).eq('id', u.id);
-      if (error) throw error;
-      await logAudit(u, 'password', 'HIDDEN', 'TEMPORARY_SET', reason);
-      toast.success(`Password reset. Temp password: ${temp}`, { duration: 12000 });
+      // Set on the server; the person must choose their own at the next login, and any login of theirs ends
+      await apiPost('/api/admin/users', { action: 'reset_password', user_id: u.id, password: temp, reason });
+      toast.success(`Password reset. Temporary password: ${temp}. They must change it when they log in.`, { duration: 12000 });
       await refreshExpanded(u.id);
     });
   };
@@ -678,8 +681,8 @@ const UserManagement: React.FC = () => {
       toast.error('Username and password required');
       return;
     }
-    if (newUser.password.length < 6) {
-      toast.error('Password must be at least 6 characters');
+    if (newUser.password.length < MIN_PASSWORD) {
+      toast.error(`Password must be at least ${MIN_PASSWORD} characters`);
       return;
     }
     if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
@@ -699,10 +702,8 @@ const UserManagement: React.FC = () => {
 
     setLoading(true);
     try {
-      const password_hash = await bcrypt.hash(newUser.password, 10);
       const row: Record<string, any> = {
         username,
-        password_hash,
         user_type_id: roleId,
         email: newUser.email.trim() || `${username}@thirumala.com`,
         full_name: newUser.full_name.trim() || null,
@@ -719,19 +720,8 @@ const UserManagement: React.FC = () => {
         is_active: true,
       };
 
-      // If this database lacks an optional column, save the user without it
-      const REQUIRED = ['username', 'password_hash', 'user_type_id', 'email'];
-      let created: any = null;
-      for (let attempt = 0; attempt < 12 && !created; attempt++) {
-        const { data, error } = await db().from('users').insert(row).select().single();
-        if (!error) {
-          created = data;
-          break;
-        }
-        const missing = Object.keys(row).find(k => !REQUIRED.includes(k) && (error.message || '').includes(`'${k}'`));
-        if (!missing || !['PGRST204', '42703'].includes(error.code || '')) throw error;
-        delete row[missing];
-      }
+      // Created on the server: the password goes only to the login, never into the users table
+      const { user: created } = await apiPost<{ user: any }>('/api/admin/users', { action: 'create', user: row, password: newUser.password });
       if (!created?.id) throw new Error('User was not created');
 
       const target = { id: created.id, username };
@@ -739,24 +729,6 @@ const UserManagement: React.FC = () => {
         await writePermissions(target, emptyFeatures(), newUser.features, [], 'New user created');
       }
       await logAudit(target, 'user', null, `Created as ${roleName}`, 'New user created');
-
-      // Same credentials record Regular / ITR saves for its Dashboard
-      const credentials = {
-        username,
-        password: newUser.password,
-        is_admin: newUser.is_admin,
-        features: unique(MODE_VALUES.flatMap(m => newUser.features[m])),
-        featuresByMode: newUser.features,
-        created_at: new Date().toISOString(),
-      };
-      await supabaseDB.saveUserCredentials(credentials);
-      try {
-        const saved = JSON.parse(localStorage.getItem('user_credentials') || '[]');
-        saved.push(credentials);
-        localStorage.setItem('user_credentials', JSON.stringify(saved.slice(-10)));
-      } catch {
-        /* browser storage is only a convenience */
-      }
 
       toast.success(`Login Credentials Created!\n\nUsername: ${username}\nPassword: ${newUser.password}`, { duration: 12000 });
       setShowAddForm(false);
@@ -1123,14 +1095,33 @@ const UserManagement: React.FC = () => {
               Total Users: <span className='font-semibold text-gray-700'>{active.length}</span>
             </div>
           </div>
-          <Button
+          {pageTab === 'users' && (<Button
             size='lg'
             className='bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg'
             onClick={() => setShowAddForm(v => !v)}
           >
             {showAddForm ? 'Close Add User' : 'Create Login Credentials'}
-          </Button>
+          </Button>)}
         </div>
+
+        <div className='flex gap-2 mb-6 border-b border-gray-200'>
+          {([['users', 'Users'], ['security', 'Login Security']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type='button'
+              onClick={() => openTab(key)}
+              className={`px-4 py-2 -mb-px text-sm font-semibold border-b-2 ${pageTab === key ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {pageTab === 'security' && (
+          <LoginSecurityPanel key={securityShow || 'default'} initialTab={securityShow} onUsersChanged={() => loadUsers()} />
+        )}
+
+        {pageTab === 'users' && (<>
 
         {showAddForm && (
           <Card className='mb-8 p-0 overflow-visible'>
@@ -1227,6 +1218,7 @@ const UserManagement: React.FC = () => {
             </div>
           )}
         </div>
+        </>)}
       </div>
 
       {/* Reset password box */}
@@ -1234,7 +1226,7 @@ const UserManagement: React.FC = () => {
         <div className='fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4'>
           <div className='bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4'>
             <h3 className='text-lg font-bold text-gray-900'>Reset password of {passwordFor.username}</h3>
-            <Input label='New temporary password (min 6 characters)' type='password' value={passwordText} onChange={setPasswordText} />
+            <Input label={`New temporary password (min ${MIN_PASSWORD} characters)`} type='password' value={passwordText} onChange={setPasswordText} />
             <div className='flex justify-end gap-2'>
               <Button variant='secondary' onClick={() => setPasswordFor(null)}>Cancel</Button>
               <Button onClick={submitPasswordReset}>Continue</Button>

@@ -11,7 +11,10 @@ import {
   Settings,
   FolderOpen,
   X,
-  Database
+  Database,
+  Star,
+  ShieldCheck,
+  Shield
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -25,7 +28,7 @@ interface BookMetrics {
 
 const BookManagement: React.FC = () => {
   const { user } = useAuth();
-  const { books, loading, toggleLock, toggleArchive, deleteBook, refreshBooks } = useBook();
+  const { books, loading, toggleLock, toggleArchive, deleteBook, refreshBooks, setDefaultBook, toggleProtect, booksDeletedToday } = useBook();
   const [metrics, setMetrics] = useState<Record<string, BookMetrics>>({});
   const [loadingMetrics, setLoadingMetrics] = useState(false);
 
@@ -110,10 +113,23 @@ const BookManagement: React.FC = () => {
   };
 
   const handleDeleteClick = async (book: Book) => {
+    if (book.is_protected) {
+      toast.error('This book is protected. Remove the protection (shield) first.');
+      return;
+    }
     const confirmDelete = window.confirm(
       `Are you sure you want to delete the book "${book.name}" (${book.book_code})?\nThis action cannot be undone.`
     );
     if (!confirmDelete) return;
+
+    // More than one book deleted on the same day: ask once more
+    const deletedToday = await booksDeletedToday();
+    if (deletedToday > 0) {
+      const again = window.confirm(
+        `Reminder: ${deletedToday} book${deletedToday === 1 ? '' : 's'} already deleted today.\n\nDo you really want to delete another book, "${book.name}" (${book.book_code})?`
+      );
+      if (!again) return;
+    }
 
     const res = await deleteBook(book.id);
     if (!res.success) {
@@ -222,6 +238,11 @@ const BookManagement: React.FC = () => {
                               Default
                             </span>
                           )}
+                          {book.is_protected && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 uppercase flex items-center gap-0.5">
+                              <ShieldCheck className="w-2.5 h-2.5" /> Protected
+                            </span>
+                          )}
                           {book.is_locked ? (
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 uppercase flex items-center gap-0.5">
                               <Lock className="w-2.5 h-2.5" /> Locked
@@ -245,6 +266,31 @@ const BookManagement: React.FC = () => {
                       <td className="px-6 py-4 text-center font-semibold text-gray-800">{loadingMetrics ? '...' : m.reminders}</td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => !book.is_default && setDefaultBook(book.id)}
+                            disabled={book.is_default}
+                            title={book.is_default ? "This is the default book" : "Make this the default book"}
+                            className={`p-1.5 border rounded-lg transition-colors shadow-sm ${
+                              book.is_default
+                                ? 'text-amber-500 border-amber-100 cursor-default'
+                                : 'text-gray-400 border-gray-100 hover:text-amber-500 hover:bg-amber-50'
+                            }`}
+                          >
+                            <Star className="w-4 h-4" fill={book.is_default ? 'currentColor' : 'none'} />
+                          </button>
+
+                          <button
+                            onClick={() => toggleProtect(book.id, !book.is_protected)}
+                            title={book.is_protected ? "Protected: cannot be deleted. Click to remove protection" : "Protect from deletion"}
+                            className={`p-1.5 border rounded-lg transition-colors shadow-sm ${
+                              book.is_protected
+                                ? 'text-indigo-600 border-indigo-100 hover:bg-indigo-50'
+                                : 'text-gray-400 border-gray-100 hover:text-indigo-600 hover:bg-indigo-50'
+                            }`}
+                          >
+                            {book.is_protected ? <ShieldCheck className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
+                          </button>
+
                           <button
                             onClick={() => handleEditClick(book)}
                             title="Edit metadata"
@@ -279,16 +325,18 @@ const BookManagement: React.FC = () => {
 
                           <button
                             onClick={() => handleDeleteClick(book)}
-                            disabled={!isEmpty || book.is_default}
+                            disabled={!isEmpty || book.is_default || !!book.is_protected}
                             title={
-                              book.is_default 
+                              book.is_protected
+                                ? "Protected: remove the shield to delete"
+                                : book.is_default 
                                 ? "Cannot delete default book" 
                                 : !isEmpty 
                                   ? "Cannot delete book: records exist" 
                                   : "Delete empty book"
                             }
                             className={`p-1.5 border rounded-lg transition-colors shadow-sm ${
-                              book.is_default || !isEmpty
+                              book.is_default || !isEmpty || book.is_protected
                                 ? 'text-gray-300 border-gray-100 cursor-not-allowed'
                                 : 'text-red-500 border-red-100 hover:bg-red-50 hover:text-red-700'
                             }`}

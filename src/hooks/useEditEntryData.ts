@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabaseDB } from '../lib/supabaseDatabase';
-import { queryKeys } from '../lib/queryClient';
+import { queryKeys, FRESH_FOR_MS } from '../lib/queryClient';
 import toast from 'react-hot-toast';
 
 // Hook for getting a single cash book entry for editing
@@ -8,7 +8,7 @@ export const useCashBookEntry = (id: string) => {
   return useQuery({
     queryKey: queryKeys.cashBook.byId(id),
     queryFn: () => supabaseDB.getCashBookEntry(id),
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: FRESH_FOR_MS,
     gcTime: 10 * 60 * 1000,
     enabled: !!id, // Only fetch if ID is provided
   });

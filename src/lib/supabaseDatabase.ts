@@ -1,4 +1,5 @@
 import { supabase as rawSupabase, resolveSchemaAndTable } from './supabase';
+import { USER_COLUMNS } from './userColumns';
 import { FinancialCalculator } from './financialCalculations';
 import { getTableName, getTableMode } from './tableNames';
 import { db, QueuedOperation } from './offlineQueueDB';
@@ -205,6 +206,16 @@ const isScopedTable = (table: string): boolean => {
   return scopedTables.includes(cleanTable);
 };
 
+// Regular / ITR tables whose rows must belong to a book (book_id is required in the database).
+const BOOK_REQUIRED_TABLES = [
+  'companies', 'company_main_accounts', 'company_main_sub_acc', 'cash_book', 'ledger',
+  'balance_sheet', 'vehicles', 'drivers', 'bank_guarantees', 'reminders',
+];
+const needsBook = (table: string): boolean =>
+  BOOK_REQUIRED_TABLES.includes(table.endsWith('_itr') ? table.slice(0, -4) : table);
+export const NO_BOOK_MESSAGE =
+  'No book is selected. Click "Book" at the top to choose one. An admin can create a new book there.';
+
 const createBuilderProxy = (builder: any, table: string): any => {
   return new Proxy(builder, {
     get(target, prop, _receiver) {
@@ -255,6 +266,12 @@ const createBuilderProxy = (builder: any, table: string): any => {
 
         const activeBookId = supabaseDB.currentBookId || (getTableMode() === 'finance' ? 'd499da98-71a8-40d6-a167-ca67d8cdacab' : '');
         const isFinanceMode = getTableMode() === 'finance';
+
+        // Without a book these rows would be refused by the database with a technical error
+        if ((methodName === 'insert' || methodName === 'upsert') && !activeBookId && !isFinanceMode
+            && needsBook(table) && !supabaseDB.isScopeBypassed()) {
+          throw new Error(NO_BOOK_MESSAGE);
+        }
 
         if (isScopedTable(table) && (activeBookId || isFinanceMode) && !supabaseDB.isScopeBypassed()) {
           if (methodName === 'select') {
@@ -3015,7 +3032,7 @@ class SupabaseDatabase {
     // Return all active users (Admins and Staff)
     const { data, error } = await supabase
       .from('users')
-      .select('*, user_types:user_types(user_type)')
+      .select(`${USER_COLUMNS}, user_types:user_types(user_type)`)
       .eq('is_active', true)
       .order('username');
 
@@ -3107,7 +3124,7 @@ class SupabaseDatabase {
       // Count only STAFF users
       const { count, error } = await supabase
         .from('users')
-        .select('*', { count: 'exact', head: true })
+        .select('id', { count: 'exact', head: true })
         .eq('is_active', true)
         .in('user_type_id', (
           await supabase
@@ -3148,7 +3165,7 @@ class SupabaseDatabase {
 
       const { count, error } = await supabase
         .from('users')
-        .select('*', { count: 'exact', head: true })
+        .select('id', { count: 'exact', head: true })
         .eq('is_active', true)
         .in('user_type_id', ids);
 
@@ -3168,7 +3185,7 @@ class SupabaseDatabase {
   async getUserByUsername(username: string): Promise<User | null> {
     const { data, error } = await supabase
       .from('users')
-      .select('*')
+      .select(USER_COLUMNS as '*') // typed as '*' for the type checker only
       .eq('username', username)
       .single();
 
@@ -3183,7 +3200,7 @@ class SupabaseDatabase {
   async getUserById(id: string): Promise<User | null> {
     const { data, error } = await supabase
       .from('users')
-      .select('*')
+      .select(USER_COLUMNS as '*') // typed as '*' for the type checker only
       .eq('id', id)
       .single();
 
@@ -3203,7 +3220,7 @@ class SupabaseDatabase {
     const { data, error } = await supabase
       .from('users')
       .insert(user)
-      .select()
+      .select(USER_COLUMNS as '*') // typed as '*' for the type checker only
       .single();
 
     if (error) {
@@ -3223,7 +3240,7 @@ class SupabaseDatabase {
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
-      .select()
+      .select(USER_COLUMNS as '*') // typed as '*' for the type checker only
       .single();
 
     if (error) {
@@ -3245,123 +3262,14 @@ class SupabaseDatabase {
     return true;
   }
 
-  // Save user credentials to database for dashboard display
-  async saveUserCredentials(credentials: {
-    username: string;
-    password: string;
-    is_admin: boolean;
-    features: string[];
-    featuresByMode?: Record<string, string[]>;
-    created_at: string;
-  }): Promise<boolean> {
-    try {
-      // Try to insert into user_credentials_log table
-      // If table doesn't exist, it will fail gracefully and we'll fall back to localStorage
-      const { error } = await supabase
-        .from('user_credentials_log')
-        .insert({
-          username: credentials.username,
-          password: credentials.password, // Store temporarily (will be cleaned up)
-          is_admin: credentials.is_admin,
-          features: credentials.features,
-          features_by_mode: credentials.featuresByMode || {},
-          created_at: credentials.created_at,
-        });
-
-      if (error) {
-        // Table might not exist (404 error) - silently fail and use localStorage as fallback
-        const isTableNotFound = 
-          error.code === '42P01' || 
-          error.message?.includes('does not exist') ||
-          error.message?.includes('not found') ||
-          error.message?.includes('relation') ||
-          (error as any).status === 404;
-        
-        if (!isTableNotFound) {
-          // Only log non-404 errors (actual problems)
-          console.log('⚠️ Could not save credentials to database:', error.message);
-        }
-        return false;
-      }
-
-      // Clean up old entries (older than 7 days) - silently fail if table doesn't exist
-      try {
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        await supabase
-          .from('user_credentials_log')
-          .delete()
-          .lt('created_at', sevenDaysAgo.toISOString());
-      } catch {
-        // Silently ignore cleanup errors (table might not exist)
-      }
-
-      return true;
-    } catch (error: any) {
-      // Silently handle table not found errors
-      const isTableNotFound = 
-        error?.code === '42P01' || 
-        error?.message?.includes('does not exist') ||
-        error?.message?.includes('not found') ||
-        error?.message?.includes('relation') ||
-        error?.status === 404;
-      
-      if (!isTableNotFound) {
-        console.error('Error saving credentials to database:', error);
-      }
-      return false;
-    }
+  // Passwords are never stored or shown again (they were kept in user_credentials_log for the Dashboard).
+  // Kept so older callers still work.
+  async saveUserCredentials(_credentials: unknown): Promise<boolean> {
+    return true;
   }
 
-  // Get recently created user credentials from database
-  async getRecentUserCredentials(limit: number = 10): Promise<any[]> {
-    try {
-      const { data, error } = await supabase
-        .from('user_credentials_log')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(limit);
-
-      if (error) {
-        // Table might not exist (404 error) - silently return empty array
-        // Check if it's a table not found error (code 42P01 or message contains 'does not exist')
-        const isTableNotFound = 
-          error.code === '42P01' || 
-          error.message?.includes('does not exist') ||
-          error.message?.includes('not found') ||
-          error.message?.includes('relation') ||
-          (error as any).status === 404;
-        
-        if (!isTableNotFound) {
-          // Only log non-404 errors (actual problems)
-          console.log('⚠️ Could not fetch credentials from database:', error.message);
-        }
-        // Silently return empty array for table not found errors
-        return [];
-      }
-
-      return (data || []).map((cred: any) => ({
-        username: cred.username,
-        password: cred.password,
-        is_admin: cred.is_admin,
-        features: cred.features || [],
-        featuresByMode: cred.features_by_mode || {},
-        created_at: cred.created_at,
-      }));
-    } catch (error: any) {
-      // Silently handle table not found errors
-      const isTableNotFound = 
-        error?.code === '42P01' || 
-        error?.message?.includes('does not exist') ||
-        error?.message?.includes('not found') ||
-        error?.message?.includes('relation') ||
-        error?.status === 404;
-      
-      if (!isTableNotFound) {
-        console.error('Error fetching credentials from database:', error);
-      }
-      return [];
-    }
+  async getRecentUserCredentials(_limit: number = 10): Promise<any[]> {
+    return [];
   }
 
   // Bank Guarantee operations
