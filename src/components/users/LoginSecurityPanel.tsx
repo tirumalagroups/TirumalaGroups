@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { AlertTriangle, KeyRound, LogOut, Printer, RefreshCw, ShieldCheck, Unlock } from 'lucide-react';
+import { AlertTriangle, KeyRound, LogOut, RefreshCw, ShieldCheck, Unlock } from 'lucide-react';
 import { rawSupabase } from '../../lib/supabase';
 import { apiPost } from '../../lib/apiClient';
 import { MIN_PASSWORD, useAuth } from '../../contexts/AuthContext';
@@ -9,7 +9,8 @@ import Button from '../UI/Button';
 // Admin screen: who is logged in now (with Log Out), alerts, "Forgot password" requests, and the
 // login history of every user. All of it is read from the database tables of login security.
 
-type Tab = 'sessions' | 'alerts' | 'requests' | 'history';
+export type LoginSecurityTab = 'sessions' | 'alerts' | 'requests' | 'history';
+type Tab = LoginSecurityTab;
 
 const db = () => rawSupabase.schema('public');
 
@@ -44,11 +45,13 @@ const END_LABEL: Record<string, string> = {
 interface Props {
   /** Called after something that changes the user list (unlock, reset) */
   onUsersChanged?: () => void;
+  /** The tab to open first, for example "requests" from the Dashboard */
+  initialTab?: Tab;
 }
 
-const LoginSecurityPanel: React.FC<Props> = ({ onUsersChanged }) => {
+const LoginSecurityPanel: React.FC<Props> = ({ onUsersChanged, initialTab }) => {
   const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>('sessions');
+  const [tab, setTab] = useState<Tab>(initialTab && initialTab !== 'history' ? initialTab : 'sessions');
   const [busy, setBusy] = useState(false);
   const [sessions, setSessions] = useState<any[]>([]);
   const [idleMinutes, setIdleMinutes] = useState(30);
@@ -359,9 +362,6 @@ const LoginSecurityPanel: React.FC<Props> = ({ onUsersChanged }) => {
                 <input type='text' value={historyUser} onChange={e => setHistoryUser(e.target.value)} placeholder='All users' className='block mt-1 px-2 py-1.5 border border-gray-300 rounded-md' />
               </label>
               <Button size='sm' disabled={busy} onClick={() => loadHistory().catch(e => toast.error(e.message))}>Show</Button>
-              <Button variant='secondary' size='sm' onClick={() => window.print()}>
-                <span className='inline-flex items-center gap-1'><Printer className='w-4 h-4' /> Print</span>
-              </Button>
             </div>
             {history.length === 0 ? (
               <p className='text-center text-gray-500 py-4 text-sm'>No logins in this period.</p>

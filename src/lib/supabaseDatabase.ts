@@ -206,6 +206,16 @@ const isScopedTable = (table: string): boolean => {
   return scopedTables.includes(cleanTable);
 };
 
+// Regular / ITR tables whose rows must belong to a book (book_id is required in the database).
+const BOOK_REQUIRED_TABLES = [
+  'companies', 'company_main_accounts', 'company_main_sub_acc', 'cash_book', 'ledger',
+  'balance_sheet', 'vehicles', 'drivers', 'bank_guarantees', 'reminders',
+];
+const needsBook = (table: string): boolean =>
+  BOOK_REQUIRED_TABLES.includes(table.endsWith('_itr') ? table.slice(0, -4) : table);
+export const NO_BOOK_MESSAGE =
+  'No book is selected. Click "Book" at the top to choose one. An admin can create a new book there.';
+
 const createBuilderProxy = (builder: any, table: string): any => {
   return new Proxy(builder, {
     get(target, prop, _receiver) {
@@ -256,6 +266,12 @@ const createBuilderProxy = (builder: any, table: string): any => {
 
         const activeBookId = supabaseDB.currentBookId || (getTableMode() === 'finance' ? 'd499da98-71a8-40d6-a167-ca67d8cdacab' : '');
         const isFinanceMode = getTableMode() === 'finance';
+
+        // Without a book these rows would be refused by the database with a technical error
+        if ((methodName === 'insert' || methodName === 'upsert') && !activeBookId && !isFinanceMode
+            && needsBook(table) && !supabaseDB.isScopeBypassed()) {
+          throw new Error(NO_BOOK_MESSAGE);
+        }
 
         if (isScopedTable(table) && (activeBookId || isFinanceMode) && !supabaseDB.isScopeBypassed()) {
           if (methodName === 'select') {

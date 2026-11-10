@@ -1188,7 +1188,7 @@ const NewEntry: React.FC = () => {
       setShowNewAccount(false);
       toast.success('Account created successfully!');
     } catch (error) {
-      toast.error('Failed to create account');
+      toast.error(`Failed to create account: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -1277,7 +1277,7 @@ const NewEntry: React.FC = () => {
       setShowNewSubAccount(false);
       toast.success('Sub account created successfully!');
     } catch (error) {
-      toast.error('Failed to create sub account');
+      toast.error(`Failed to create sub account: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 

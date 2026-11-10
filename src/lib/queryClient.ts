@@ -13,23 +13,28 @@ const getTableBookForQuery = (): string => {
   return localStorage.getItem(storageKey) || '';
 };
 
+// Lists show the saved copy at once and reload it in the background when it is older than this,
+// so a change made anywhere shows up without reloading the page.
+export const FRESH_FOR_MS = 30 * 1000;
+const online = () => typeof navigator === 'undefined' || navigator.onLine;
+
 // Create a client with optimized settings for SPA behavior
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       networkMode: 'always',
-      // Keep data fresh longer to avoid refetch on back/forward
-      staleTime: 15 * 60 * 1000, // 15 minutes
+      // Opening a screen shows the saved copy at once and refreshes it in the background if older
+      staleTime: FRESH_FOR_MS,
       // Keep cache around longer between navigations
       gcTime: 30 * 60 * 1000, // 30 minutes
       // Retry failed requests 2 times
       retry: 2,
-      // Don't refetch on window focus for better UX
-      refetchOnWindowFocus: false,
+      // Coming back to the window refreshes what is on screen (not while offline)
+      refetchOnWindowFocus: online,
       // Only refetch on reconnect if stale
       refetchOnReconnect: 'always',
-      // Don't refetch on mount if data is fresh
-      refetchOnMount: false,
+      // Opening a screen refreshes its lists when they are older than FRESH_FOR_MS (not while offline)
+      refetchOnMount: online,
       // Structural sharing for faster cache updates
       structuralSharing: true,
     },

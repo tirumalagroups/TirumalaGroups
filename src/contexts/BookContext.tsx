@@ -152,6 +152,8 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const storageKey = activeBookMode === 'itr' ? 'itrSelectedBook' : 'regularSelectedBook';
       const storedBookId = localStorage.getItem(storageKey);
 
+      // The book in use before this refresh, to notice when the choice changes by itself
+      const previousBookId = supabaseDB.currentBookId || '';
       let selected: Book | null = null;
 
       if (storedBookId) {
@@ -175,6 +177,13 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentBook(null);
         supabaseDB.setBookId('');
         supabaseDB.setBookLocked(false);
+      }
+
+      // A different book is now in use (for example the first book just created, or the saved one
+      // was deleted): open screens reload their lists instead of showing the old book until a page reload
+      if ((selected?.id || '') !== previousBookId) {
+        queryClient.invalidateQueries();
+        window.dispatchEvent(new CustomEvent('book-changed', { detail: selected }));
       }
     } catch (err) {
       console.error('❌ Error in refreshBooks:', err);
@@ -203,7 +212,7 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener('online', handleOnline);
   }, [refreshBooks]);
 
-  const selectBook = async (bookId: string) => {
+  const selectBook = async (bookId: string, knownBook?: Book) => {
     try {
       const count = await db.queued_operations
         .where('status')
@@ -217,7 +226,7 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Failed to check offline queue before switching book:', err);
     }
 
-    const selected = books.find(b => b.id === bookId);
+    const selected = books.find(b => b.id === bookId) || (knownBook?.id === bookId ? knownBook : undefined);
     if (selected) {
       // Clear all React Query cache so next render fetches fresh data for the new book
       queryClient.clear();
@@ -280,7 +289,7 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Select the newly created book
       if (data) {
-        selectBook(data.id);
+        await selectBook(data.id, data as Book);
       }
 
       return data as Book;

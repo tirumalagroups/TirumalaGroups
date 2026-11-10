@@ -45,6 +45,7 @@ import {
 import { canShowReminderNotification, getReminderColorStatus, calculateNextOccurrence } from '../utils/reminderHelper';
 import RemindersCalendar from '../components/UI/RemindersCalendar';
 import { useBook } from '../contexts/BookContext';
+import PasswordResetRequestsCard from '../components/auth/PasswordResetRequestsCard';
 
 
 const Dashboard: React.FC = () => {
@@ -814,6 +815,9 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Forgot-password requests waiting for an admin */}
+      <PasswordResetRequestsCard />
 
       {/* Welcome Header */}
       <div className='flex items-center justify-between'>

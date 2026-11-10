@@ -5,10 +5,10 @@ import Input from '../components/UI/Input';
 import Card from '../components/UI/Card';
 import toast from 'react-hot-toast';
 import { apiPost } from '../lib/apiClient';
-import { USER_COLUMNS } from '../lib/userColumns';
-import LoginSecurityPanel from '../components/users/LoginSecurityPanel';
+import { USER_COLUMNS, OPTIONAL_PROFILE_COLUMNS } from '../lib/userColumns';
+import LoginSecurityPanel, { LoginSecurityTab } from '../components/users/LoginSecurityPanel';
 import { MIN_PASSWORD } from '../contexts/AuthContext';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTableMode } from '../contexts/TableModeContext';
 import {
@@ -301,6 +301,11 @@ const UserManagement: React.FC = () => {
   const [modeColumn, setModeColumn] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  // Two tabs: Users (the list, as before) and Login Security. ?tab=security&show=requests opens the second.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pageTab: 'users' | 'security' = searchParams.get('tab') === 'security' ? 'security' : 'users';
+  const securityShow = (searchParams.get('show') || undefined) as LoginSecurityTab | undefined;
+  const openTab = (t: 'users' | 'security') => setSearchParams(t === 'security' ? { tab: 'security' } : {}, { replace: true });
   const [newUser, setNewUser] = useState(emptyNewUser);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -322,10 +327,13 @@ const UserManagement: React.FC = () => {
       const { data: roleRows } = await db().from('user_types').select('id, user_type').order('user_type');
       setRoles(roleRows || []);
 
-      const { data: dbUsers, error: usersErr } = await db()
-        .from('users')
-        .select(`${USER_COLUMNS}, user_types(user_type)`)
-        .order('created_at', { ascending: false });
+      const readUsers = (cols: string) =>
+        db().from('users').select(`${cols}, user_types(user_type)`).order('created_at', { ascending: false });
+      let { data: dbUsers, error: usersErr } = await readUsers(`${USER_COLUMNS}, ${OPTIONAL_PROFILE_COLUMNS}`);
+      // This database has no profile columns: list the users without them
+      if (usersErr && ['42703', 'PGRST204'].includes((usersErr as any).code || '')) {
+        ({ data: dbUsers, error: usersErr } = await readUsers(USER_COLUMNS));
+      }
       if (usersErr) throw usersErr;
 
       let accessRows: any[] = [];
@@ -1087,16 +1095,33 @@ const UserManagement: React.FC = () => {
               Total Users: <span className='font-semibold text-gray-700'>{active.length}</span>
             </div>
           </div>
-          <Button
+          {pageTab === 'users' && (<Button
             size='lg'
             className='bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg'
             onClick={() => setShowAddForm(v => !v)}
           >
             {showAddForm ? 'Close Add User' : 'Create Login Credentials'}
-          </Button>
+          </Button>)}
         </div>
 
-        <LoginSecurityPanel onUsersChanged={() => loadUsers()} />
+        <div className='flex gap-2 mb-6 border-b border-gray-200'>
+          {([['users', 'Users'], ['security', 'Login Security']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type='button'
+              onClick={() => openTab(key)}
+              className={`px-4 py-2 -mb-px text-sm font-semibold border-b-2 ${pageTab === key ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {pageTab === 'security' && (
+          <LoginSecurityPanel key={securityShow || 'default'} initialTab={securityShow} onUsersChanged={() => loadUsers()} />
+        )}
+
+        {pageTab === 'users' && (<>
 
         {showAddForm && (
           <Card className='mb-8 p-0 overflow-visible'>
@@ -1193,6 +1218,7 @@ const UserManagement: React.FC = () => {
             </div>
           )}
         </div>
+        </>)}
       </div>
 
       {/* Reset password box */}
@@ -1200,7 +1226,7 @@ const UserManagement: React.FC = () => {
         <div className='fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4'>
           <div className='bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4'>
             <h3 className='text-lg font-bold text-gray-900'>Reset password of {passwordFor.username}</h3>
-            <Input label='New temporary password (min 6 characters)' type='password' value={passwordText} onChange={setPasswordText} />
+            <Input label={`New temporary password (min ${MIN_PASSWORD} characters)`} type='password' value={passwordText} onChange={setPasswordText} />
             <div className='flex justify-end gap-2'>
               <Button variant='secondary' onClick={() => setPasswordFor(null)}>Cancel</Button>
               <Button onClick={submitPasswordReset}>Continue</Button>
