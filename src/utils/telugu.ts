@@ -2,8 +2,10 @@
  * Convert typed remarks (English or Telugu written in English letters) to Telugu script.
  *
  * Uses the server route /api/telugu, which keeps the Groq key on the server.
- * For local development only (no /api server), a VITE_GROQ_API_KEY in .env.local is used directly.
+ * For local development only (npm run dev, no /api server), a VITE_GROQ_API_KEY in .env.local is used
+ * directly. It is never part of a real build, so the key cannot end up in the website.
  */
+import { apiFetch } from '../lib/apiClient';
 
 const TELUGU_SYSTEM_PROMPT = [
   'You convert short loan follow-up call remarks into Telugu script.',
@@ -25,7 +27,7 @@ export const convertTextToTelugu = async (text: string): Promise<string> => {
 
   let serverError = '';
   try {
-    const resp = await fetch('/api/telugu', {
+    const resp = await apiFetch('/api/telugu', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: input }),
@@ -43,7 +45,7 @@ export const convertTextToTelugu = async (text: string): Promise<string> => {
   }
 
   // Local development fallback
-  const devKey = ((import.meta.env.VITE_GROQ_API_KEY as string) || '').trim();
+  const devKey = import.meta.env.DEV ? ((import.meta.env.VITE_GROQ_API_KEY as string) || '').trim() : '';
   if (devKey.length > 10) {
     const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',

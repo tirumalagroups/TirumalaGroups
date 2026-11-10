@@ -13,6 +13,8 @@ import { TableModeProvider, useTableMode } from './contexts/TableModeContext';
 import { queryClient } from './lib/queryClient';
 import Layout from './components/Layout/Layout';
 import HoverHelp from './components/UI/HoverHelp';
+import ChangePasswordRequired from './components/auth/ChangePasswordRequired';
+import SessionWarningBanner from './components/auth/SessionWarningBanner';
 import Login from './pages/Login';
 import ModeSelection from './pages/ModeSelection';
 import Dashboard from './pages/Dashboard';
@@ -196,7 +198,7 @@ const AppContent: React.FC = () => {
   // Protected Route Component - Must be inside AuthProvider and Router
   // Defined here to ensure it's always within the AuthProvider context
   const ProtectedRouteWrapper: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
-    const { user, loading } = useAuth();
+    const { user, loading, mustChangePassword } = useAuth();
     const { mode } = useTableMode();
 
     if (loading) {
@@ -212,6 +214,11 @@ const AppContent: React.FC = () => {
 
     if (!user) {
       return <Navigate to='/login' replace />;
+    }
+
+    // After an admin reset, or with an old password shorter than 8: a new password first
+    if (mustChangePassword) {
+      return <ChangePasswordRequired />;
     }
 
     // If children provided, render them (for mode-selection/choose-mode page)
@@ -232,6 +239,7 @@ const AppContent: React.FC = () => {
   return (
     <Router>
       <HoverHelp />
+      <SessionWarningBanner />
       <Toaster
         position='top-right'
         toastOptions={{

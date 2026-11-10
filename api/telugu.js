@@ -1,8 +1,12 @@
 // POST /api/telugu  { "text": "payment repu istadu" }  ->  { "text": "పేమెంట్ రేపు ఇస్తాడు" }
 // Converts typed English or Telugu-English remarks into Telugu script.
 import { getGroqKey, json, convertToTelugu } from './_groq.js';
+import { requireSession } from './_auth.js';
 
 export async function POST(request) {
+  // Only for people logged in to the app (the Groq key is paid for)
+  const auth = await requireSession(request);
+  if (auth.response) return auth.response;
   const key = getGroqKey();
   if (!key) return json({ error: 'Telugu typing is not set up: GROQ_API_KEY is missing on the server.' }, 500);
 

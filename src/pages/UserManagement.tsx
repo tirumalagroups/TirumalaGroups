@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { rawSupabase } from '../lib/supabase';
-import { supabaseDB } from '../lib/supabaseDatabase';
 import Button from '../components/UI/Button';
 import Input from '../components/UI/Input';
 import Card from '../components/UI/Card';
 import toast from 'react-hot-toast';
-import bcrypt from 'bcryptjs';
+import { apiPost } from '../lib/apiClient';
+import { USER_COLUMNS } from '../lib/userColumns';
+import LoginSecurityPanel from '../components/users/LoginSecurityPanel';
+import { MIN_PASSWORD } from '../contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTableMode } from '../contexts/TableModeContext';
@@ -322,7 +324,7 @@ const UserManagement: React.FC = () => {
 
       const { data: dbUsers, error: usersErr } = await db()
         .from('users')
-        .select('*, user_types(user_type)')
+        .select(`${USER_COLUMNS}, user_types(user_type)`)
         .order('created_at', { ascending: false });
       if (usersErr) throw usersErr;
 
@@ -601,10 +603,10 @@ const UserManagement: React.FC = () => {
         is_active: target === 'Active',
         updated_at: new Date().toISOString(),
       };
-      // Unlocking clears the wrong-password count, otherwise the next mistake locks it again
-      if (target === 'Active' && 'failed_login_attempts' in u.raw) updates.failed_login_attempts = 0;
       const { error } = await db().from('users').update(updates).eq('id', u.id);
       if (error) throw error;
+      // Unlocking clears the wrong-password count and lock, otherwise the next mistake locks it again
+      if (target === 'Active') await rawSupabase.rpc('admin_unlock_user', { p_user_id: u.id });
       await logAudit(u, 'status', u.status, target, reason);
       toast.success(`User status updated to ${target}`);
       await refreshExpanded(u.id);
@@ -615,23 +617,16 @@ const UserManagement: React.FC = () => {
     const u = passwordFor;
     if (!u) return;
     const temp = passwordText.trim();
-    if (temp.length < 6) {
-      toast.error('Password must be at least 6 characters');
+    if (temp.length < MIN_PASSWORD) {
+      toast.error(`Password must be at least ${MIN_PASSWORD} characters`);
       return;
     }
     setPasswordFor(null);
     setPasswordText('');
     askReason(`Reset password of ${u.username}`, async reason => {
-      const hash = await bcrypt.hash(temp, 10);
-      const { error } = await db().from('users').update({
-        password_hash: hash,
-        temp_password: temp,
-        password_expired: true,
-        last_password_change: new Date().toISOString(),
-      }).eq('id', u.id);
-      if (error) throw error;
-      await logAudit(u, 'password', 'HIDDEN', 'TEMPORARY_SET', reason);
-      toast.success(`Password reset. Temp password: ${temp}`, { duration: 12000 });
+      // Set on the server; the person must choose their own at the next login, and any login of theirs ends
+      await apiPost('/api/admin/users', { action: 'reset_password', user_id: u.id, password: temp, reason });
+      toast.success(`Password reset. Temporary password: ${temp}. They must change it when they log in.`, { duration: 12000 });
       await refreshExpanded(u.id);
     });
   };
@@ -678,8 +673,8 @@ const UserManagement: React.FC = () => {
       toast.error('Username and password required');
       return;
     }
-    if (newUser.password.length < 6) {
-      toast.error('Password must be at least 6 characters');
+    if (newUser.password.length < MIN_PASSWORD) {
+      toast.error(`Password must be at least ${MIN_PASSWORD} characters`);
       return;
     }
     if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
@@ -699,10 +694,8 @@ const UserManagement: React.FC = () => {
 
     setLoading(true);
     try {
-      const password_hash = await bcrypt.hash(newUser.password, 10);
       const row: Record<string, any> = {
         username,
-        password_hash,
         user_type_id: roleId,
         email: newUser.email.trim() || `${username}@thirumala.com`,
         full_name: newUser.full_name.trim() || null,
@@ -719,19 +712,8 @@ const UserManagement: React.FC = () => {
         is_active: true,
       };
 
-      // If this database lacks an optional column, save the user without it
-      const REQUIRED = ['username', 'password_hash', 'user_type_id', 'email'];
-      let created: any = null;
-      for (let attempt = 0; attempt < 12 && !created; attempt++) {
-        const { data, error } = await db().from('users').insert(row).select().single();
-        if (!error) {
-          created = data;
-          break;
-        }
-        const missing = Object.keys(row).find(k => !REQUIRED.includes(k) && (error.message || '').includes(`'${k}'`));
-        if (!missing || !['PGRST204', '42703'].includes(error.code || '')) throw error;
-        delete row[missing];
-      }
+      // Created on the server: the password goes only to the login, never into the users table
+      const { user: created } = await apiPost<{ user: any }>('/api/admin/users', { action: 'create', user: row, password: newUser.password });
       if (!created?.id) throw new Error('User was not created');
 
       const target = { id: created.id, username };
@@ -739,24 +721,6 @@ const UserManagement: React.FC = () => {
         await writePermissions(target, emptyFeatures(), newUser.features, [], 'New user created');
       }
       await logAudit(target, 'user', null, `Created as ${roleName}`, 'New user created');
-
-      // Same credentials record Regular / ITR saves for its Dashboard
-      const credentials = {
-        username,
-        password: newUser.password,
-        is_admin: newUser.is_admin,
-        features: unique(MODE_VALUES.flatMap(m => newUser.features[m])),
-        featuresByMode: newUser.features,
-        created_at: new Date().toISOString(),
-      };
-      await supabaseDB.saveUserCredentials(credentials);
-      try {
-        const saved = JSON.parse(localStorage.getItem('user_credentials') || '[]');
-        saved.push(credentials);
-        localStorage.setItem('user_credentials', JSON.stringify(saved.slice(-10)));
-      } catch {
-        /* browser storage is only a convenience */
-      }
 
       toast.success(`Login Credentials Created!\n\nUsername: ${username}\nPassword: ${newUser.password}`, { duration: 12000 });
       setShowAddForm(false);
@@ -1131,6 +1095,8 @@ const UserManagement: React.FC = () => {
             {showAddForm ? 'Close Add User' : 'Create Login Credentials'}
           </Button>
         </div>
+
+        <LoginSecurityPanel onUsersChanged={() => loadUsers()} />
 
         {showAddForm && (
           <Card className='mb-8 p-0 overflow-visible'>

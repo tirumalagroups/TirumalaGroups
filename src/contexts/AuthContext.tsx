@@ -1,13 +1,56 @@
 import { backendReachable, clearOfflineSession, readOfflineSession, saveOfflineSession } from '../lib/offlineSession';
 import { isNetworkFailure } from '../lib/offlineSyncEngine';
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
-import bcrypt from 'bcryptjs';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { supabase, rawSupabase } from '../lib/supabase';
+import { apiPost } from '../lib/apiClient';
+import {
+  LOGOUT_REASON_KEY, SESSION_ENDED_EVENT, parseSessionEnded, resetSessionEndedReport,
+} from '../lib/sessionGuard';
 import { queryClient } from '../lib/queryClient';
 import { supabaseDB } from '../lib/supabaseDatabase';
 import { initAudioContext } from '../utils/reminderSound';
 
 type ModeKey = 'regular' | 'itr' | 'finance';
+
+/** What the database says about the login (public.app_me) */
+interface SessionMe {
+  id: string;
+  username: string;
+  is_admin: boolean;
+  mode?: string | null;
+  must_change_password?: boolean;
+  expires_at?: string;
+  started_at?: string;
+  idle_minutes?: number;
+}
+
+export const MIN_PASSWORD = 8;
+/** Warn this long before the login ends (midnight or no use) */
+const WARN_MS = 5 * 60 * 1000;
+const LAST_ACTIVITY_KEY = 'thirumala_last_activity';
+
+/** Last use of the app in any tab of this browser */
+const markActivity = (at: number = Date.now()) => {
+  try {
+    localStorage.setItem(LAST_ACTIVITY_KEY, String(at));
+  } catch {
+    /* storage blocked: this tab only */
+  }
+};
+const lastActivity = (): number => {
+  try {
+    return Number(localStorage.getItem(LAST_ACTIVITY_KEY)) || Date.now();
+  } catch {
+    return Date.now();
+  }
+};
+
+/** The next 12:00 AM, India time */
+export const nextMidnightIndia = (from: number = Date.now()): number => {
+  const IST = 5.5 * 60 * 60 * 1000;
+  const day = 24 * 60 * 60 * 1000;
+  return Math.floor((from + IST) / day) * day + day - IST;
+};
 const MODE_VALUES: ModeKey[] = ['regular', 'itr', 'finance'];
 const getStoredMode = (): ModeKey => {
   const mode = sessionStorage.getItem('table_mode') || localStorage.getItem('table_mode');
@@ -118,6 +161,10 @@ interface AuthContextType {
   ) => Promise<{ success: boolean; error?: string }>;
   isAdmin: boolean;
   isAuthenticated: boolean;
+  /** After an admin reset (or a password shorter than 8): must change it before using the app */
+  mustChangePassword: boolean;
+  /** Shown shortly before the login ends (midnight, or no use) */
+  sessionWarning: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -212,79 +259,112 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     return { featuresByMode: map, modeColumnExists };
   };
 
+  // ─── Login session ─────────────────────────────────────────────────────────
+  // The login lives in Supabase (token kept by the Supabase client, shared by all tabs). The database
+  // ends it at midnight, after 30 minutes without use, when the same user logs in elsewhere, or when
+  // an admin logs them out; every request then fails with SESSION_ENDED and the app logs out here.
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [sessionWarning, setSessionWarning] = useState<string | null>(null);
+  const expiresAtRef = useRef<number>(0);
+  const idleMinutesRef = useRef<number>(30);
+
+  const buildUser = async (me: SessionMe): Promise<User> => {
+    let featuresByMode: Record<ModeKey, string[]> = createEmptyModeFeatureMap();
+    try {
+      featuresByMode = (await loadFeaturesForUser(me.id, Boolean(me.is_admin))).featuresByMode;
+    } catch (featureError) {
+      console.error('Error loading user features:', featureError);
+    }
+    const activeMode = getStoredMode();
+    return {
+      id: me.id,
+      username: me.username,
+      is_admin: Boolean(me.is_admin),
+      features: me.is_admin ? [...ADMIN_FEATURES] : getFeaturesForMode(featuresByMode, activeMode) || [],
+      featuresByMode,
+      mode: (me.mode as User['mode']) || null,
+    };
+  };
+
+  const startSession = (userData: User, me: Partial<SessionMe>, loginTime: number) => {
+    const expiresAt = me.expires_at ? new Date(me.expires_at).getTime() : nextMidnightIndia(loginTime);
+    expiresAtRef.current = expiresAt;
+    idleMinutesRef.current = me.idle_minutes || 30;
+    setMustChangePassword(Boolean(me.must_change_password));
+    setUser(userData);
+    supabaseDB.setUserId(userData.id);
+    sessionStorage.setItem('thirumala_user', JSON.stringify(userData));
+    sessionStorage.setItem('thirumala_session_time', String(loginTime));
+    saveOfflineSession(userData, loginTime, expiresAt);
+    markActivity();
+  };
+
+  const clearLocalState = () => {
+    localStorage.removeItem('table_mode');
+    localStorage.removeItem('selectedMode');
+    localStorage.removeItem('regularSelectedBook');
+    localStorage.removeItem('itrSelectedBook');
+    localStorage.removeItem('financeSelectedBook');
+    localStorage.removeItem('currentBookId');
+    localStorage.removeItem('user_credentials'); // old: plain passwords of new users were kept here
+    clearOfflineSession();
+    localStorage.removeItem('offlineBook_regular');
+    localStorage.removeItem('offlineBook_itr');
+    sessionStorage.removeItem('thirumala_user');
+    sessionStorage.removeItem('thirumala_session_time');
+    sessionStorage.removeItem('thirumala_login_history_id');
+    sessionStorage.removeItem('table_mode');
+    sessionStorage.removeItem('selectedMode');
+  };
+
+  /** Logs out on this computer. With a reason, the login page says why. */
+  const endLocally = async (reason?: string) => {
+    try {
+      await rawSupabase.auth.signOut({ scope: 'local' });
+    } catch {
+      /* the token is removed from this computer either way */
+    }
+    clearLocalState();
+    if (reason) sessionStorage.setItem(LOGOUT_REASON_KEY, reason);
+    queryClient.clear();
+    setUser(null);
+    setMustChangePassword(false);
+    setSessionWarning(null);
+    supabaseDB.setUserId('');
+  };
+
   useEffect(() => {
-    // Check for existing session on app load
+    // Check for an existing login on app load
     const checkSession = async () => {
       try {
-        let savedUser = sessionStorage.getItem('thirumala_user');
-        let sessionTime = sessionStorage.getItem('thirumala_session_time');
-
-        // Browser was closed and there is no internet: stay logged in on this computer for 24 hours
-        if (!savedUser) {
-          const offlineSession = readOfflineSession();
-          if (offlineSession && !(await backendReachable())) {
-            savedUser = JSON.stringify(offlineSession.user);
-            sessionTime = String(offlineSession.time);
-            sessionStorage.setItem('thirumala_user', savedUser);
-            sessionStorage.setItem('thirumala_session_time', sessionTime);
+        const { data } = await rawSupabase.auth.getSession();
+        if (data.session && navigator.onLine) {
+          const { data: me, error, status } = await rawSupabase.rpc('app_me');
+          if (me) {
+            resetSessionEndedReport();
+            const userData = await buildUser(me as SessionMe);
+            const started = me.started_at ? new Date(me.started_at).getTime() : Date.now();
+            startSession(userData, me as SessionMe, started);
+            return;
+          }
+          const reason = parseSessionEnded(error?.message);
+          if (reason || !isNetworkFailure(error, status)) {
+            await endLocally(reason || 'login_required');
+            return;
           }
         }
 
-        if (savedUser && sessionTime) {
-          const parsedUser: User = JSON.parse(savedUser);
-          const sessionAge = Date.now() - parseInt(sessionTime);
-          const SESSION_DURATION = 24 * 60 * 60 * 1000;
-          if (sessionAge < SESSION_DURATION) {
-            // Check if user is active in DB
-            const { data: dbUserCheck, error: checkError, status: checkStatus } = await supabase
-              .from('users')
-              .select('is_active')
-              .eq('id', parsedUser.id)
-              .single();
-
-            // No internet is not a reason to log someone out, and permissions stay as they were
-            const cannotCheck = !navigator.onLine || isNetworkFailure(checkError, checkStatus);
-
-            if (!cannotCheck && (checkError || !dbUserCheck || dbUserCheck.is_active === false)) {
-              sessionStorage.removeItem('thirumala_user');
-              sessionStorage.removeItem('thirumala_session_time');
-              clearOfflineSession();
-              supabaseDB.setUserId('');
-              setUser(null);
-              setLoading(false);
-              return;
-            }
-
-            if (!cannotCheck) try {
-              const { featuresByMode } = await loadFeaturesForUser(
-                parsedUser.id,
-                Boolean(parsedUser.is_admin)
-              );
-              const activeMode = getStoredMode();
-              parsedUser.featuresByMode = featuresByMode;
-              if (parsedUser.is_admin) {
-                parsedUser.features = [...ADMIN_FEATURES];
-              } else {
-                parsedUser.features = getFeaturesForMode(featuresByMode, activeMode);
-              }
-              sessionStorage.setItem('thirumala_user', JSON.stringify(parsedUser));
-            } catch (featureError) {
-              console.error('❌ Error reloading features for session:', featureError);
-              if (!Array.isArray(parsedUser.features)) {
-                parsedUser.features = [];
-              }
-            }
-
-            saveOfflineSession(parsedUser, parseInt(sessionTime));
-            setUser(parsedUser);
-            supabaseDB.setUserId(parsedUser.id);
-          } else {
-            sessionStorage.removeItem('thirumala_user');
-            sessionStorage.removeItem('thirumala_session_time');
-            clearOfflineSession();
-            supabaseDB.setUserId('');
-          }
+        // No internet: stay logged in on this computer until the login's end (12:00 AM)
+        const offlineSession = readOfflineSession();
+        if (offlineSession && !(await backendReachable())) {
+          expiresAtRef.current = offlineSession.expiresAt;
+          setUser(offlineSession.user);
+          supabaseDB.setUserId(offlineSession.user.id);
+          sessionStorage.setItem('thirumala_user', JSON.stringify(offlineSession.user));
+          sessionStorage.setItem('thirumala_session_time', String(offlineSession.time));
+          return;
         }
+        if (data.session) await endLocally();
       } catch (error) {
         console.error('Error checking session:', error);
       } finally {
@@ -293,6 +373,81 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     };
     checkSession();
   }, []);
+
+  // The database refused a request because this login ended
+  useEffect(() => {
+    const onEnded = (event: Event) => {
+      const reason = (event as CustomEvent<string>).detail;
+      if (!sessionStorage.getItem('thirumala_user')) return;
+      endLocally(reason);
+    };
+    window.addEventListener(SESSION_ENDED_EVENT, onEnded);
+    return () => window.removeEventListener(SESSION_ENDED_EVENT, onEnded);
+  }, []);
+
+  // While logged in: record use, tell the server every minute, warn before the login ends
+  useEffect(() => {
+    if (!user) return undefined;
+    const events = ['mousedown', 'keydown', 'touchstart', 'wheel', 'mousemove'];
+    let lastMark = 0;
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - lastMark > 5000) {
+        lastMark = now;
+        markActivity(now);
+      }
+    };
+    events.forEach(e => window.addEventListener(e, onActivity, { passive: true }));
+
+    let ticks = 0;
+    let lastTouch = Date.now();
+    const tick = async () => {
+      const now = Date.now();
+      const last = lastActivity();
+      const idleLeft = last + idleMinutesRef.current * 60000 - now;
+      const expiresAt = expiresAtRef.current;
+
+      if (expiresAt && now >= expiresAt) {
+        endLocally('expired');
+        return;
+      }
+      if (expiresAt && expiresAt - now <= WARN_MS) {
+        const mins = Math.max(1, Math.ceil((expiresAt - now) / 60000));
+        setSessionWarning(`Logins end at 12:00 AM. You will be logged out in ${mins} minute${mins === 1 ? '' : 's'}. Please save your work.`);
+      } else if (idleLeft <= WARN_MS) {
+        const mins = Math.max(1, Math.ceil(idleLeft / 60000));
+        setSessionWarning(`No use for a while: you will be logged out in ${mins} minute${mins === 1 ? '' : 's'}. Move the mouse or press a key to stay logged in.`);
+      } else {
+        setSessionWarning(null);
+      }
+
+      ticks += 1;
+      if (ticks % 2 !== 0 || !navigator.onLine) return; // the server check runs every 30 seconds
+      try {
+        const active = last > lastTouch;
+        const { data, error, status } = await rawSupabase.rpc('app_touch', { p_active: active });
+        if (active) lastTouch = now;
+        if (data && data.ok === false) {
+          endLocally(data.reason);
+        } else if (data?.ok) {
+          if (data.expires_at) expiresAtRef.current = new Date(data.expires_at).getTime();
+          if (data.idle_minutes) idleMinutesRef.current = data.idle_minutes;
+          setMustChangePassword(Boolean(data.must_change_password));
+        } else if (error && !isNetworkFailure(error, status)) {
+          const reason = parseSessionEnded(error.message);
+          if (reason) endLocally(reason);
+        }
+      } catch {
+        /* no connection: try again next minute */
+      }
+    };
+    const timer = window.setInterval(tick, 15000);
+    tick();
+    return () => {
+      window.clearInterval(timer);
+      events.forEach(e => window.removeEventListener(e, onActivity));
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     const handleModeChange = (event: Event) => {
@@ -322,25 +477,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
-  const parseUA = (uaString: string) => {
-    let browser = 'Unknown Browser';
-    let os = 'Unknown OS';
-    let device = 'Desktop';
-    if (uaString.includes('Firefox')) browser = 'Firefox';
-    else if (uaString.includes('Chrome')) browser = 'Chrome';
-    else if (uaString.includes('Safari')) browser = 'Safari';
-    else if (uaString.includes('Edge')) browser = 'Edge';
-
-    if (uaString.includes('Windows')) os = 'Windows';
-    else if (uaString.includes('Macintosh')) os = 'Mac OS';
-    else if (uaString.includes('Android')) os = 'Android';
-    else if (uaString.includes('iPhone') || uaString.includes('iPad')) os = 'iOS';
-
-    if (uaString.includes('Mobile') || uaString.includes('Android') || uaString.includes('iPhone')) device = 'Mobile';
-    else if (uaString.includes('Tablet') || uaString.includes('iPad')) device = 'Tablet';
-    return { browser, os, device };
-  };
-
   const login = async (username: string, password: string) => {
     try {
       if (!username.trim() || !password.trim()) {
@@ -351,143 +487,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         return { success: false, error: 'Login needs internet. Please connect and try again.' };
       }
 
-      const trimmedUsername = username.trim();
-      const ua = navigator.userAgent;
-      const { browser, os, device } = parseUA(ua);
-      let ip = '127.0.0.1';
-      try {
-        const ipRes = await fetch('https://api.ipify.org?format=json').then(res => res.json());
-        if (ipRes && ipRes.ip) ip = ipRes.ip;
-      } catch (err) {
-        console.warn('Could not retrieve client IP address:', err);
+      // The password is checked on the server (api/auth/login.js), never in the browser
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.session?.access_token || !body?.me) {
+        return { success: false, error: body?.error || 'Login failed. Please try again.' };
       }
 
-      // 1. Fetch user
-      const { data: allUsers, error: fetchError } = await supabase
-        .from('users')
-        .select(`
-          *,
-          user_types!inner(user_type)
-        `);
-      
-      if (fetchError || !allUsers) {
-        return { success: false, error: 'Invalid username or password' };
+      const { error: setError } = await rawSupabase.auth.setSession({
+        access_token: body.session.access_token,
+        refresh_token: body.session.refresh_token,
+      });
+      if (setError) {
+        console.error('Could not keep the login:', setError);
+        return { success: false, error: 'Login failed. Please try again.' };
       }
-      
-      const dbUser = allUsers.find(u => 
-        u.username && u.username.toLowerCase() === trimmedUsername.toLowerCase()
-      );
-      
-      if (!dbUser) {
-        // Record failed attempt for non-existing user
-        await supabase.from('login_history').insert({
-          username: trimmedUsername,
-          success: false,
-          failure_reason: 'User not found',
-          ip_address: ip,
-          browser,
-          device,
-          os
-        });
-        return { success: false, error: 'Invalid username or password' };
-      }
+      resetSessionEndedReport();
+      sessionStorage.removeItem(LOGOUT_REASON_KEY);
 
-      // Check status/activation
-      const currentStatus = dbUser.status || (dbUser.is_active === false ? 'Disabled' : 'Active');
-      if (['Disabled', 'Locked', 'Suspended', 'Deleted'].includes(currentStatus)) {
-        await supabase.from('login_history').insert({
-          user_id: dbUser.id,
-          username: dbUser.username,
-          success: false,
-          failure_reason: `Account is ${currentStatus.toLowerCase()}`,
-          ip_address: ip,
-          browser,
-          device,
-          os
-        });
-        return { success: false, error: `Account is ${currentStatus.toLowerCase()}` };
-      }
-
-      // 2. Check password
-      const passwordMatch = await bcrypt.compare(password, dbUser.password_hash);
-      if (!passwordMatch) {
-        // Increment failed attempts
-        const attempts = (dbUser.failed_login_attempts || 0) + 1;
-        const updates: any = { failed_login_attempts: attempts };
-        if (attempts >= 5) {
-          updates.status = 'Locked';
-        }
-        await supabase.from('users').update(updates).eq('id', dbUser.id);
-
-        await supabase.from('login_history').insert({
-          user_id: dbUser.id,
-          username: dbUser.username,
-          success: false,
-          failure_reason: attempts >= 5 ? 'Account locked: too many failures' : 'Invalid password',
-          ip_address: ip,
-          browser,
-          device,
-          os
-        });
-
-        return {
-          success: false,
-          error: attempts >= 5 
-            ? 'Account is locked due to too many failed attempts' 
-            : 'Invalid username or password'
-        };
-      }
-
-      // 3. Success login
-      await supabase.from('users').update({
-        failed_login_attempts: 0,
-        last_login: new Date().toISOString(),
-        login_count: (dbUser.login_count || 0) + 1
-      }).eq('id', dbUser.id);
-
-      // Write login success
-      const { data: histData } = await supabase.from('login_history').insert({
-        user_id: dbUser.id,
-        username: dbUser.username,
-        success: true,
-        ip_address: ip,
-        browser,
-        device,
-        os
-      }).select('id').single();
-
-      if (histData?.id) {
-        sessionStorage.setItem('thirumala_login_history_id', histData.id);
-      }
-
-      const isAdmin = dbUser.user_types?.user_type === 'Admin';
-      let featuresByMode: Record<ModeKey, string[]> = createEmptyModeFeatureMap();
-      try {
-        const results = await loadFeaturesForUser(dbUser.id, isAdmin);
-        featuresByMode = results.featuresByMode;
-      } catch (featureError) {
-        console.error('Error loading user features:', featureError);
-      }
-      const activeMode = getStoredMode();
-      const features = isAdmin
-        ? [...ADMIN_FEATURES]
-        : getFeaturesForMode(featuresByMode, activeMode);
-      
-      const userData: User = {
-        id: dbUser.id,
-        username: dbUser.username,
-        is_admin: isAdmin,
-        features: features || [],
-        featuresByMode,
-        mode: dbUser.mode || null,
-      };
-      
-      setUser(userData);
-      supabaseDB.setUserId(userData.id);
-      const loginTime = Date.now();
-      sessionStorage.setItem('thirumala_user', JSON.stringify(userData));
-      sessionStorage.setItem('thirumala_session_time', loginTime.toString());
-      saveOfflineSession(userData, loginTime);
+      const me = body.me as SessionMe;
+      const userData = await buildUser(me);
+      startSession(userData, me, Date.now());
 
       initAudioContext();
 
@@ -506,42 +530,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const logout = async () => {
     try {
-      const histId = sessionStorage.getItem('thirumala_login_history_id');
-      const sessionStart = sessionStorage.getItem('thirumala_session_time');
-      if (histId && sessionStart) {
-        const durationSec = Math.round((Date.now() - parseInt(sessionStart)) / 1000);
-        const durationText = durationSec > 60 
-          ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` 
-          : `${durationSec}s`;
-        
-        await supabase.from('login_history').update({
-          logout_time: new Date().toISOString(),
-          session_duration: durationText
-        }).eq('id', histId);
-      }
-
-      localStorage.removeItem('table_mode');
-      localStorage.removeItem('selectedMode');
-      localStorage.removeItem('regularSelectedBook');
-      localStorage.removeItem('itrSelectedBook');
-      localStorage.removeItem('financeSelectedBook');
-      localStorage.removeItem('currentBookId');
-
-      clearOfflineSession();
-      localStorage.removeItem('offlineBook_regular');
-      localStorage.removeItem('offlineBook_itr');
-      sessionStorage.removeItem('thirumala_user');
-      sessionStorage.removeItem('thirumala_session_time');
-      sessionStorage.removeItem('thirumala_login_history_id');
-      sessionStorage.removeItem('table_mode');
-      sessionStorage.removeItem('selectedMode');
-
-      queryClient.clear();
-      setUser(null);
-      supabaseDB.setUserId('');
-    } catch (error) {
-      console.error('Logout error:', error);
+      await rawSupabase.rpc('app_logout');
+    } catch {
+      /* ends on this computer anyway; the server ends it at midnight or after 30 minutes */
     }
+    await endLocally();
   };
 
   const reloadPermissions = async () => {
@@ -552,13 +545,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const nextFeatures = user.is_admin
         ? [...ADMIN_FEATURES]
         : getFeaturesForMode(featuresByMode, activeMode);
-      
+
       const updatedUser = {
         ...user,
         features: nextFeatures,
         featuresByMode,
       };
-      
+
       setUser(updatedUser);
       sessionStorage.setItem('thirumala_user', JSON.stringify(updatedUser));
     } catch (error) {
@@ -570,61 +563,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     currentPassword: string,
     newPassword: string
   ) => {
+    if (!user) {
+      return { success: false, error: 'User not logged in' };
+    }
+    if (!mustChangePassword && !currentPassword.trim()) {
+      return { success: false, error: 'Please enter your current password' };
+    }
+    if (newPassword.length < MIN_PASSWORD) {
+      return { success: false, error: `New password must be at least ${MIN_PASSWORD} characters` };
+    }
     try {
-      if (!user) {
-        return { success: false, error: 'User not logged in' };
-      }
-
-      if (!currentPassword.trim() || !newPassword.trim()) {
-        return { success: false, error: 'Both passwords are required' };
-      }
-
-      if (newPassword.length < 4) {
-        return { success: false, error: 'New password must be at least 4 characters' };
-      }
-
-      // 1. Fetch user from database
-      const { data: dbUser, error: fetchError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      if (fetchError || !dbUser) {
-        return { success: false, error: 'User not found' };
-      }
-
-      // 2. Verify current password
-      const passwordMatch = await bcrypt.compare(
-        currentPassword,
-        dbUser.password_hash
-      );
-
-      if (!passwordMatch) {
-        return { success: false, error: 'Current password is incorrect' };
-      }
-
-      // 3. Hash new password
-      const newPasswordHash = await bcrypt.hash(newPassword, 10);
-
-      // 4. Update password in database
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({
-          password_hash: newPasswordHash,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
-
-      if (updateError) {
-        console.error('Error updating password:', updateError);
-        return { success: false, error: 'Failed to update password' };
-      }
-
+      await apiPost('/api/auth/change-password', { currentPassword, newPassword });
+      setMustChangePassword(false);
       return { success: true };
-    } catch (err) {
-      console.error('Change password error:', err);
-      return { success: false, error: 'Failed to change password. Please try again.' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to change password. Please try again.' };
     }
   };
 
@@ -633,7 +586,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, logout, reloadPermissions, changePassword, isAdmin, isAuthenticated }}
+      value={{ user, loading, login, logout, reloadPermissions, changePassword, isAdmin, isAuthenticated, mustChangePassword, sessionWarning }}
     >
       {children}
     </AuthContext.Provider>
