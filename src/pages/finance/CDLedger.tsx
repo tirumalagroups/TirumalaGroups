@@ -38,7 +38,7 @@ import CompoundInterestModal from '../../components/finance/CompoundInterestModa
 import { getLocalBusinessDateISO } from '../../utils/dateUtils';
 import { formatRelationship } from '../../utils/relationship';
 import { receiptRowsFromStatement, formatReceiptAmount, amountInWords } from '../../utils/cdReceiptPrint';
-import { cdCompoundInterestEngine, TOOLTIP_TEXT } from '../../services/cdCompoundInterestEngine';
+import { cdCompoundInterestEngine, tooltipFor, CI_DEFAULT_RATE, CI_DEFAULT_PERIOD_DAYS } from '../../services/cdCompoundInterestEngine';
 
 
 
@@ -213,6 +213,11 @@ const CDLedger: React.FC = () => {
   const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(null);
   const [showReceiptPreview, setShowReceiptPreview] = useState(false);
   const [showCompoundModal, setShowCompoundModal] = useState(false);
+  // Compound Interest report: rate and period the user set there (view only, never saved).
+  // They drive the report, the Compound Interest figure on screen and in the CD report print;
+  // back to 3% / 30 days when another loan is opened.
+  const [ciRate, setCiRate] = useState<number>(CI_DEFAULT_RATE);
+  const [ciPeriodDays, setCiPeriodDays] = useState<number>(CI_DEFAULT_PERIOD_DAYS);
 
   // Return Document Modal State
   const [returnDate, setReturnDate] = useState(() => getLocalBusinessDateISO());
@@ -645,6 +650,11 @@ const CDLedger: React.FC = () => {
       .reduce((sum, e) => sum + Number(e.credit), 0);
   }, [displayedStatementEntries]);
 
+  useEffect(() => {
+    setCiRate(CI_DEFAULT_RATE);
+    setCiPeriodDays(CI_DEFAULT_PERIOD_DAYS);
+  }, [selectedLoan?.id]);
+
   // Compound Interest Calculation Engine (Timeline Display Engine - Informational Only)
   const compoundInterestData = useMemo(() => {
     if (!selectedLoan || !originalLoanDate) return { summary: null, reportRows: [] };
@@ -655,14 +665,17 @@ const CDLedger: React.FC = () => {
         loan_id: selectedLoan.loan_id,
         amount: Number(selectedLoan.amount) || 0,
         date: originalLoanDate,
-        interest_rate: Number(selectedLoan.interest_rate) || 3,
+        interest_rate: ciRate,
         status: selectedLoan.status,
         closed_at: (selectedLoan as any).closed_at || null
       },
       displayedStatementEntries,
-      paymentDate || undefined
+      paymentDate || undefined,
+      { periodDays: ciPeriodDays }
     );
-  }, [selectedLoan, originalLoanDate, displayedStatementEntries, paymentDate]);
+  }, [selectedLoan, originalLoanDate, displayedStatementEntries, paymentDate, ciRate, ciPeriodDays]);
+  const ciChanged = ciRate !== CI_DEFAULT_RATE || ciPeriodDays !== CI_DEFAULT_PERIOD_DAYS;
+  const ciSettingsText = `${ciRate}% / ${ciPeriodDays} days`;
 
   // Statement-Oriented Pivot Ledger Engine (One Business Event = One Row)
   const groupedPivotStatementEntries = useMemo(() => {
@@ -2260,10 +2273,10 @@ const CDLedger: React.FC = () => {
                         </div>
                         <div 
                           onClick={() => setShowCompoundModal(true)}
-                          title={TOOLTIP_TEXT}
+                          title={`${tooltipFor(ciPeriodDays)} Rate ${ciSettingsText}.`}
                           className="px-2.5 py-1.5 hover:bg-slate-100 group cursor-pointer transition-colors"
                         >
-                          <span className="text-[13px] text-slate-500 font-bold uppercase block tracking-wider leading-none mb-0.5">Compound Interest</span>
+                          <span className="text-[13px] text-slate-500 font-bold uppercase block tracking-wider leading-none mb-0.5">Compound Interest{ciChanged && <span className="normal-case tracking-normal text-indigo-700"> ({ciSettingsText})</span>}</span>
                           <span className="text-[16px] font-bold text-slate-900 group-hover:underline underline-offset-2">{Math.round(compoundInterestData.summary?.finalCompoundBalance || 0).toLocaleString('en-IN')}</span>
                         </div>
                       </div>
@@ -3168,7 +3181,7 @@ const CDLedger: React.FC = () => {
                 const details: Array<[string, string]> = [
                   ['Loan Amount', money(originalLoanAmount)],
                   ['Rate / Penalty', `${Number(selectedLoan.interest_rate).toFixed(2)}% / ${Number(selectedLoan.penalty_percent || 0.75).toFixed(2)}%`],
-                  ['Compound Interest', Math.round(compoundInterestData.summary?.finalCompoundBalance || 0).toLocaleString('en-IN')],
+                  [ciChanged ? `Compound Interest (${ciSettingsText})` : 'Compound Interest', Math.round(compoundInterestData.summary?.finalCompoundBalance || 0).toLocaleString('en-IN')],
                   ['Loan Date', formatDateOld(originalLoanDate || selectedLoan.date) || '—'],
                   ['Last Payment', renewCalculations?.error ? '—' : (formatDateOld(renewCalculations?.lastPaymentDate) || '—')],
                   ['Current Due Date', renewCalculations?.error ? '—' : (formatDateOld(renewCalculations?.currentDueDate) || '—')],
@@ -3546,8 +3559,10 @@ const CDLedger: React.FC = () => {
           onClose={() => setShowCompoundModal(false)}
           cdNumber={selectedLoan.loan_id || ''}
           customerName={selectedLoan.customer?.name || ''}
-          interestRate={Number(selectedLoan.interest_rate) || 3}
-          penaltyPercent={Number(selectedLoan.penalty_percent) || 0.75}
+          interestRate={ciRate}
+          periodDays={ciPeriodDays}
+          onInterestRateChange={setCiRate}
+          onPeriodDaysChange={setCiPeriodDays}
           loanDate={originalLoanDate || selectedLoan.date}
           reportRows={compoundInterestData.reportRows}
           summary={compoundInterestData.summary}

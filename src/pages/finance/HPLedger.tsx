@@ -491,6 +491,7 @@ const HPLedger: React.FC = () => {
       'Days Late': i.daysLate,
       'Late Interest': i.lateInterest,
       'Penalty': i.penalty,
+      'Total (To be paid)': i.toBePaid,
       'Status': i.no === 1 ? 'Kept at disbursement' : i.status
     }));
     const res = exportToExcelMultiSheet(
@@ -994,6 +995,7 @@ const HPLedger: React.FC = () => {
                         <th className="px-3.5 py-3.5 text-center whitespace-nowrap">Days Late</th>
                         <th className="px-3.5 py-3.5 text-right text-amber-800 whitespace-nowrap">Late Interest</th>
                         <th className="px-3.5 py-3.5 text-right text-rose-800 whitespace-nowrap">Penalty</th>
+                        <th className="px-3.5 py-3.5 text-right text-rose-950 whitespace-nowrap">Total (To be paid)</th>
                         <th className="px-3.5 py-3.5 whitespace-nowrap">Status</th>
                       </tr>
                     </thead>
@@ -1010,6 +1012,7 @@ const HPLedger: React.FC = () => {
                           <td className="px-3.5 py-3 text-center font-mono font-bold text-slate-800">{i.daysLate > 0 ? i.daysLate : '—'}</td>
                           <td className="px-3.5 py-3 text-right font-mono font-bold text-amber-700">{i.lateInterest > 0 ? num(i.lateInterest) : '—'}</td>
                           <td className="px-3.5 py-3 text-right font-mono font-bold text-rose-700">{i.penalty > 0 ? num(i.penalty) : '—'}</td>
+                          <td className="px-3.5 py-3 text-right font-mono font-black text-rose-950">{i.toBePaid > 0 ? num(i.toBePaid) : '—'}</td>
                           <td className="px-3.5 py-3 whitespace-nowrap">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${i.no === 1 ? 'bg-blue-100 text-blue-800 border border-blue-200' : instChip[i.status]}`}>
                               {i.no === 1 ? 'Kept at disbursement' : i.status}
@@ -1029,6 +1032,7 @@ const HPLedger: React.FC = () => {
                         <td></td>
                         <td className="px-3.5 py-3 text-right text-amber-800">{num(hpRound(position.installments.reduce((s, i) => s + i.lateInterest, 0)))}</td>
                         <td className="px-3.5 py-3 text-right text-rose-800">{num(hpRound(position.installments.reduce((s, i) => s + i.penalty, 0)))}</td>
+                        <td className="px-3.5 py-3 text-right text-rose-950">{num(hpRound(position.installments.reduce((s, i) => s + i.toBePaid, 0)))}</td>
                         <td></td>
                       </tr>
                     </tfoot>
@@ -1481,7 +1485,7 @@ const HPLedger: React.FC = () => {
               <table className="w-full border border-gray-300 text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-gray-100 border-b border-gray-300 text-gray-700 uppercase text-[9px] font-bold">
-                    {['No', 'Due Date', 'Amount', 'Paid', 'Balance', 'Days Late', 'Late Int.', 'Penalty', 'Status'].map(h => <th key={h} className={`p-1.5 border-r ${['No', 'Due Date', 'Status'].includes(h) ? '' : 'text-right'}`}>{h}</th>)}
+                    {['No', 'Due Date', 'Amount', 'Paid', 'Balance', 'Days Late', 'Late Int.', 'Penalty', 'Total (To be paid)', 'Status'].map(h => <th key={h} className={`p-1.5 border-r ${['No', 'Due Date', 'Status'].includes(h) ? '' : 'text-right'}`}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 font-mono text-gray-700">
@@ -1495,6 +1499,7 @@ const HPLedger: React.FC = () => {
                       <td className="p-1.5 border-r text-right">{i.daysLate > 0 ? i.daysLate : '—'}</td>
                       <td className="p-1.5 border-r text-right">{i.lateInterest > 0 ? num(i.lateInterest) : '—'}</td>
                       <td className="p-1.5 border-r text-right">{i.penalty > 0 ? num(i.penalty) : '—'}</td>
+                      <td className="p-1.5 border-r text-right font-bold">{i.toBePaid > 0 ? num(i.toBePaid) : '—'}</td>
                       <td className="p-1.5 font-sans uppercase text-[9px] font-bold">{i.no === 1 ? 'Kept at disbursement' : i.status}</td>
                     </tr>
                   ))}

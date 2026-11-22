@@ -177,6 +177,8 @@ export interface HPInstallmentView {
   lateInterest: number; // charged so far (paid + unpaid)
   penalty: number; // charged so far (paid + unpaid)
   lateDue: number; // late interest + penalty still unpaid
+  /** Total (To be paid): what is still owed on this installment = balance + unpaid late interest and penalty (0 once cleared) */
+  toBePaid: number;
   daysLate: number;
   status: HPInstallmentStatus;
   clearedOn: string | null;
@@ -421,6 +423,7 @@ export function computeHPPosition(contractOrLoan: HPContract | any, payments: HP
       lateInterest: hpRound(s.lateInterestAccrued),
       penalty: hpRound(s.penaltyAccrued),
       lateDue: hpRound(late.penalty + late.lateInterest),
+      toBePaid: s.clearedOn ? 0 : hpRound(balance + late.penalty + late.lateInterest),
       daysLate,
       status,
       clearedOn: s.clearedOn,

@@ -2,6 +2,8 @@
  * CD COMPOUND INTEREST (CI) DISPLAY ENGINE
  * ====================================================
  * TIMELINE-BASED 30-DAY COMPOUND INTEREST ENGINE
+ * (30 days and the loan's rate by default; the report lets the user set the rate and the cycle
+ *  length P, and every "30" below then reads P: the rate is charged once per P days)
  * 
  * IMPORTANT:
  * This engine is PURELY READ-ONLY and INFORMATIONAL.
@@ -73,6 +75,8 @@ export interface CISummary {
   calculatedUntilDate: string;
   calculatedUntil: string;
   monthlyInterestRate: number;
+  /** Days in one cycle; monthlyInterestRate is charged once per cycle */
+  periodDays: number;
   tooltipText: string;
 }
 
@@ -82,6 +86,19 @@ export interface CIResult {
 }
 
 export const TOOLTIP_TEXT = "Estimated compounded value based on pure 30-day time cycles, payments and principal reductions. Informational only.";
+
+/** The report's note for the chosen period (30 days unless the user changed it in the report). */
+export const tooltipFor = (periodDays: number = 30) =>
+  `Estimated compounded value based on pure ${periodDays}-day time cycles, payments and principal reductions. Informational only.`;
+
+/** Default rate and period of the Compound Interest report (the user can change both there). */
+export const CI_DEFAULT_RATE = 3;
+export const CI_DEFAULT_PERIOD_DAYS = 30;
+
+export interface CIOptions {
+  /** Days in one compounding cycle (default 30); the rate is charged once per cycle */
+  periodDays?: number;
+}
 
 export const cdCompoundInterestEngine = {
   /**
@@ -102,9 +119,12 @@ export const cdCompoundInterestEngine = {
       closed_at?: string | null;
     },
     ledgerEntries: any[] = [],
-    asOfDate?: string
+    asOfDate?: string,
+    options: CIOptions = {}
   ): CIResult {
+    // Rate % charged once per cycle of P days (the report lets the user change both)
     const monthlyRate = Number(loan.interest_rate) || 0;
+    const P = Math.max(1, Math.round(Number(options.periodDays) || CI_DEFAULT_PERIOD_DAYS));
     const loanStartDate = (loan.date || '').split('T')[0];
 
     const entryDateOf = (e: any) => String(e.entry_date || e.date || '').split('T')[0];
@@ -124,7 +144,7 @@ export const cdCompoundInterestEngine = {
     let initialPrincipal = openingDisbursed > 0 ? openingDisbursed : (Number(loan.amount) || 0);
 
     if (!loanStartDate || initialPrincipal <= 0) {
-      return this.emptyResult(initialPrincipal, monthlyRate, loanStartDate);
+      return this.emptyResult(initialPrincipal, monthlyRate, loanStartDate, P);
     }
 
     // Determine target calculation end date
@@ -335,12 +355,12 @@ export const cdCompoundInterestEngine = {
         continue;
       }
 
-      const numFullCycles = Math.floor(daysFromAnchor / 30);
-      const remainingDays = daysFromAnchor % 30;
+      const numFullCycles = Math.floor(daysFromAnchor / P);
+      const remainingDays = daysFromAnchor % P;
 
-      // A. Process complete 30-day cycles in this interval
+      // A. Process complete P-day cycles in this interval
       for (let k = 1; k <= numFullCycles; k++) {
-        const cycleDate = financeCalculationService.addCalendarDays(anchorDate, 30 * k);
+        const cycleDate = financeCalculationService.addCalendarDays(anchorDate, P * k);
         const startVal = currentBalance;
         let cycleInterest = 0;
 
@@ -350,7 +370,7 @@ export const cdCompoundInterestEngine = {
 
         accumulatedInterest += cycleInterest;
         let balanceAfterInterest = round2(currentBalance + cycleInterest);
-        totalDaysSimulated += 30;
+        totalDaysSimulated += P;
 
         // Check if event happens exactly on this 30-day boundary and is the final step of interval
         if (k === numFullCycles && remainingDays === 0 && eventAgg.paymentCredit > 0) {
@@ -365,7 +385,7 @@ export const cdCompoundInterestEngine = {
             `Cycle ${cycleCount}`,
             `Cycle ${cycleCount}`,
             'CYCLE',
-            30,
+            P,
             startVal,
             cycleInterest,
             payAmt,
@@ -378,7 +398,7 @@ export const cdCompoundInterestEngine = {
             `Cycle ${cycleCount}`,
             `Cycle ${cycleCount}`,
             'CYCLE',
-            30,
+            P,
             startVal,
             cycleInterest,
             0,
@@ -395,8 +415,8 @@ export const cdCompoundInterestEngine = {
         let partialInterest = 0;
 
         if (currentBalance > 0 && monthlyRate > 0) {
-          // Prorated interest formula: Current Balance * (Monthly Rate / 100) * (Remaining Days / 30)
-          partialInterest = round2(currentBalance * (monthlyRate / 100) * (remainingDays / 30));
+          // Prorated interest formula: Current Balance * (Rate / 100) * (Remaining Days / P)
+          partialInterest = round2(currentBalance * (monthlyRate / 100) * (remainingDays / P));
         }
 
         accumulatedInterest += partialInterest;
@@ -492,13 +512,14 @@ export const cdCompoundInterestEngine = {
         calculatedUntilDate: anchorDate,
         calculatedUntil: anchorDate,
         monthlyInterestRate: monthlyRate,
-        tooltipText: TOOLTIP_TEXT
+        periodDays: P,
+        tooltipText: tooltipFor(P)
       },
       reportRows
     };
   },
 
-  emptyResult(initialPrincipal: number, monthlyRate: number, loanStartDate: string): CIResult {
+  emptyResult(initialPrincipal: number, monthlyRate: number, loanStartDate: string, periodDays: number = CI_DEFAULT_PERIOD_DAYS): CIResult {
     const calcDate = loanStartDate || getLocalBusinessDateISO();
     return {
       summary: {
@@ -512,7 +533,8 @@ export const cdCompoundInterestEngine = {
         calculatedUntilDate: calcDate,
         calculatedUntil: calcDate,
         monthlyInterestRate: monthlyRate,
-        tooltipText: TOOLTIP_TEXT
+        periodDays,
+        tooltipText: tooltipFor(periodDays)
       },
       reportRows: []
     };
