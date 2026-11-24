@@ -3,7 +3,9 @@
  * ====================================================
  * TIMELINE-BASED 30-DAY COMPOUND INTEREST ENGINE
  * (30 days and the loan's rate by default; the report lets the user set the rate and the cycle
- *  length P, and every "30" below then reads P: the rate is charged once per P days)
+ *  length P. The rate is always per 30 days: a cycle of P days adds Balance * Rate% / 30 * P,
+ *  e.g. 1,00,000 at 3% with P = 60: 3,000 / 30 = 100 a day, x 60 = 6,000, then 6,360 on 1,06,000.
+ *  Every "30-day cycle" below then reads "P-day cycle"; leftover days are always R / 30.)
  * 
  * IMPORTANT:
  * This engine is PURELY READ-ONLY and INFORMATIONAL.
@@ -75,7 +77,7 @@ export interface CISummary {
   calculatedUntilDate: string;
   calculatedUntil: string;
   monthlyInterestRate: number;
-  /** Days in one cycle; monthlyInterestRate is charged once per cycle */
+  /** Days in one cycle; each cycle adds monthlyInterestRate (per 30 days) for its days */
   periodDays: number;
   tooltipText: string;
 }
@@ -89,14 +91,16 @@ export const TOOLTIP_TEXT = "Estimated compounded value based on pure 30-day tim
 
 /** The report's note for the chosen period (30 days unless the user changed it in the report). */
 export const tooltipFor = (periodDays: number = 30) =>
-  `Estimated compounded value based on pure ${periodDays}-day time cycles, payments and principal reductions. Informational only.`;
+  periodDays === 30
+    ? TOOLTIP_TEXT
+    : `Estimated compounded value based on pure ${periodDays}-day time cycles (rate per 30 days, added every ${periodDays} days), payments and principal reductions. Informational only.`;
 
 /** Default rate and period of the Compound Interest report (the user can change both there). */
 export const CI_DEFAULT_RATE = 3;
 export const CI_DEFAULT_PERIOD_DAYS = 30;
 
 export interface CIOptions {
-  /** Days in one compounding cycle (default 30); the rate is charged once per cycle */
+  /** Days in one compounding cycle (default 30); the rate stays per 30 days, interest is added every cycle */
   periodDays?: number;
 }
 
@@ -122,7 +126,7 @@ export const cdCompoundInterestEngine = {
     asOfDate?: string,
     options: CIOptions = {}
   ): CIResult {
-    // Rate % charged once per cycle of P days (the report lets the user change both)
+    // Rate % per 30 days, added to the balance every P days (the report lets the user change both)
     const monthlyRate = Number(loan.interest_rate) || 0;
     const P = Math.max(1, Math.round(Number(options.periodDays) || CI_DEFAULT_PERIOD_DAYS));
     const loanStartDate = (loan.date || '').split('T')[0];
@@ -365,7 +369,8 @@ export const cdCompoundInterestEngine = {
         let cycleInterest = 0;
 
         if (currentBalance > 0 && monthlyRate > 0) {
-          cycleInterest = round2(currentBalance * (monthlyRate / 100));
+          // Rate is per 30 days: (Balance * Rate%) / 30 a day, for the P days of the cycle
+          cycleInterest = round2(currentBalance * (monthlyRate / 100) * (P / 30));
         }
 
         accumulatedInterest += cycleInterest;
@@ -415,8 +420,8 @@ export const cdCompoundInterestEngine = {
         let partialInterest = 0;
 
         if (currentBalance > 0 && monthlyRate > 0) {
-          // Prorated interest formula: Current Balance * (Rate / 100) * (Remaining Days / P)
-          partialInterest = round2(currentBalance * (monthlyRate / 100) * (remainingDays / P));
+          // Leftover days at the same per-day rate: Current Balance * (Rate / 100) * (Remaining Days / 30)
+          partialInterest = round2(currentBalance * (monthlyRate / 100) * (remainingDays / 30));
         }
 
         accumulatedInterest += partialInterest;

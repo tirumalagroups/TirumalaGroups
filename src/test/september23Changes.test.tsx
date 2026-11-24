@@ -84,13 +84,33 @@ describe('Compound Interest report: rate and period chosen by the user', () => {
     expect(r.summary.tooltipText).toBe(TOOLTIP_TEXT);
   });
 
-  it('period 15 days: 3% added every 15 days (as typed), 5 cycles in 75 days', () => {
+  // 24 Nov 2026 (user's rule): the rate is per 30 days; the period only says how often it is added.
+  // Interest of a period = Balance x Rate% / 30 x period days.
+  it('period 15 days: 3% / 30 x 15 = 1.5% added every 15 days, 5 cycles in 75 days', () => {
     const r = cdCompoundInterestEngine.calculateCITimeline(loan, [], '2026-10-27', { periodDays: 15 });
     expect(r.reportRows.map(x => x.days)).toEqual([0, 15, 15, 15, 15, 15]);
-    expect(r.reportRows.map(x => x.endBalance)).toEqual([10000, 10300, 10609, 10927.27, 11255.09, 11592.74]);
-    expect(r.summary.finalCompoundBalance).toBe(11592.74);
+    expect(r.reportRows.map(x => x.interest)).toEqual([0, 150, 152.25, 154.53, 156.85, 159.2]);
+    expect(r.reportRows.map(x => x.endBalance)).toEqual([10000, 10150, 10302.25, 10456.78, 10613.63, 10772.83]);
+    expect(r.summary.finalCompoundBalance).toBe(10772.83);
     expect(r.summary.tooltipText).toBe(tooltipFor(15));
     expect(r.summary.tooltipText).toContain('15-day');
+    expect(r.summary.tooltipText).toContain('rate per 30 days');
+  });
+
+  it("user's example: 1,00,000 at 3%, period 60 days: 6,000 then 6,360 (on 1,06,000)", () => {
+    const big = { ...loan, amount: 100000 };
+    const r = cdCompoundInterestEngine.calculateCITimeline(big, [], '2026-12-11', { periodDays: 60 }); // 120 days
+    expect(r.reportRows.map(x => x.days)).toEqual([0, 60, 60]);
+    expect(r.reportRows.map(x => x.interest)).toEqual([0, 6000, 6360]);
+    expect(r.summary.finalCompoundBalance).toBe(112360);
+  });
+
+  it('leftover days get the same per-day rate: 75 days at 60-day period = 6,000 + 1,06,000 x 3% / 30 x 15', () => {
+    const big = { ...loan, amount: 100000 };
+    const r = cdCompoundInterestEngine.calculateCITimeline(big, [], '2026-10-27', { periodDays: 60 }); // 75 days
+    expect(r.reportRows.map(x => x.days)).toEqual([0, 60, 15]);
+    expect(r.reportRows.map(x => x.interest)).toEqual([0, 6000, 1590]);
+    expect(r.summary.finalCompoundBalance).toBe(107590);
   });
 
   it('rate 2%, 30 days: two cycles, then 15 days at half the rate', () => {

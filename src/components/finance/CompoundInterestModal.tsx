@@ -7,9 +7,9 @@ interface CompoundInterestModalProps {
   onClose: () => void;
   cdNumber: string;
   customerName: string;
-  /** Rate % charged once per cycle (default 3, the user can change it here) */
+  /** Rate % per 30 days (default 3, the user can change it here) */
   interestRate: number;
-  /** Days in one cycle (default 30, the user can change it here) */
+  /** Days in one cycle: how often the interest is added (default 30, the user can change it here) */
   periodDays: number;
   onInterestRateChange: (rate: number) => void;
   onPeriodDaysChange: (days: number) => void;
