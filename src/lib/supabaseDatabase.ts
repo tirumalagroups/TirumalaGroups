@@ -2713,8 +2713,12 @@ class SupabaseDatabase {
       // Step 2: Try to insert into deleted_cash_book table first
       console.log('📝 Step 2: Attempting to insert into deleted_cash_book table...');
       
+      // In Deleted Records, "approved" means the delete was approved. Every delete
+      // starts as a request waiting in Approve Records, also when the entry itself
+      // had been approved (copying that status hid the request from the admin).
       const deletedEntry = {
         ...oldEntry,
+        approved: false,
         deleted_by: deletedBy || 'unknown',
         deleted_at: new Date().toISOString(),
       };
@@ -4506,6 +4510,9 @@ class SupabaseDatabase {
         delete (restoredEntry as any).deleted_by;
         delete (restoredEntry as any).deleted_at;
         restoredEntry.updated_at = new Date().toISOString();
+        // "approved" here was the approval of the delete, not of the entry:
+        // a restored entry comes back waiting for approval in Approve Records
+        restoredEntry.approved = 'false';
 
         console.log('📝 Restored entry data:', restoredEntry);
 

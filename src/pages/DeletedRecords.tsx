@@ -9,6 +9,7 @@ import { useBook } from '../contexts/BookContext';
 import { useTableMode } from '../contexts/TableModeContext';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import { deletedOnDay } from '../utils/dateUtils';
 import {
   Trash2,
   RotateCcw,
@@ -247,9 +248,8 @@ const DeletedRecords: React.FC = () => {
 
     // Date filter
     if (selectedDate) {
-      filtered = filtered.filter(record => 
-        record.deleted_at?.startsWith(selectedDate)
-      );
+      // Same day as the calendar marks (local time, not the UTC date in deleted_at)
+      filtered = filtered.filter(record => deletedOnDay(record) === selectedDate);
     }
 
     // Company filter

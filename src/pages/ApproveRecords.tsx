@@ -13,6 +13,7 @@ import ModeLabel from '../components/UI/ModeLabel';
 import { format } from 'date-fns';
 import { getTableName } from '../lib/tableNames';
 import { getSharedPrintStyles } from '../utils/print';
+import { deletedOnDay } from '../utils/dateUtils';
 import { useBook } from '../contexts/BookContext';
 import {
   FileText,
@@ -389,9 +390,9 @@ const ApproveRecords: React.FC = () => {
     }
     setFilteredApprovedEntries(approved);
 
-    // 3. Apply filters to deleted records
+    // 3. Apply filters to deleted records (by the day the entry was deleted, as on the Deleted Records page)
     let del = [...deletedEntries];
-    if (filters.date) del = del.filter(d => d.c_date === filters.date);
+    if (filters.date) del = del.filter(d => deletedOnDay(d) === filters.date);
     if (filters.company) del = del.filter(d => d.company_name === filters.company);
     if (filters.mainAccount) del = del.filter(d => d.acc_name === filters.mainAccount);
     if (filters.subAccount) del = del.filter(d => d.sub_acc_name === filters.subAccount);
@@ -440,7 +441,7 @@ const ApproveRecords: React.FC = () => {
     
     // Apply same filters to deleted records
     if (filters.date) {
-      deletedFiltered = deletedFiltered.filter(d => d.c_date === filters.date);
+      deletedFiltered = deletedFiltered.filter(d => deletedOnDay(d) === filters.date);
     }
     if (filters.company) {
       deletedFiltered = deletedFiltered.filter(d => d.company_name === filters.company);
@@ -700,49 +701,16 @@ const ApproveRecords: React.FC = () => {
     }
     try {
       setLoading(true);
-      const { error } = await supabase
-        .from(getTableName('deleted_cash_book'))
-        .update({ approved: 'rejected' })
-        .eq('id', id);
-      if (error) throw error;
-      toast.success('Deleted record rejected');
-      
-      // Update localStorage to mark the record as rejected
-      try {
-        const deletedRecordsStr = localStorage.getItem('deleted_records');
-        if (deletedRecordsStr) {
-          const deletedRecords = JSON.parse(deletedRecordsStr);
-          const updatedRecords = deletedRecords.map((record: any) => 
-            record.id === id ? { ...record, approved: 'rejected' } : record
-          );
-          localStorage.setItem('deleted_records', JSON.stringify(updatedRecords));
-          console.log('✅ Updated localStorage with rejected status');
-        }
-      } catch (error) {
-        console.error('❌ Error updating localStorage:', error);
-      }
-      
-      // Immediately remove the rejected record from the local state and update summary
-      setDeletedEntries(prev => {
-        const updated = prev.filter(entry => entry.id !== id);
-        // Update summary immediately after state change
-        setTimeout(() => {
-          updateSummary();
-          // Also update deleted summary directly
-          setDeletedSummary(prevSummary => ({
-            ...prevSummary,
-            totalRecords: prevSummary.totalRecords - 1,
-            rejectedDeleted: prevSummary.rejectedDeleted + 1,
-            pendingDeleted: prevSummary.pendingDeleted - 1
-          }));
-        }, 0);
-        return updated;
-      });
-      
-      // Update filtered list immediately
+      // Reject = the delete is not allowed: undo it. The entry goes back into the Day Book
+      // (waiting for approval) and leaves Deleted Records, the same as Restore on that page.
+      // (Saving approved = 'rejected' always failed: that column only takes true / false.)
+      const restored = await supabaseDB.restoreCashBookEntry(id);
+      if (!restored) throw new Error('The entry could not be put back in the Day Book');
+      toast.success('Delete rejected: the entry is back in the Day Book');
+
+      // Remove it from the deleted list at once, then reload everything
+      setDeletedEntries(prev => prev.filter(entry => entry.id !== id));
       setFilteredDeletedEntries(prev => prev.filter(entry => entry.id !== id));
-      
-      // Also reload to get updated data
       await loadEntries();
       
       // Trigger dashboard refresh

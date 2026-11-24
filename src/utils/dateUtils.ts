@@ -35,3 +35,15 @@ export function isValidDateStr(dateStr: string): boolean {
   }
   return false;
 }
+
+/**
+ * The day (YYYY-MM-DD, local time) a Day Book entry was deleted.
+ * Falls back to the entry's own date when the delete time is missing.
+ */
+export function deletedOnDay(record: { deleted_at?: string | null; c_date?: string | null }): string {
+  if (record?.deleted_at) {
+    const when = new Date(record.deleted_at);
+    if (!isNaN(when.getTime())) return getLocalBusinessDateISO(when);
+  }
+  return record?.c_date || '';
+}
