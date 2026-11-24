@@ -121,7 +121,7 @@ const Login: React.FC = () => {
             <div className='relative'>
               <Input
                 label='Password'
-                type={showPassword ? 'text' : 'password'}
+                password type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={setPassword}
                 placeholder='Enter your password'

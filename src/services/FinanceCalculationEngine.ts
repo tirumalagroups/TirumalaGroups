@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { financeCalculationService } from './financeCalculationService';
 import { dailyFinancialTransactionService, normalizeHeadOfAccount } from './dailyFinancialTransactionService';
 import { getLocalBusinessDateISO } from '../utils/dateUtils';
+import { computeHPPosition, hpPaymentsFromTransactions } from './hpLedgerEngine';
 
 /**
  * Finance Calculation Engine
@@ -458,6 +459,58 @@ export class FinanceCalculationEngine {
   /**
    * Translates raw Non-CD database records into standardized OverdueDueItems.
    */
+  /**
+   * Due List / Business Report row for an HP loan, from the HP engine (installment rules, per-period
+   * interest, late interest and penalty). loanTxs = the loan's finance_transactions.
+   */
+  static buildHPDueItem(
+    loan: any,
+    borrowerMap: Map<string, any>,
+    loanTxs: any[],
+    targetDate: string
+  ): OverdueDueItem & { principalPaid: number } {
+    const borrower = borrowerMap.get(loan.customer_id) || {};
+    const g1 = borrowerMap.get(loan.guarantor_1_id) || {};
+    const g2 = borrowerMap.get(loan.guarantor_2_id) || {};
+    const pos = computeHPPosition(loan, hpPaymentsFromTransactions(loanTxs), targetDate);
+    const cleanStatus = (loan.status || '').trim().toUpperCase();
+    const isNpaClosed = cleanStatus === 'NPA_CLOSED' || cleanStatus === 'NPA CLOSED' || cleanStatus === 'NPA';
+    const active = cleanStatus === 'ACTIVE' && pos.status === 'Active';
+    const interestPaid = Number((pos.interestPaid + pos.lateInterestPaid).toFixed(2));
+    return {
+      id: loan.id,
+      loanId: loan.loan_id,
+      customerName: borrower.name || '',
+      loanCategory: 'HP',
+      loanType: 'HP',
+      loanAmount: Number(loan.amount) || 0,
+      currentPrincipal: active ? pos.principalBalance : 0,
+      loanDate: String(loan.date || '').split('T')[0],
+      currentDueDate: (active && (pos.oldestUnpaidDueDate || pos.nextDue?.dueDate)) || String(loan.date || '').split('T')[0],
+      interestPaid,
+      pendingInterest: active ? Number((pos.interestDue + pos.lateInterestDue).toFixed(2)) : 0,
+      penalty: active ? pos.penaltyDue : 0,
+      penaltyPaid: pos.penaltyPaid,
+      presentDue: active ? pos.totalDue : 0,
+      dueDays: active ? pos.dueDays : 0,
+      isNPA: isNpaClosed || (active && pos.isNPA),
+      phone: borrower.phone || borrower.phone_1 || borrower.phone_2 || '',
+      g1Name: g1.name || '',
+      g1Phone: g1.phone || g1.phone_1 || g1.phone_2 || '',
+      g2Name: g2.name || '',
+      g2Phone: g2.phone || g2.phone_1 || g2.phone_2 || '',
+      partnerName: loan.partner_name || borrower.partner_name || 'Unassigned',
+      status: loan.status,
+      customer_id: loan.customer_id,
+      guarantor_1_id: loan.guarantor_1_id,
+      guarantor_2_id: loan.guarantor_2_id,
+      closingAmount: active ? pos.totalForClose : 0,
+      totalPaid: Number((pos.principalPaid + interestPaid + pos.penaltyPaid).toFixed(2)),
+      pendingPenalty: active ? pos.penaltyDue : 0,
+      principalPaid: pos.principalPaid
+    };
+  }
+
   static buildNonCdDueItem(
     loan: any,
     borrowerMap: Map<string, any>,

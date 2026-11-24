@@ -505,12 +505,13 @@ const FinanceEditEntry: React.FC = () => {
       {/* Day Book / Capital edit dialog */}
       {formRow && (
         <div className={OVERLAY}>
-          <div className={`${PANEL} max-w-3xl max-h-[90vh]`}>
+          <div className={`${PANEL} max-w-5xl max-h-[94vh]`}>
             <div className={DIALOG_HEAD}>
               <h3 className={DIALOG_TITLE}>Edit {formRow.kind === 'CASHBOOK' ? 'Day Book' : 'Capital'} Entry</h3>
               <button type='button' className={BTN_LIGHT} onClick={() => setFormRow(null)}>Close</button>
             </div>
-            <div className='p-5 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4'>
+            {/* Tall enough that the date calendar opens inside the box */}
+            <div className='p-5 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4 content-start min-h-[480px]'>
               <div>
                 <label className={LABEL}>Date</label>
                 <FinanceSmartCalendar value={form.date} onChange={v => setForm(f => ({ ...f, date: v }))} module='DAY_BOOK' />
@@ -526,8 +527,11 @@ const FinanceEditEntry: React.FC = () => {
               ) : (
                 <Field label='Partner' value={formRow.customerName || formRow.partnerName} />
               )}
-              <Input label='Credit' value={form.credit} onChange={v => setForm(f => ({ ...f, credit: v }))} inputMode='decimal' />
-              <Input label='Debit' value={form.debit} onChange={v => setForm(f => ({ ...f, debit: v }))} inputMode='decimal' />
+              {/* Only one of Credit / Debit: typing in one locks the other; clearing it unlocks */}
+              <Input label='Credit' value={form.credit} onChange={v => setForm(f => ({ ...f, credit: v }))} inputMode='decimal'
+                disabled={form.debit.trim() !== '' && Number(form.debit) !== 0} />
+              <Input label='Debit' value={form.debit} onChange={v => setForm(f => ({ ...f, debit: v }))} inputMode='decimal'
+                disabled={form.credit.trim() !== '' && Number(form.credit) !== 0} />
               <div className='md:col-span-2'>
                 <Input label='Particulars' value={form.particulars} onChange={v => setForm(f => ({ ...f, particulars: v }))} />
               </div>
@@ -543,7 +547,7 @@ const FinanceEditEntry: React.FC = () => {
       {/* Receipt edit dialog */}
       {receiptRow && receiptTx && (
         <div className={OVERLAY}>
-          <div className={`${PANEL} max-w-4xl max-h-[92vh]`}>
+          <div className={`${PANEL} max-w-5xl max-h-[94vh]`}>
             <div className={DIALOG_HEAD}>
               <div>
                 <h3 className={DIALOG_TITLE}>Edit Receipt {receiptTx.receipt_no}</h3>
@@ -551,14 +555,15 @@ const FinanceEditEntry: React.FC = () => {
               </div>
               <button type='button' className={BTN_LIGHT} onClick={() => { setReceiptRow(null); setReceiptTx(null); }}>Close</button>
             </div>
-            <div className='p-5 overflow-y-auto space-y-4'>
+            <div className='p-5 overflow-y-auto space-y-4 min-h-[480px]'>
               <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
                 <Input label='Total Amount Paid' value={rcForm.amount} onChange={v => setRcForm(f => ({ ...f, amount: v }))} inputMode='decimal' />
                 <div>
                   <label className={LABEL}>Payment Date</label>
                   <FinanceSmartCalendar value={rcForm.date} onChange={v => setRcForm(f => ({ ...f, date: v }))} module='DAY_BOOK' />
                 </div>
-                <Input label='Receipt No' value={rcForm.receiptNo} onChange={v => setRcForm(f => ({ ...f, receiptNo: v }))} />
+                {/* Receipt numbers are made by the system, so they cannot be changed here */}
+                <Input label='Receipt No' value={rcForm.receiptNo} disabled readOnly />
               </div>
               <p className='text-[13px] text-slate-600 font-semibold'>
                 Penalty, interest and principal are worked out from the amount by the same rules as a new payment,
@@ -649,7 +654,7 @@ const FinanceEditEntry: React.FC = () => {
             <div className='p-5 overflow-y-auto space-y-3 text-sm font-semibold text-slate-800'>
               {deleteRow.kind === 'RECEIPT' ? (
                 <>
-                  <p>This removes the full payment of <strong>{fmt2(Number(deleteTx?.amount))}</strong> and recalculates the whole loan. It can be restored from Edited / Deleted Logs.</p>
+                  <p>This removes the full payment of <strong>{fmt2(Number(deleteTx?.amount))}</strong> and recalculates the whole loan. It can be restored from Edited / Deleted Entry.</p>
                   {deletePreview && deletePreview.blockers.length > 0 && (
                     <div className='border border-rose-300 bg-rose-50 text-rose-900 rounded-lg p-3 font-bold space-y-1'>
                       {deletePreview.blockers.map((b, i) => <div key={i}>{b}</div>)}
@@ -664,7 +669,7 @@ const FinanceEditEntry: React.FC = () => {
                   <Input label='Reason for deleting *' value={deleteReason} onChange={setDeleteReason} />
                 </>
               ) : (
-                <p>Delete this entry of <strong>{fmt2(Math.max(deleteRow.credit, deleteRow.debit))}</strong>? It can be restored from Edited / Deleted Logs.</p>
+                <p>Delete this entry of <strong>{fmt2(Math.max(deleteRow.credit, deleteRow.debit))}</strong>? It can be restored from Edited / Deleted Entry.</p>
               )}
             </div>
             <div className={DIALOG_FOOT}>

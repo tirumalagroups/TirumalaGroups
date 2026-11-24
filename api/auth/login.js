@@ -6,7 +6,7 @@
 //   * existing users move to the new login the first time they log in, with the same password
 //     (checked once against the old stored hash); a password shorter than 8 must be changed at once
 //   * one login per user: any other login of this user ends
-//   * Login History gets the IP Vercel saw, the browser and the device
+//   * Login History gets the IP Vercel saw, the browser, the device and the place (city, state, country)
 import bcrypt from 'bcryptjs';
 import {
   json, configProblem, serviceClient, userClient, authEmail, decodeJwt, randomPassword,
@@ -15,11 +15,24 @@ import {
 
 const WRONG = 'Invalid username or password';
 
+/** Adds the place to the Login History row. Never stops a login: before the location SQL is run
+ *  (no "location" column yet) this just does nothing. */
+const saveLocation = async (db, historyId, location) => {
+  if (!historyId || !location) return;
+  try {
+    const { error } = await db.from('login_history').update({ location }).eq('id', historyId);
+    if (error) console.warn('[api/auth/login] location not saved:', error.message);
+  } catch (e) {
+    console.warn('[api/auth/login] location not saved:', e?.message || e);
+  }
+};
+
 const fail = async (db, info, user, username, reason, count, message, status = 401) => {
   const { data } = await db.rpc('app_record_failed_login', {
     p_user_id: user?.id ?? null, p_username: user?.username ?? username, p_reason: reason, p_count: count,
     p_ip: info.ip, p_browser: info.browser, p_os: info.os, p_device: info.device,
   });
+  await saveLocation(db, data?.login_history_id, info.location);
   if (data?.locked_until) {
     return json({ error: 'Too many wrong passwords. The account is locked for 15 minutes, or until an admin unlocks it.', locked: true }, 423);
   }
@@ -115,11 +128,12 @@ export async function POST(request) {
     const token = grant.session.access_token;
     const claims = decodeJwt(token);
     if (!claims?.session_id) throw new Error('login token has no session id');
-    const { error: startErr } = await db.rpc('app_start_session', {
+    const { data: started, error: startErr } = await db.rpc('app_start_session', {
       p_user_id: user.id, p_auth_user_id: authId, p_session_id: claims.session_id,
       p_ip: info.ip, p_browser: info.browser, p_os: info.os, p_device: info.device, p_user_agent: info.ua,
     });
     if (startErr) throw startErr;
+    await saveLocation(db, started?.login_history_id, info.location);
 
     const { data: me, error: meErr } = await userClient(token).rpc('app_me');
     if (meErr) throw meErr;

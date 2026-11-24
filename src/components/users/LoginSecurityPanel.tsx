@@ -60,6 +60,7 @@ const LoginSecurityPanel: React.FC<Props> = ({ onUsersChanged, initialTab }) => 
   const [requests, setRequests] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [historyUser, setHistoryUser] = useState('');
+  const [userNames, setUserNames] = useState<string[]>([]);
   const [from, setFrom] = useState(daysAgo(7));
   const [to, setTo] = useState(today());
   const [resetFor, setResetFor] = useState<{ requestId?: string; userId: string; username: string } | null>(null);
@@ -105,6 +106,14 @@ const LoginSecurityPanel: React.FC<Props> = ({ onUsersChanged, initialTab }) => 
     if (error) throw error;
     setHistory(data || []);
   }, [from, to, historyUser]);
+
+  // Usernames for the Login History "Username" list
+  useEffect(() => {
+    db().from('users').select('username').order('username').then(({ data }) => {
+      const names = (data || []).map((u: any) => String(u.username || '')).filter(Boolean);
+      setUserNames([...new Set(names)]);
+    });
+  }, []);
 
   const refresh = useCallback(async () => {
     setBusy(true);
@@ -359,7 +368,10 @@ const LoginSecurityPanel: React.FC<Props> = ({ onUsersChanged, initialTab }) => 
                 <input type='date' value={to} onChange={e => setTo(e.target.value)} className='block mt-1 px-2 py-1.5 border border-gray-300 rounded-md' />
               </label>
               <label className='text-sm font-medium text-gray-700'>Username
-                <input type='text' value={historyUser} onChange={e => setHistoryUser(e.target.value)} placeholder='All users' className='block mt-1 px-2 py-1.5 border border-gray-300 rounded-md' />
+                <select value={historyUser} onChange={e => setHistoryUser(e.target.value)} className='block mt-1 px-2 py-1.5 border border-gray-300 rounded-md bg-white min-w-[10rem]'>
+                  <option value=''>All users</option>
+                  {userNames.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
               </label>
               <Button size='sm' disabled={busy} onClick={() => loadHistory().catch(e => toast.error(e.message))}>Show</Button>
             </div>
@@ -373,6 +385,7 @@ const LoginSecurityPanel: React.FC<Props> = ({ onUsersChanged, initialTab }) => 
                     <th className='text-left'>User</th>
                     <th className='text-left'>Result</th>
                     <th className='text-left'>IP Address</th>
+                    <th className='text-left'>Location</th>
                     <th className='text-left'>Device</th>
                     <th className='text-left'>Logout</th>
                     <th className='text-left'>How It Ended</th>
@@ -391,6 +404,7 @@ const LoginSecurityPanel: React.FC<Props> = ({ onUsersChanged, initialTab }) => 
                         {!h.success && h.failure_reason ? <span className='block text-xs text-red-700'>{h.failure_reason}</span> : null}
                       </td>
                       <td className='fit-nowrap font-mono'>{h.ip_address || '-'}</td>
+                      <td>{h.location || '-'}</td>
                       <td>{h.device || '-'} / {h.os || '-'} / {h.browser || '-'}</td>
                       <td className='fit-nowrap'>{h.success ? fmt(h.logout_time) : '-'}</td>
                       <td>{h.end_reason ? END_LABEL[h.end_reason] || h.end_reason : h.success && !h.logout_time ? 'Still logged in, or old record' : '-'}</td>
@@ -413,6 +427,7 @@ const LoginSecurityPanel: React.FC<Props> = ({ onUsersChanged, initialTab }) => 
               Any login of theirs ends now. The password is not stored anywhere readable.
             </p>
             <input
+              data-password='true'
               type='text'
               value={resetText}
               onChange={e => setResetText(e.target.value)}

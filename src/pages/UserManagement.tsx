@@ -44,6 +44,8 @@ type ModeFeatures = Record<ModeKey, string[]>;
 interface Feature {
   key: string;
   name: string;
+  /** Menu only admins can open: listed so every menu shows, but greyed out and cannot be given */
+  adminOnly?: boolean;
 }
 
 const MODE_VALUES: ModeKey[] = ['regular', 'itr', 'finance'];
@@ -84,7 +86,12 @@ const REGULAR_FEATURES: Feature[] = [
   { key: 'bank_guarantees', name: 'Bank Guarantees' },
   { key: 'drivers', name: 'Drivers' },
   { key: 'book_management', name: 'Book Management' },
+  { key: 'users', name: 'User Management', adminOnly: true },
+  { key: 'attendance', name: 'Attendance', adminOnly: true },
 ];
+
+// ITR has the same menus as Regular, except Attendance (Regular only)
+const ITR_FEATURES: Feature[] = REGULAR_FEATURES.filter(f => f.key !== 'attendance');
 
 const FINANCE_FEATURES: Feature[] = [
   { key: 'finance_dashboard', name: 'Dashboard' },
@@ -116,14 +123,14 @@ const FINANCE_FEATURES: Feature[] = [
   { key: 'final_statement', name: 'Final Statement' },
   { key: 'business_report', name: 'Business Details' },
   { key: 'partner_performance', name: 'Partner Performance' },
-  { key: 'logs', name: 'Edited / Deleted Logs' },
-  { key: 'ledger_settings', name: 'Ledger Settings' },
-  { key: 'user_access_management', name: 'User Management' },
+  { key: 'logs', name: 'Edited / Deleted Entry' },
+  { key: 'ledger_settings', name: 'Ledger Settings', adminOnly: true },
+  { key: 'user_access_management', name: 'User Management', adminOnly: true },
 ];
 
 const FEATURES_BY_MODE: Record<ModeKey, Feature[]> = {
   regular: REGULAR_FEATURES,
-  itr: REGULAR_FEATURES,
+  itr: ITR_FEATURES,
   finance: FINANCE_FEATURES,
 };
 
@@ -151,6 +158,58 @@ const getStaffName = () => {
 };
 
 const fmtDateTime = (v?: string | null) => (v ? new Date(v).toLocaleString('en-IN') : '-');
+
+// ─── Audit Log in plain words ────────────────────────────────────────────────
+
+const PROFILE_LABELS: Record<string, string> = {
+  full_name: 'Full name', phone: 'Phone', email: 'Email', address: 'Address', aadhaar_number: 'Aadhaar',
+  date_of_birth: 'Date of birth', other_details: 'Other details', branch: 'Branch', employee_id: 'Employee ID',
+  designation: 'Designation', role: 'Role', status: 'Status',
+};
+
+const parseKeys = (v: string | null | undefined): string[] => {
+  if (!v) return [];
+  try {
+    const list = JSON.parse(v);
+    return Array.isArray(list) ? list.map(String) : [];
+  } catch {
+    return [];
+  }
+};
+
+/** One audit row as plain sentences, e.g. "Finance permissions: added CD Ledger; removed Calculator" */
+export const describeAudit = (log: { field?: string | null; old_value?: string | null; new_value?: string | null }): string[] => {
+  const field = String(log.field || '');
+  const oldV = log.old_value ?? '';
+  const newV = log.new_value ?? '';
+  const perm = field.match(/^permissions \((.+)\)$/);
+  if (perm) {
+    const modeLabel = perm[1];
+    const isFinance = /finance/i.test(modeLabel);
+    const list = isFinance ? FINANCE_FEATURES : REGULAR_FEATURES;
+    const nameOf = (k: string) => list.find(f => f.key === k)?.name || k;
+    const before = parseKeys(oldV);
+    const after = parseKeys(newV);
+    const added = after.filter(k => !before.includes(k)).map(nameOf);
+    const removed = before.filter(k => !after.includes(k)).map(nameOf);
+    const what = modeLabel.replace(/\s*Mode$/i, '');
+    const parts: string[] = [];
+    if (added.length) parts.push(`added ${added.join(', ')}`);
+    if (removed.length) parts.push(`removed ${removed.join(', ')}`);
+    return [`${what} permissions: ${parts.length ? parts.join('; ') : 'no change'}`];
+  }
+  if (field === 'user') return [newV ? `New user created: ${newV.replace(/^Created as /, 'as ')}` : 'New user created'];
+  if (field === 'password') return [newV === 'TEMPORARY_SET' ? 'Temporary password set by admin (the user must change it at the next login)' : 'Password changed'];
+  if (field === 'status') {
+    if (newV === 'Deleted') return [`User deleted (status was ${oldV || '-'})`];
+    if (oldV === 'Deleted') return [`User restored (status now ${newV || '-'})`];
+    return [`Status: ${oldV || '-'} → ${newV || '-'}`];
+  }
+  const label = PROFILE_LABELS[field] || field.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+  if (!oldV && newV) return [`${label} added: ${newV}`];
+  if (oldV && !newV) return [`${label} removed (was ${oldV})`];
+  return [`${label}: ${oldV || '-'} → ${newV || '-'}`];
+};
 
 const isRecentlyCreated = (createdAt?: string | null) => {
   if (!createdAt) return false;
@@ -248,6 +307,19 @@ const PermissionPicker: React.FC<{
         <div className='p-4'>
           <div className='flex flex-wrap gap-2 sm:gap-3'>
             {FEATURES_BY_MODE[mode].map(f => {
+              if (f.adminOnly) {
+                return (
+                  <label
+                    key={`${mode}-${f.key}`}
+                    title='Only admins can open this menu'
+                    className='flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border-2 select-none text-xs sm:text-sm font-medium cursor-not-allowed bg-gray-100 text-gray-400 border-gray-200'
+                  >
+                    <input type='checkbox' checked={false} disabled readOnly className='w-5 h-5' />
+                    <span>{f.name}</span>
+                    <span className='px-1.5 py-0.5 rounded bg-gray-200 text-gray-500 text-[10px] font-bold uppercase'>Admin only</span>
+                  </label>
+                );
+              }
               const isSelected = selected.includes(f.key);
               return (
                 <label
@@ -274,6 +346,7 @@ const PermissionPicker: React.FC<{
           </div>
           <p className='mt-3 text-xs text-gray-500'>
             Select the features this user should have in {MODE_LABELS[mode]}. They will only see these options when using this mode.
+            {' '}Menus marked &quot;Admin only&quot; open for admins only and cannot be given to other users.
           </p>
         </div>
       </div>
@@ -1017,6 +1090,7 @@ const UserManagement: React.FC = () => {
                     <tr>
                       <th className='text-left'>Date &amp; Time</th>
                       <th className='text-left'>IP Address</th>
+                      <th className='text-left'>Location</th>
                       <th className='text-left'>Device</th>
                       <th className='text-left'>Result</th>
                     </tr>
@@ -1026,6 +1100,7 @@ const UserManagement: React.FC = () => {
                       <tr key={lh.id} className='border-t border-gray-100'>
                         <td className='fit-nowrap'>{fmtDateTime(lh.login_time)}</td>
                         <td className='fit-nowrap font-mono'>{lh.ip_address || '-'}</td>
+                        <td>{lh.location || '-'}</td>
                         <td>{lh.os || 'Unknown'} / {lh.browser || 'Unknown'}</td>
                         <td className='fit-nowrap'>
                           <span className={`px-2 py-0.5 rounded-full font-semibold ${lh.success ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
@@ -1046,22 +1121,28 @@ const UserManagement: React.FC = () => {
               ) : tabRows.length === 0 ? (
                 <p className='text-center text-gray-500 py-4 text-sm'>No administrative changes logged.</p>
               ) : (
-                <div className='space-y-2'>
-                  {tabRows.map(log => (
-                    <div key={log.id} className='p-3 border border-gray-200 rounded-lg text-sm'>
-                      <div className='flex justify-between gap-4 text-gray-500 text-xs mb-1'>
-                        <span>{fmtDateTime(log.created_at)}</span>
-                        <span>By {log.changed_by}</span>
-                      </div>
-                      <div className='text-gray-800 break-words'>
-                        Updated <span className='font-semibold text-blue-800'>{log.field}</span>
-                        {log.old_value ? <> from &quot;{log.old_value}&quot;</> : null}
-                        {log.new_value ? <> to &quot;{log.new_value}&quot;</> : null}
-                      </div>
-                      {log.reason && <p className='text-gray-600 mt-1 break-words'>Reason: {log.reason}</p>}
-                    </div>
-                  ))}
-                </div>
+                <table className='fit-table fit-lg border border-gray-200'>
+                  <thead className='bg-gray-50'>
+                    <tr>
+                      <th className='text-left'>Date &amp; Time</th>
+                      <th className='text-left'>Changed By</th>
+                      <th className='text-left'>What Changed</th>
+                      <th className='text-left'>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tabRows.map(log => (
+                      <tr key={log.id} className='border-t border-gray-100 align-top'>
+                        <td className='fit-nowrap'>{fmtDateTime(log.created_at)}</td>
+                        <td className='fit-nowrap font-semibold'>{log.changed_by || '-'}</td>
+                        <td className='break-words'>
+                          {describeAudit(log).map((line, i) => <div key={i}>{line}</div>)}
+                        </td>
+                        <td className='break-words text-gray-600'>{log.reason || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )
             )}
           </div>
@@ -1138,7 +1219,7 @@ const UserManagement: React.FC = () => {
               <div className='grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4'>
                 <Input label='Full Name' value={newUser.full_name} onChange={v => setNew('full_name', v)} placeholder='Enter full name' />
                 <Input label='Username (Login ID)' value={newUser.username} onChange={v => setNew('username', v)} placeholder='Enter username for login' required />
-                <Input label='Password (Login Password)' type='password' value={newUser.password} onChange={v => setNew('password', v)} placeholder='Enter password for login' required />
+                <Input label='Password (Login Password)' password type='password' value={newUser.password} onChange={v => setNew('password', v)} placeholder='Enter password for login' required />
                 <Input label='Email' type='email' value={newUser.email} onChange={v => setNew('email', v)} placeholder='Enter email address' />
                 <Input label='Phone Number' type='tel' value={newUser.phone} onChange={v => setNew('phone', v)} placeholder='Enter phone number' />
                 <Input label='Address' value={newUser.address} onChange={v => setNew('address', v)} placeholder='Enter address' />
@@ -1226,7 +1307,7 @@ const UserManagement: React.FC = () => {
         <div className='fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4'>
           <div className='bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4'>
             <h3 className='text-lg font-bold text-gray-900'>Reset password of {passwordFor.username}</h3>
-            <Input label={`New temporary password (min ${MIN_PASSWORD} characters)`} type='password' value={passwordText} onChange={setPasswordText} />
+            <Input label={`New temporary password (min ${MIN_PASSWORD} characters)`} password type='password' value={passwordText} onChange={setPasswordText} />
             <div className='flex justify-end gap-2'>
               <Button variant='secondary' onClick={() => setPasswordFor(null)}>Cancel</Button>
               <Button onClick={submitPasswordReset}>Continue</Button>

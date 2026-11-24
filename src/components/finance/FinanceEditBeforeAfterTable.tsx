@@ -1,11 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Database } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import Button from '../UI/Button';
 
-// Finance Edited Logs in the same look as Regular "Edited Records": every event is two rows,
-// Before (red) and After (green), one column per field, changed cells highlighted.
-// The rows are one record type at a time (Loans, Receipts, ...), so the columns fit that type.
+// Finance "Edited / Deleted Entry", edited side, in the look of the Finance Edit Entry table:
+// every event is two rows, Before and After, changed cells highlighted (before red, after yellow).
+// The rows are one record type at a time:
+//   * money entries (loan receipts, Day Book, capital) use the Edit Entry columns
+//     (Date, Customer, Head of Account, CD / Loan No, Particulars, Credit, Debit), given as `columns`;
+//   * other records (loans, customers, ...) get one column per edited field.
 // "Record created" events show "-" before and the new values after, labelled Created.
+// The same table is used on screen and in the print (printMode: every row, no buttons), so they match.
 
 export interface BeforeAfterField {
   field: string;
@@ -26,12 +30,26 @@ export interface BeforeAfterEvent {
   rawLog: { old_values?: any; new_values?: any };
 }
 
+/** A fixed column (Edit Entry style): what it shows before and after, and whether the edit changed it */
+export interface LogColumn<E> {
+  key: string;
+  label: string;
+  kind?: 'text' | 'credit' | 'debit' | 'code';
+  before: (e: E) => string;
+  after: (e: E) => string;
+  changed: (e: E) => boolean;
+}
+
 interface Props<E extends BeforeAfterEvent> {
   events: E[];
   formatValue: (field: string, value: any) => string;
   formatDate: (iso: string) => string;
   labelFor: (field: string) => string;
-  onView: (event: E) => void;
+  onView?: (event: E) => void;
+  /** Edit Entry columns for money entries; without it, one column per edited field */
+  columns?: LogColumn<E>[];
+  /** Print: every event on one page, no View button */
+  printMode?: boolean;
 }
 
 const PAGE_SIZE = 20;
@@ -39,8 +57,9 @@ const MAX_CREATE_ONLY_COLUMNS = 8;
 // Same colours as Regular Edited Records
 const highlightAfterClass = 'bg-yellow-100';
 const highlightBeforeClass = 'bg-red-50';
-const cell = 'px-1.5 py-1 text-sm font-bold align-top';
-const head = 'px-1.5 py-1.5 text-left font-semibold text-gray-700';
+// Same look as the Finance Edit Entry table
+const head = 'px-1.5 py-2.5 text-left border-r border-slate-300';
+const cell = 'px-1.5 py-2 border-r border-slate-100 font-bold text-slate-800 align-top';
 
 /** Columns for this record type: every field changed by an edit, most often changed first. */
 export const columnsFor = (events: BeforeAfterEvent[]): string[] => {
@@ -58,15 +77,54 @@ export const columnsFor = (events: BeforeAfterEvent[]): string[] => {
 const valueOf = (source: any, field: string): any =>
   source && typeof source === 'object' && field in source ? source[field] : undefined;
 
-function FinanceEditBeforeAfterTable<E extends BeforeAfterEvent>({ events, formatValue, formatDate, labelFor, onView }: Props<E>) {
-  const [page, setPage] = useState(1);
-  const columns = useMemo(() => columnsFor(events), [events]);
-  const totalPages = Math.max(1, Math.ceil(events.length / PAGE_SIZE));
-  useEffect(() => { setPage(1); }, [events]);
-  const pageEvents = events.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+const kindClass = (kind?: LogColumn<any>['kind']) => {
+  if (kind === 'credit') return 'text-right font-mono font-black text-emerald-700 tabular-nums whitespace-nowrap';
+  if (kind === 'debit') return 'text-right font-mono font-black text-rose-700 tabular-nums whitespace-nowrap';
+  if (kind === 'code') return 'font-mono font-black text-slate-900 whitespace-nowrap';
+  return '';
+};
+const headKindClass = (kind?: LogColumn<any>['kind']) => {
+  if (kind === 'credit') return 'text-right text-emerald-950 bg-emerald-100/60';
+  if (kind === 'debit') return 'text-right text-rose-950 bg-rose-100/60';
+  return '';
+};
 
+/** Field columns (loans, customers, ...) as fixed columns, so both kinds render the same way */
+export const fieldColumns = <E extends BeforeAfterEvent>(
+  events: E[], formatValue: (field: string, value: any) => string, labelFor: (field: string) => string
+): LogColumn<E>[] => {
   const show = (field: string, value: any) =>
     value === undefined || value === null || value === '' ? '' : formatValue(field, value);
+  return columnsFor(events).map(c => ({
+    key: c,
+    label: labelFor(c),
+    before: (e: E) => {
+      if (e.eventType === 'CREATE') return '-';
+      const f = e.changedFields.find(x => x.field === c);
+      return show(c, f ? f.oldValue : valueOf(e.rawLog.old_values, c));
+    },
+    after: (e: E) => {
+      const f = e.changedFields.find(x => x.field === c);
+      return show(c, f ? f.newValue : valueOf(e.rawLog.new_values, c));
+    },
+    changed: (e: E) => e.changedFields.some(x => x.field === c),
+  }));
+};
+
+function FinanceEditBeforeAfterTable<E extends BeforeAfterEvent>({
+  events, formatValue, formatDate, labelFor, onView, columns, printMode = false,
+}: Props<E>) {
+  const [page, setPage] = useState(1);
+  const moneyMode = !!columns;
+  const cols = useMemo(
+    () => columns || fieldColumns(events, formatValue, labelFor),
+    [columns, events, formatValue, labelFor]
+  );
+  const pageSize = printMode ? Math.max(1, events.length) : PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(events.length / pageSize));
+  useEffect(() => { setPage(1); }, [events]);
+  const pageEvents = printMode ? events : events.slice((page - 1) * pageSize, page * pageSize);
+  const showActions = !printMode && !!onView;
 
   if (events.length === 0) {
     return <div className='text-center py-8 text-gray-400 font-semibold text-sm'>No edits found.</div>;
@@ -74,66 +132,56 @@ function FinanceEditBeforeAfterTable<E extends BeforeAfterEvent>({ events, forma
 
   return (
     <div>
-      <div className='overflow-x-auto'>
-        <table className='fit-table fit-dense border border-gray-200'>
-          <thead className='sticky top-0 bg-gray-50 z-10'>
-            <tr className='border-b border-gray-200'>
-              <th className='px-1.5 py-1.5 text-center font-semibold text-gray-700 whitespace-nowrap'>S.No</th>
-              <th className={`${head} whitespace-nowrap`}>Type</th>
-              <th className={`${head} whitespace-nowrap`}>Loan No</th>
-              <th className={head}>Customer</th>
-              {columns.map(c => <th key={c} className={head}>{labelFor(c)}</th>)}
+      <div className={printMode ? '' : 'overflow-x-auto'}>
+        <table className='fit-table w-full divide-y divide-slate-200 border border-slate-200'>
+          <thead className={`${printMode ? '' : 'sticky top-0 z-10'} bg-slate-200 shadow-[inset_0_-2px_0_rgba(0,0,0,0.1)]`}>
+            <tr className='text-slate-950 uppercase font-black tracking-wider'>
+              <th className='px-1 py-2.5 text-center border-r border-slate-300'>#</th>
+              <th className={head}>Type</th>
+              {!moneyMode && <th className={head}>CD / Loan No</th>}
+              {!moneyMode && <th className={head}>Customer</th>}
+              {cols.map(c => <th key={c.key} className={`${head} ${headKindClass(c.kind)}`}>{c.label}</th>)}
               <th className={head}>Edited By</th>
-              <th className={head}>Edited At</th>
-              <th className={head}>Source</th>
-              <th className={`${head} text-right`}></th>
+              <th className={showActions ? head : head.replace(' border-r border-slate-300', '')}>Edited At</th>
+              {showActions && <th className='px-1.5 py-2.5 text-center'>Actions</th>}
             </tr>
           </thead>
-          <tbody>
+          <tbody className='bg-white'>
             {pageEvents.map((e, idx) => {
-              const changed = new Map(e.changedFields.map(f => [f.field, f]));
               const isCreate = e.eventType === 'CREATE';
-              const before = (c: string) => {
-                if (isCreate) return '-';
-                const f = changed.get(c);
-                return show(c, f ? f.oldValue : valueOf(e.rawLog.old_values, c));
-              };
-              const after = (c: string) => {
-                const f = changed.get(c);
-                return show(c, f ? f.newValue : valueOf(e.rawLog.new_values, c));
-              };
-              const isChanged = (c: string) => changed.has(c);
+              const n = (page - 1) * pageSize + idx + 1;
               return (
                 <React.Fragment key={e.id}>
                   {/* Before row */}
-                  <tr className='border-b border-gray-100 hover:bg-gray-50'>
-                    <td rowSpan={2} className={`${cell} text-center`}>{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                  <tr className='border-t border-slate-200 hover:bg-slate-50/90'>
+                    <td rowSpan={2} className='fit-nowrap px-1 py-2 text-center border-r border-slate-100 text-slate-500 font-bold align-top'>{n}</td>
                     <td className={`${cell} text-red-600`}>Before</td>
-                    <td rowSpan={2} className={`${cell} whitespace-nowrap text-blue-900`}>{e.displayLoanNo}</td>
-                    <td rowSpan={2} className={cell}>{e.displayCustomer}</td>
-                    {columns.map(c => (
-                      <td key={c + '-b'} className={`${cell} ${!isCreate && isChanged(c) ? highlightBeforeClass : ''}`}>{before(c)}</td>
+                    {!moneyMode && <td rowSpan={2} className={`${cell} font-mono font-black text-slate-900 whitespace-nowrap`}>{e.displayLoanNo}</td>}
+                    {!moneyMode && <td rowSpan={2} className={`${cell} font-black text-slate-950`}>{e.displayCustomer}</td>}
+                    {cols.map(c => (
+                      <td key={c.key + '-b'} className={`${cell} ${kindClass(c.kind)} ${!isCreate && c.changed(e) ? highlightBeforeClass : ''}`}>{c.before(e)}</td>
                     ))}
-                    <td rowSpan={2} className={`${cell} uppercase`}>{e.operator}</td>
+                    <td rowSpan={2} className={`${cell} uppercase text-slate-700`}>{e.operator}</td>
                     <td rowSpan={2} className={`${cell} whitespace-nowrap`}>{formatDate(e.timestamp)}</td>
-                    <td rowSpan={2} className={cell}>
-                      <span className='inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase bg-gray-100 text-gray-600 border border-gray-200'>{e.source}</span>
-                    </td>
-                    <td rowSpan={2} className={`${cell} text-right whitespace-nowrap`}>
-                      <button
-                        type='button'
-                        onClick={() => onView(e)}
-                        className='px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-[12px] font-bold inline-flex items-center gap-1'
-                      >
-                        <Database className='w-3.5 h-3.5' /> View
-                      </button>
-                    </td>
+                    {showActions && (
+                      <td rowSpan={2} className='fit-nowrap px-1.5 py-2 text-center align-top'>
+                        <button
+                          type='button'
+                          onClick={() => onView?.(e)}
+                          className='rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300'
+                          title='View Record'
+                          aria-label='View Record'
+                        >
+                          <Eye />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                   {/* After row */}
-                  <tr className='border-b-2 border-gray-200 hover:bg-gray-50'>
+                  <tr className='border-b-2 border-slate-300 hover:bg-slate-50/90'>
                     <td className={`${cell} text-green-700`}>{isCreate ? 'Created' : 'After'}</td>
-                    {columns.map(c => (
-                      <td key={c + '-a'} className={`${cell} ${isChanged(c) ? highlightAfterClass : ''}`}>{after(c)}</td>
+                    {cols.map(c => (
+                      <td key={c.key + '-a'} className={`${cell} ${kindClass(c.kind)} ${c.changed(e) ? highlightAfterClass : ''}`}>{c.after(e)}</td>
                     ))}
                   </tr>
                 </React.Fragment>
@@ -142,7 +190,7 @@ function FinanceEditBeforeAfterTable<E extends BeforeAfterEvent>({ events, forma
           </tbody>
         </table>
       </div>
-      {totalPages > 1 && (
+      {!printMode && totalPages > 1 && (
         <div className='flex justify-center items-center gap-2 mt-4'>
           <Button size='sm' variant='secondary' onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Prev</Button>
           <span className='text-sm'>Page {page} of {totalPages}</span>

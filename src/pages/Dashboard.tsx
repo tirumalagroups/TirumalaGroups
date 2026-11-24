@@ -1805,7 +1805,7 @@ const Dashboard: React.FC = () => {
               <div className='relative'>
                 <Input
                   label='Current Password'
-                  type={showCurrentPassword ? 'text' : 'password'}
+                  password type={showCurrentPassword ? 'text' : 'password'}
                   value={currentPassword}
                   onChange={setCurrentPassword}
                   placeholder='Enter current password'
@@ -1827,7 +1827,7 @@ const Dashboard: React.FC = () => {
               <div className='relative'>
                 <Input
                   label='New Password'
-                  type={showNewPassword ? 'text' : 'password'}
+                  password type={showNewPassword ? 'text' : 'password'}
                   value={newPassword}
                   onChange={setNewPassword}
                   placeholder='Enter new password (min 4 characters)'
@@ -1849,7 +1849,7 @@ const Dashboard: React.FC = () => {
               <div className='relative'>
                 <Input
                   label='Confirm New Password'
-                  type={showConfirmPassword ? 'text' : 'password'}
+                  password type={showConfirmPassword ? 'text' : 'password'}
                   value={confirmPassword}
                   onChange={setConfirmPassword}
                   placeholder='Confirm new password'

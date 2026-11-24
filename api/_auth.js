@@ -80,7 +80,42 @@ export const clientInfo = (request) => {
   else if (/Mac OS X|Macintosh/.test(ua)) os = 'Mac OS';
   else if (/Linux/.test(ua)) os = 'Linux';
   const device = /iPad|Tablet/.test(ua) ? 'Tablet' : /Mobile|Android|iPhone/.test(ua) ? 'Mobile' : 'Desktop';
-  return { ip, ua: ua.slice(0, 400), browser, os, device };
+  return { ip, ua: ua.slice(0, 400), browser, os, device, location: requestLocation(h) };
+};
+
+// Indian state / union territory codes (ISO 3166-2:IN, with the older and newer spellings)
+const IN_STATES = {
+  AN: 'Andaman and Nicobar', AP: 'Andhra Pradesh', AR: 'Arunachal Pradesh', AS: 'Assam', BR: 'Bihar',
+  CH: 'Chandigarh', CT: 'Chhattisgarh', CG: 'Chhattisgarh', DH: 'Dadra and Nagar Haveli and Daman and Diu',
+  DN: 'Dadra and Nagar Haveli', DD: 'Daman and Diu', DL: 'Delhi', GA: 'Goa', GJ: 'Gujarat', HR: 'Haryana',
+  HP: 'Himachal Pradesh', JK: 'Jammu and Kashmir', JH: 'Jharkhand', KA: 'Karnataka', KL: 'Kerala',
+  LA: 'Ladakh', LD: 'Lakshadweep', MP: 'Madhya Pradesh', MH: 'Maharashtra', MN: 'Manipur', ML: 'Meghalaya',
+  MZ: 'Mizoram', NL: 'Nagaland', OR: 'Odisha', OD: 'Odisha', PY: 'Puducherry', PB: 'Punjab', RJ: 'Rajasthan',
+  SK: 'Sikkim', TN: 'Tamil Nadu', TG: 'Telangana', TS: 'Telangana', TR: 'Tripura', UP: 'Uttar Pradesh',
+  UT: 'Uttarakhand', UK: 'Uttarakhand', WB: 'West Bengal',
+};
+
+const decodeHeader = (v) => {
+  if (!v) return '';
+  try { return decodeURIComponent(v).trim(); } catch { return String(v).trim(); }
+};
+
+/**
+ * Where the request came from, as Vercel worked it out from the IP ("Hyderabad, Telangana, India").
+ * Approximate (city level). null when not on Vercel (e.g. a local run) or Vercel did not know.
+ */
+export const requestLocation = (h) => {
+  const city = decodeHeader(h.get('x-vercel-ip-city'));
+  const regionCode = decodeHeader(h.get('x-vercel-ip-country-region')).toUpperCase();
+  const countryCode = decodeHeader(h.get('x-vercel-ip-country')).toUpperCase();
+  let country = countryCode;
+  if (/^[A-Z]{2}$/.test(countryCode)) {
+    try { country = new Intl.DisplayNames(['en'], { type: 'region' }).of(countryCode) || countryCode; } catch { /* keep the code */ }
+  }
+  const region = countryCode === 'IN' ? (IN_STATES[regionCode] || regionCode) : regionCode;
+  const parts = [city, region, country].filter(Boolean)
+    .filter((p, i, all) => all.findIndex(q => q.toLowerCase() === p.toLowerCase()) === i);
+  return parts.length ? parts.join(', ').slice(0, 120) : null;
 };
 
 /** Why a login ended, from the database's SESSION_ENDED:<reason> error */

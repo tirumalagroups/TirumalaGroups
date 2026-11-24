@@ -3,12 +3,14 @@ import Card from '../../components/UI/Card';
 import Button from '../../components/UI/Button';
 import { FinanceSmartCalendar } from '../../components/finance/FinanceSmartCalendar';
 import { supabaseFinance, FinanceEditedLog, FinanceDeletedLog } from '../../lib/supabaseFinance';
-import { Trash2, Edit2, Search, Calendar, Database, X, Printer, Download } from 'lucide-react';
+import { Trash2, Edit2, Search, Calendar, Eye, X, Printer, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { exportToExcel } from '../../utils/excel';
+import { displayHeadName, displayHeadText } from '../../utils/financeLabels';
 import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
-import FinanceEditBeforeAfterTable from '../../components/finance/FinanceEditBeforeAfterTable';
+import FinanceEditBeforeAfterTable, { fieldColumns, LogColumn } from '../../components/finance/FinanceEditBeforeAfterTable';
 
 export const ignoredKeys = new Set([
   'id',
@@ -349,6 +351,159 @@ export const getEventChangedFields = (log: FinanceEditedLog): ChangedField[] => 
   return changed;
 };
 
+// ─── Edit Entry columns for money entries ────────────────────────────────────
+
+/** Record types shown with the Edit Entry columns (Date ... Credit, Debit) */
+export const MONEY_TYPES = new Set(['finance_transactions', 'finance_cashbook_entries', 'finance_capital_entries']);
+
+const dmyOf = (d?: string | null): string => {
+  const [y, m, dd] = String(d || '').split('T')[0].split('-');
+  return y && m && dd ? `${dd}/${m}/${y}` : '—';
+};
+
+/** "09/11/2026 04:22 pm", as Edit Entry's Entry Date and Time */
+export const formatEditedAt = (iso: string): string => {
+  const t = new Date(iso);
+  if (!iso || isNaN(t.getTime())) return '-';
+  const day = `${String(t.getDate()).padStart(2, '0')}/${String(t.getMonth() + 1).padStart(2, '0')}/${t.getFullYear()}`;
+  return `${day} ${t.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+};
+
+const moneyText = (v: any): string => {
+  const n = Number(v);
+  if (v === null || v === undefined || v === '' || !Number.isFinite(n) || n === 0) return '-';
+  return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+const money2 = (v: any): string => (Number(v) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const receiptParticulars = (v: any): string => {
+  const parts = [`Receipt ${v.receipt_no || '-'}`];
+  if (v.principal_paid !== undefined || v.interest_paid !== undefined || v.penalty_paid !== undefined) {
+    parts.push(`Prin ${money2(v.principal_paid)}`, `Int ${money2(v.interest_paid)}`, `Pen ${money2(v.penalty_paid)}`);
+  } else if (v.remarks) {
+    parts.push(displayHeadText(v.remarks));
+  }
+  return parts.join(' · ');
+};
+
+/** A receipt deleted from Edit Entry is also logged as an edit whose new values are only { status: 'Deleted' } */
+const isDeletedMarker = (e: GroupedEditAuditEvent) => {
+  const n = e.rawLog.new_values || {};
+  return n.status === 'Deleted' && n.amount === undefined && n.credit === undefined;
+};
+
+export const moneyColumnsFor = (table: string): LogColumn<GroupedEditAuditEvent>[] => {
+  const isTx = table === 'finance_transactions';
+  const isCash = table === 'finance_cashbook_entries';
+  const side = (e: GroupedEditAuditEvent, s: 'b' | 'a') => (s === 'b' ? e.rawLog.old_values : e.rawLog.new_values) || {};
+  const col = (
+    key: string, label: string, kind: LogColumn<GroupedEditAuditEvent>['kind'], fields: string[],
+    get: (v: any, e: GroupedEditAuditEvent) => string
+  ): LogColumn<GroupedEditAuditEvent> => ({
+    key, label, kind,
+    before: e => (e.eventType === 'CREATE' ? '-' : get(side(e, 'b'), e)),
+    after: e => (isDeletedMarker(e) ? (key === 'particulars' ? 'DELETED' : '-') : get(side(e, 'a'), e)),
+    changed: e => isDeletedMarker(e) || e.changedFields.some(f => fields.includes(f.field)),
+  });
+  return [
+    col('date', 'Date', 'text', ['date', 'entry_date'], v => dmyOf(v.date || v.entry_date)),
+    col('customer', 'Customer', 'text', ['partner_name'], (v, e) =>
+      (table === 'finance_capital_entries' ? v.partner_name || e.displayCustomer : e.displayCustomer) || '—'),
+    col('head', 'Head of Account', 'text', ['head_of_account'], v =>
+      (isTx ? 'LOAN RECEIPT' : isCash ? displayHeadName(v.head_of_account) || '—' : 'CAPITAL')),
+    col('loan', 'CD / Loan No', 'code', ['account_number'], (v, e) =>
+      (isTx ? e.displayLoanNo : isCash ? v.account_number || '—' : '—')),
+    col('particulars', 'Particulars', 'text',
+      isTx ? ['receipt_no', 'remarks', 'principal_paid', 'interest_paid', 'penalty_paid'] : ['particulars'],
+      v => (isTx ? receiptParticulars(v) : displayHeadText(v.particulars) || '—')),
+    col('credit', 'Credit', 'credit', isTx ? ['amount'] : ['credit'], v => moneyText(isTx ? v.amount : v.credit)),
+    col('debit', 'Debit', 'debit', ['debit'], v => (isTx ? '-' : moneyText(v.debit))),
+  ];
+};
+
+/** One deleted record in the Edit Entry columns */
+export interface DeletedRow {
+  date: string;
+  customer: string;
+  head: string;
+  loanNo: string;
+  particulars: string;
+  credit: string;
+  debit: string;
+}
+
+/** Deleted entries in the Edit Entry table look; printMode: no buttons, no scrolling */
+const DeletedEntriesTable: React.FC<{
+  logs: FinanceDeletedLog[];
+  rowOf: (log: FinanceDeletedLog) => DeletedRow;
+  onView?: (log: FinanceDeletedLog) => void;
+  onRestore?: (log: FinanceDeletedLog) => void;
+  restoring?: string | null;
+  printMode?: boolean;
+}> = ({ logs, rowOf, onView, onRestore, restoring, printMode = false }) => {
+  const th = 'px-1.5 py-2.5 text-left border-r border-slate-300';
+  const td = 'px-1.5 py-2 border-r border-slate-100';
+  return (
+    <div className={printMode ? '' : 'overflow-x-auto'}>
+      <table className="fit-table w-full divide-y divide-slate-200 border border-slate-200">
+        <thead className={`${printMode ? '' : 'sticky top-0 z-10'} bg-slate-200 shadow-[inset_0_-2px_0_rgba(0,0,0,0.1)]`}>
+          <tr className="text-slate-950 uppercase font-black tracking-wider">
+            <th className="px-1 py-2.5 text-center border-r border-slate-300">#</th>
+            <th className={th}>Date</th>
+            <th className={th}>Customer</th>
+            <th className={th}>Head of Account</th>
+            <th className={th}>CD / Loan No</th>
+            <th className={th}>Particulars</th>
+            <th className={`${th} text-right text-emerald-950 bg-emerald-100/60`}>Credit</th>
+            <th className={`${th} text-right text-rose-950 bg-rose-100/60`}>Debit</th>
+            <th className={th}>Deleted By</th>
+            <th className={printMode ? 'px-1.5 py-2.5 text-left' : th}>Deleted At</th>
+            {!printMode && <th className="px-1.5 py-2.5 text-center">Actions</th>}
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-slate-200">
+          {logs.map((log, i) => {
+            const r = rowOf(log);
+            return (
+              <tr key={log.id} className="hover:bg-slate-50/90 transition-colors">
+                <td className="fit-nowrap px-1 py-2 text-center border-r border-slate-100 text-slate-500 font-bold">{i + 1}</td>
+                <td className={`fit-nowrap ${td} font-bold text-slate-900`}>{r.date}</td>
+                <td className={`fit-name ${td} font-black text-slate-950`}>{r.customer}</td>
+                <td className={`${td} font-bold text-slate-800`}>{r.head}</td>
+                <td className={`fit-nowrap ${td} font-mono font-black text-slate-900`}>{r.loanNo}</td>
+                <td className={`fit-particulars ${td} font-semibold text-slate-700`}>{r.particulars}</td>
+                <td className={`fit-nowrap ${td} text-right font-mono font-black text-emerald-700 tabular-nums`}>{r.credit}</td>
+                <td className={`fit-nowrap ${td} text-right font-mono font-black text-rose-700 tabular-nums`}>{r.debit}</td>
+                <td className={`${td} font-bold text-slate-700 uppercase`}>{log.deleted_by || '-'}</td>
+                <td className={`fit-nowrap ${printMode ? 'px-1.5 py-2' : td} font-bold text-slate-900`}>{formatEditedAt(log.deleted_at)}</td>
+                {!printMode && (
+                  <td className="fit-nowrap px-1.5 py-2 text-center">
+                    <div className="inline-flex gap-1 justify-center items-center">
+                      <button type="button" className="rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300" onClick={() => onView?.(log)} title="View Record" aria-label="View Record">
+                        <Eye />
+                      </button>
+                      {onRestore && (
+                        <button
+                          type="button"
+                          onClick={() => onRestore(log)}
+                          disabled={restoring === log.id}
+                          className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 text-[12px] font-bold uppercase disabled:opacity-50"
+                        >
+                          {restoring === log.id ? 'Restoring...' : 'Restore'}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 const EditedDeletedLogs: React.FC = () => {
   const { user } = useAuth();
   const [logType, setLogType] = useState<'edited' | 'deleted'>('edited');
@@ -356,6 +511,8 @@ const EditedDeletedLogs: React.FC = () => {
   const [deletedLogs, setDeletedLogs] = useState<FinanceDeletedLog[]>([]);
   const [loans, setLoans] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
+  // Loan of each edited receipt (receipt edits are logged by receipt id only)
+  const [receiptLoan, setReceiptLoan] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [restoring, setRestoring] = useState<string | null>(null);
 
@@ -389,6 +546,14 @@ const EditedDeletedLogs: React.FC = () => {
 
       const c = await supabaseFinance.getCustomers();
       setCustomers(c);
+
+      const txIds = Array.from(new Set(el.filter(l => l.table_name === 'finance_transactions').map(l => l.record_id).filter(Boolean)));
+      const byTx: Record<string, string> = {};
+      for (let i = 0; i < txIds.length; i += 200) {
+        const { data } = await supabase.from('finance_transactions').select('id, loan_id').in('id', txIds.slice(i, i + 200));
+        (data || []).forEach((t: any) => { if (t.loan_id) byTx[t.id] = t.loan_id; });
+      }
+      setReceiptLoan(byTx);
     } catch (err) {
       console.error(err);
       toast.error('FAILED TO LOAD LOGS REGISTRY');
@@ -471,6 +636,17 @@ const EditedDeletedLogs: React.FC = () => {
         const matchedLoan = loans.find(l => l.customer_id === log.record_id);
         displayLoanNo = matchedLoan?.loan_id || '';
         displayCustomer = oldVals.name || newVals.name || customerMap[log.record_id] || '';
+      } else if (log.table_name === 'finance_transactions') {
+        const lObj = loanMap[receiptLoan[log.record_id] || oldVals.loan_id || newVals.loan_id];
+        displayLoanNo = lObj?.loan_id || '';
+        displayCustomer = lObj?.customer?.name || customerMap[lObj?.customer_id] || '';
+      } else if (log.table_name === 'finance_cashbook_entries') {
+        const acct = newVals.account_number || oldVals.account_number || '';
+        const lObj = acct ? loanMap[acct] : null;
+        displayLoanNo = acct;
+        displayCustomer = lObj?.customer?.name || customerMap[lObj?.customer_id] || '';
+      } else if (log.table_name === 'finance_capital_entries') {
+        displayCustomer = newVals.partner_name || oldVals.partner_name || '';
       }
 
       const isCreate = !oldVals || Object.keys(oldVals).length === 0 || (newVals && newVals.source === 'RECORD CREATED');
@@ -522,7 +698,7 @@ const EditedDeletedLogs: React.FC = () => {
 
     // Sort newest first
     return result.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [editedLogs, loans, customers, customerMap, loanMap, guarantorLoanMap]);
+  }, [editedLogs, loans, customers, customerMap, loanMap, guarantorLoanMap, receiptLoan]);
 
   // Default date range = earliest to latest log date of the logs shown (Edited or Deleted).
   // It stays the default until the user picks a date; "Clear" goes back to the default.
@@ -636,12 +812,55 @@ const EditedDeletedLogs: React.FC = () => {
     }
   };
 
+  // Columns of the edited table: Edit Entry columns for money entries, else one per edited field.
+  // The screen, the print and the Excel all use these, so they always match.
+  const moneyColumns = useMemo(
+    () => (MONEY_TYPES.has(activeEditType) ? moneyColumnsFor(activeEditType) : undefined),
+    [activeEditType]
+  );
+  const editColumns = useMemo(
+    () => moneyColumns || fieldColumns(typeEvents, formatLogValue, mapFieldLabel),
+    [moneyColumns, typeEvents]
+  );
+
+  // A deleted record in the Edit Entry columns
+  const deletedRowOf = (log: FinanceDeletedLog): DeletedRow => {
+    const v = log.old_values || {};
+    const row: DeletedRow = { date: '—', customer: '—', head: mapTableName(log.table_name), loanNo: '—', particulars: getDeletedLogSummary(log), credit: '-', debit: '-' };
+    const loanOf = (key: any) => (key ? loanMap[key] : null);
+    const nameOfLoan = (l: any) => l?.customer?.name || customerMap[l?.customer_id] || '';
+    switch (log.table_name) {
+      case 'finance_transactions': {
+        const l = loanOf(v.loan_id);
+        return { ...row, date: dmyOf(v.date), customer: nameOfLoan(l) || '—', head: 'LOAN RECEIPT', loanNo: l?.loan_id || '—', particulars: receiptParticulars(v), credit: moneyText(v.amount) };
+      }
+      case 'finance_cashbook_entries': {
+        const l = loanOf(v.account_number);
+        return { ...row, date: dmyOf(v.entry_date), customer: nameOfLoan(l) || '—', head: displayHeadName(v.head_of_account) || '—', loanNo: v.account_number || '—', particulars: displayHeadText(v.particulars) || '—', credit: moneyText(v.credit), debit: moneyText(v.debit) };
+      }
+      case 'finance_capital_entries':
+        return { ...row, date: dmyOf(v.entry_date), customer: v.partner_name || '—', head: 'CAPITAL', particulars: displayHeadText(v.particulars) || '—', credit: moneyText(v.credit), debit: moneyText(v.debit) };
+      case 'finance_loans':
+        return { ...row, date: dmyOf(v.date), customer: customerMap[v.customer_id] || '—', head: `${v.loan_category ? `${v.loan_category} ` : ''}LOAN`, loanNo: v.loan_id || '—', particulars: 'Loan deleted', debit: moneyText(v.amount) };
+      case 'finance_customers':
+        return { ...row, customer: v.name || '—', head: 'CUSTOMER', particulars: [v.phone, v.aadhaar].filter(Boolean).join(' · ') || 'Customer deleted' };
+      case 'finance_guarantors':
+        return { ...row, customer: v.name || '—', head: 'GUARANTOR', loanNo: guarantorLoanMap[log.record_id]?.loan_id || '—', particulars: v.phone || 'Guarantor deleted' };
+      case 'finance_loans_collateral':
+        return { ...row, customer: nameOfLoan(loanOf(v.loan_id)) || '—', head: 'COLLATERAL', loanNo: loanOf(v.loan_id)?.loan_id || '—', particulars: displayHeadText(v.particulars || v.collateral_address) || 'Collateral deleted' };
+      case 'finance_partners':
+        return { ...row, customer: v.name || '—', head: 'PARTNER', particulars: v.phone || 'Partner deleted' };
+      default:
+        return row;
+    }
+  };
+
   // Filtered deleted logs
   const filteredDeletedLogs = useMemo(() => {
     return deletedLogs.filter(log => {
       if (searchQuery) {
         const q = searchQuery.toLowerCase().trim();
-        const summary = getDeletedLogSummary(log).toLowerCase();
+        const summary = `${getDeletedLogSummary(log)} ${Object.values(deletedRowOf(log)).join(' ')}`.toLowerCase();
         const operator = (log.deleted_by || '').toLowerCase();
         const tableName = mapTableName(log.table_name).toLowerCase();
         if (!summary.includes(q) && !operator.includes(q) && !tableName.includes(q)) {
@@ -673,16 +892,16 @@ const EditedDeletedLogs: React.FC = () => {
 
       return true;
     }).sort((a, b) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime());
-  }, [deletedLogs, searchQuery, filterTableType, filterOperator, filterStartDate, filterEndDate, customerMap]);
+  }, [deletedLogs, searchQuery, filterTableType, filterOperator, filterStartDate, filterEndDate, customerMap, loanMap, guarantorLoanMap]);
 
   return (
     <div className="space-y-6 p-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-green-100 pb-4 gap-4">
         <div>
-          <h1 className="finance-h1 font-bold uppercase text-slate-900">AUDIT LOGS REGISTRY</h1>
+          <h1 className="finance-h1 font-bold uppercase text-slate-900">EDITED / DELETED ENTRY</h1>
           <p className="finance-small-label uppercase text-slate-900 font-bold">
-            GROUPED FINANCIAL AUDIT EVENTS · RECONCILED UPDATE & DELETION LOGS
+            EVERY EDIT AS BEFORE / AFTER ROWS · DELETED ENTRIES WITH VIEW AND RESTORE
           </p>
         </div>
         <div className="flex gap-2">
@@ -690,28 +909,35 @@ const EditedDeletedLogs: React.FC = () => {
             Print
           </Button>
           <Button onClick={() => {
+            // Same rows and columns as the table on screen
+            const today = new Date().toISOString().split('T')[0];
             if (logType === 'edited') {
-              const data = typeEvents.map(item => ({
-                Timestamp: formatDateHuman(item.timestamp),
-                Operator: item.operator,
-                Table: mapTableName(item.tableName),
-                'Loan No': item.displayLoanNo,
-                Customer: item.displayCustomer,
-                'Total Fields Changed': item.changedFields.length,
-                'Changed Field Names': item.changedFields.map(f => f.fieldLabel).join(', '),
-                Source: item.source
-              }));
-              exportToExcel(data, `Grouped_Edit_Audit_Logs_${new Date().toISOString().split('T')[0]}`);
+              const data: Record<string, string | number>[] = [];
+              typeEvents.forEach((item, i) => {
+                const lead = (type: string) => ({
+                  '#': i + 1,
+                  Type: type,
+                  ...(moneyColumns ? {} : { 'CD / Loan No': item.displayLoanNo, Customer: item.displayCustomer }),
+                });
+                const tail = { 'Edited By': item.operator, 'Edited At': formatEditedAt(item.timestamp) };
+                const before: Record<string, string | number> = lead('Before');
+                const after: Record<string, string | number> = lead(item.eventType === 'CREATE' ? 'Created' : 'After');
+                editColumns.forEach(c => { before[c.label] = c.before(item); after[c.label] = c.after(item); });
+                data.push({ ...before, ...tail }, { ...after, ...tail });
+              });
+              exportToExcel(data, `Edited_Entries_${activeEditType ? mapTableName(activeEditType).replace(/\s+/g, '_') : 'All'}_${today}`);
             } else {
-              const data = filteredDeletedLogs.map(log => ({
-                Timestamp: formatDateHuman(log.deleted_at),
-                Operator: log.deleted_by,
-                Table: mapTableName(log.table_name),
-                Details: getDeletedLogSummary(log)
-              }));
-              exportToExcel(data, `Deleted_Audit_Logs_${new Date().toISOString().split('T')[0]}`);
+              const data = filteredDeletedLogs.map((log, i) => {
+                const r = deletedRowOf(log);
+                return {
+                  '#': i + 1, Date: r.date, Customer: r.customer, 'Head of Account': r.head, 'CD / Loan No': r.loanNo,
+                  Particulars: r.particulars, Credit: r.credit, Debit: r.debit,
+                  'Deleted By': log.deleted_by, 'Deleted At': formatEditedAt(log.deleted_at)
+                };
+              });
+              exportToExcel(data, `Deleted_Entries_${today}`);
             }
-            toast.success('Excel Audit Logs Exported!');
+            toast.success('Excel Exported!');
           }} variant="secondary" size="sm" icon={Download}>
             Excel
           </Button>
@@ -726,19 +952,19 @@ const EditedDeletedLogs: React.FC = () => {
             className={`flex-1 py-2 px-4 rounded-lg border transition-all flex justify-center items-center gap-2 text-xs font-bold uppercase ${ logType === 'edited' ? 'bg-green-100 text-green-700 border-green-300 shadow-sm' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50' }`}
           >
             <Edit2 className="w-4 h-4" />
-            EDITED LOGS ({filteredEvents.length})
+            EDITED ({filteredEvents.length})
           </button>
           <button
             onClick={() => setLogType('deleted')}
             className={`flex-1 py-2 px-4 rounded-lg border transition-all flex justify-center items-center gap-2 text-xs font-bold uppercase ${ logType === 'deleted' ? 'bg-red-100 text-red-700 border-red-300 shadow-sm' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50' }`}
           >
             <Trash2 className="w-4 h-4" />
-            DELETED LOGS ({filteredDeletedLogs.length})
+            DELETED ({filteredDeletedLogs.length})
           </button>
         </div>
 
         <div className="text-xs font-mono font-bold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
-          Showing {logType === 'edited' ? `${filteredEvents.length} Grouped Edit Audit Event(s)` : `${filteredDeletedLogs.length} Deleted Log Event(s)`}
+          Showing {logType === 'edited' ? `${typeEvents.length} edit(s) of ${activeEditType ? mapTableName(activeEditType) : '-'}` : `${filteredDeletedLogs.length} deleted entr${filteredDeletedLogs.length === 1 ? 'y' : 'ies'}`}
         </div>
       </div>
 
@@ -779,6 +1005,8 @@ const EditedDeletedLogs: React.FC = () => {
                 className="w-full py-2 px-3 border border-slate-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all uppercase"
               >
                 <option value="all">ALL TABLES</option>
+                <option value="finance_transactions">LOAN RECEIPTS</option>
+                <option value="finance_cashbook_entries">CASHBOOK ENTRIES</option>
                 <option value="finance_loans">LOANS</option>
                 <option value="finance_customers">CUSTOMERS</option>
                 <option value="finance_loans_collateral">COLLATERAL</option>
@@ -862,75 +1090,30 @@ const EditedDeletedLogs: React.FC = () => {
           <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-green-500"></div>
         </div>
       ) : logType === 'edited' ? (
-        /* Edited Logs: same look as Regular Edited Records (Before / After rows, changes highlighted) */
-        <Card title={`EDITED RECORDS LOGS · ${activeEditType ? mapTableName(activeEditType) : ''} (${typeEvents.length})`} className="shadow-md">
+        /* Edited: Edit Entry look, every edit as Before / After rows, changes highlighted */
+        <Card title={`EDITED ENTRIES · ${activeEditType ? mapTableName(activeEditType) : ''} (${typeEvents.length})`} className="shadow-md">
           <FinanceEditBeforeAfterTable
             events={typeEvents}
+            columns={moneyColumns}
             formatValue={formatLogValue}
-            formatDate={formatDateHuman}
+            formatDate={formatEditedAt}
             labelFor={mapFieldLabel}
             onView={(e) => setSelectedEventForModal(e)}
           />
         </Card>
       ) : (
-        /* Deleted Logs Table View */
-        <Card title="DELETED RECORDS LOGS" className="shadow-md">
+        /* Deleted: the Edit Entry columns, one row per deleted entry */
+        <Card title={`DELETED ENTRIES (${filteredDeletedLogs.length})`} className="shadow-md">
           {filteredDeletedLogs.length === 0 ? (
-            <div className="text-center py-8 text-slate-400 uppercase font-bold text-xs">No transactions found.</div>
+            <div className="text-center py-8 text-slate-400 uppercase font-bold text-xs">No deleted entries found.</div>
           ) : (
-            <div className="border border-slate-200 rounded-xl">
-              <table className="w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">TIMESTAMP</th>
-                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">OPERATOR</th>
-                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">TABLE</th>
-                    <th className="px-3 py-3 text-left text-xs font-black text-slate-800 uppercase tracking-wider">DETAILS</th>
-                    <th className="px-3 py-3 text-right text-xs font-black text-slate-800 uppercase tracking-wider">ACTIONS</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-100">
-                  {filteredDeletedLogs.map((log) => {
-                    return (
-                      <tr key={log.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="px-3 py-3 min-w-[7.5rem] text-[13px] min-[1600px]:text-[14px] text-slate-700 font-mono tabular-nums">
-                          {formatDateHuman(log.deleted_at)}
-                        </td>
-                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-slate-900 font-bold uppercase">
-                          {log.deleted_by}
-                        </td>
-                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-slate-700 font-mono font-bold">
-                          {mapTableName(log.table_name)}
-                        </td>
-                        <td className="px-3 py-3 text-[13px] min-[1600px]:text-[14px] text-slate-900 font-bold">
-                          {getDeletedLogSummary(log)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => setSelectedDeleteForModal(log)}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg !text-[12px] font-bold inline-flex items-center gap-1.5 transition-colors uppercase whitespace-nowrap"
-                          >
-                            <Database className="w-3.5 h-3.5" />
-                            VIEW<span className="hidden min-[1600px]:inline"> DETAILS</span>
-                          </button>
-                          <Button
-                            onClick={() => handleRestore(log)}
-                            variant="success"
-                            size="sm"
-                            disabled={restoring === log.id}
-                            className="font-bold uppercase !text-[12px]"
-                          >
-                            {restoring === log.id ? 'RESTORING...' : 'RESTORE'}
-                          </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <DeletedEntriesTable
+              logs={filteredDeletedLogs}
+              rowOf={deletedRowOf}
+              onView={log => setSelectedDeleteForModal(log)}
+              onRestore={handleRestore}
+              restoring={restoring}
+            />
           )}
         </Card>
       )}
@@ -1088,64 +1271,37 @@ const EditedDeletedLogs: React.FC = () => {
       <FinancePrintPreview
         isOpen={showPrintPreview}
         onClose={() => setShowPrintPreview(false)}
-        title="Audit Logs Report"
-        documentTitle="AUDIT_LOGS_REPORT"
+        title="Edited / Deleted Entry"
+        documentTitle="EDITED_DELETED_ENTRY"
       >
-        <div className="space-y-6 mt-6 text-[10px]">
-          <div className="flex justify-between items-end border-b-2 border-slate-900 pb-2 mb-4">
-            <div>
-              <p className="text-[12px] uppercase text-slate-700 font-bold">Grouped Audit Logs Registry</p>
-            </div>
+        {/* Exactly what the table on screen shows (same record type, filters and columns), every row */}
+        <div className="space-y-4 mt-6 text-[10px]">
+          <div className="flex justify-between items-end border-b-2 border-slate-900 pb-2 mb-2">
+            <p className="text-[12px] uppercase text-slate-700 font-bold">
+              {logType === 'edited'
+                ? `Edited Entries · ${activeEditType ? mapTableName(activeEditType) : '-'} (${typeEvents.length})`
+                : `Deleted Entries (${filteredDeletedLogs.length})`}
+            </p>
+            <p className="text-[10px] text-slate-600 font-bold uppercase">
+              {filterStartDate || filterEndDate ? `${dmyOf(filterStartDate)} to ${dmyOf(filterEndDate)}` : 'All dates'}
+              {filterOperator !== 'all' ? ` · Operator: ${filterOperator}` : ''}
+              {searchQuery ? ` · Search: ${searchQuery}` : ''}
+            </p>
           </div>
 
           {logType === 'edited' ? (
-            <table className="w-full border-collapse border border-slate-300">
-              <thead>
-                <tr className="bg-slate-100 border-b border-slate-300 text-[9px]">
-                  <th className="p-2 text-left border-r border-slate-300">Timestamp</th>
-                  <th className="p-2 text-left border-r border-slate-300">Operator</th>
-                  <th className="p-2 text-left border-r border-slate-300">Table</th>
-                  <th className="p-2 text-left border-r border-slate-300">Loan No</th>
-                  <th className="p-2 text-left border-r border-slate-300">Customer</th>
-                  <th className="p-2 text-left border-r border-slate-300">Changed Fields</th>
-                  <th className="p-2 text-left">Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEvents.map((item) => (
-                  <tr key={item.id} className="border-b border-slate-200">
-                    <td className="p-2 border-r border-slate-300">{formatDateHuman(item.timestamp)}</td>
-                    <td className="p-2 border-r border-slate-300">{item.operator}</td>
-                    <td className="p-2 border-r border-slate-300">{mapTableName(item.tableName)}</td>
-                    <td className="p-2 border-r border-slate-300">{item.displayLoanNo}</td>
-                    <td className="p-2 border-r border-slate-300">{item.displayCustomer}</td>
-                    <td className="p-2 border-r border-slate-300">{item.changedFields.map(f => f.fieldLabel).join(', ')}</td>
-                    <td className="p-2">{item.source}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <FinanceEditBeforeAfterTable
+              events={typeEvents}
+              columns={moneyColumns}
+              formatValue={formatLogValue}
+              formatDate={formatEditedAt}
+              labelFor={mapFieldLabel}
+              printMode
+            />
+          ) : filteredDeletedLogs.length === 0 ? (
+            <div className="text-center py-8 text-slate-400 uppercase font-bold text-xs">No deleted entries found.</div>
           ) : (
-            <table className="w-full border-collapse border border-slate-300">
-              <thead>
-                <tr className="bg-slate-100 border-b border-slate-300 text-[9px]">
-                  <th className="p-2 text-left border-r border-slate-300">Timestamp</th>
-                  <th className="p-2 text-left border-r border-slate-300">Operator</th>
-                  <th className="p-2 text-left border-r border-slate-300">Table</th>
-                  <th className="p-2 text-left">Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredDeletedLogs.map((log) => (
-                  <tr key={log.id} className="border-b border-slate-200">
-                    <td className="p-2 border-r border-slate-300">{formatDateHuman(log.deleted_at)}</td>
-                    <td className="p-2 border-r border-slate-300">{log.deleted_by}</td>
-                    <td className="p-2 border-r border-slate-300">{mapTableName(log.table_name)}</td>
-                    <td className="p-2">{getDeletedLogSummary(log)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DeletedEntriesTable logs={filteredDeletedLogs} rowOf={deletedRowOf} printMode />
           )}
         </div>
       </FinancePrintPreview>

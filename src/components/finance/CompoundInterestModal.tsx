@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Printer, Calculator } from 'lucide-react';
 import FinancePrintPreview from './FinancePrintPreview';
 
@@ -7,8 +7,12 @@ interface CompoundInterestModalProps {
   onClose: () => void;
   cdNumber: string;
   customerName: string;
+  /** Rate % charged once per cycle (default 3, the user can change it here) */
   interestRate: number;
-  penaltyPercent: number;
+  /** Days in one cycle (default 30, the user can change it here) */
+  periodDays: number;
+  onInterestRateChange: (rate: number) => void;
+  onPeriodDaysChange: (days: number) => void;
   loanDate: string;
   reportRows: any[];
   summary: any;
@@ -34,22 +38,51 @@ const formatDateDisplay = (dateStr?: string | null): string => {
   return dateStr || '-';
 };
 
+/** A rate typed in the report: a number above 0 (up to 100), else null */
+export const parseCIRate = (text: string): number | null => {
+  const t = String(text ?? '').trim();
+  if (t === '') return null;
+  const v = Number(t);
+  return Number.isFinite(v) && v > 0 && v <= 100 ? v : null;
+};
+
+/** A period typed in the report: whole days, 1 or more (up to 3650), else null */
+export const parseCIPeriod = (text: string): number | null => {
+  const t = String(text ?? '').trim();
+  if (!/^[0-9]+$/.test(t)) return null;
+  const v = Number(t);
+  return v >= 1 && v <= 3650 ? v : null;
+};
+
 const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({
   isOpen,
   onClose,
   cdNumber,
   customerName,
   interestRate,
-  penaltyPercent,
+  periodDays,
+  onInterestRateChange,
+  onPeriodDaysChange,
   loanDate,
   reportRows,
   summary
 }) => {
   const [isPrinting, setIsPrinting] = useState(false);
+  // What is typed in the two boxes; the report recalculates on every valid value
+  const [rateText, setRateText] = useState(String(interestRate));
+  const [periodText, setPeriodText] = useState(String(periodDays));
+  useEffect(() => { setRateText(prev => (parseCIRate(prev) === interestRate ? prev : String(interestRate))); }, [interestRate]);
+  useEffect(() => { setPeriodText(prev => (parseCIPeriod(prev) === periodDays ? prev : String(periodDays))); }, [periodDays]);
 
   if (!isOpen || !summary) return null;
 
-  const printableContent = (
+  const rateInvalid = parseCIRate(rateText) === null;
+  const periodInvalid = parseCIPeriod(periodText) === null;
+  const boxClass = (invalid: boolean) =>
+    `mt-0.5 w-full h-8 px-2 rounded-md border text-sm font-mono font-bold bg-white focus:outline-none focus:ring-2 ${invalid ? 'border-rose-500 focus:ring-rose-200' : 'border-indigo-300 focus:ring-indigo-200'}`;
+
+  // editable: the screen (Rate and Period are boxes); the print shows the values as text
+  const reportContent = (editable: boolean) => (
     <div className="p-8 bg-white text-slate-900 font-sans">
       <div className="text-center border-b-2 border-slate-800 pb-4 mb-6">
         <h2 className="text-2xl font-black uppercase tracking-widest">Compound Interest Calculation Report</h2>
@@ -66,12 +99,56 @@ const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({
             <p className="text-sm font-mono font-bold">{cdNumber || '-'}</p>
           </div>
           <div>
-            <p className="text-[10px] font-black text-slate-500 uppercase">Rate</p>
-            <p className="text-sm font-mono font-bold">{Number(interestRate || 0).toFixed(2)}%</p>
+            {editable ? (
+              <label className="block">
+                <span className="text-[10px] font-black text-slate-500 uppercase">Rate (% per period)</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="0.01"
+                  aria-label="Rate (% per period)"
+                  value={rateText}
+                  onChange={e => {
+                    setRateText(e.target.value);
+                    const v = parseCIRate(e.target.value);
+                    if (v !== null) onInterestRateChange(v);
+                  }}
+                  className={boxClass(rateInvalid)}
+                />
+              </label>
+            ) : (
+              <>
+                <p className="text-[10px] font-black text-slate-500 uppercase">Rate</p>
+                <p className="text-sm font-mono font-bold">{Number(interestRate || 0).toFixed(2)}%</p>
+              </>
+            )}
           </div>
           <div>
-            <p className="text-[10px] font-black text-slate-500 uppercase">Penalty</p>
-            <p className="text-sm font-mono font-bold">{Number(penaltyPercent || 0).toFixed(2)}%</p>
+            {editable ? (
+              <label className="block">
+                <span className="text-[10px] font-black text-slate-500 uppercase">Period (days)</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step="1"
+                  aria-label="Period (days)"
+                  value={periodText}
+                  onChange={e => {
+                    setPeriodText(e.target.value);
+                    const v = parseCIPeriod(e.target.value);
+                    if (v !== null) onPeriodDaysChange(v);
+                  }}
+                  className={boxClass(periodInvalid)}
+                />
+              </label>
+            ) : (
+              <>
+                <p className="text-[10px] font-black text-slate-500 uppercase">Period</p>
+                <p className="text-sm font-mono font-bold">{periodDays} days</p>
+              </>
+            )}
           </div>
           <div>
             <p className="text-[10px] font-black text-slate-500 uppercase">Loan Date</p>
@@ -84,6 +161,11 @@ const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({
             </p>
           </div>
         </div>
+        {editable && (rateInvalid || periodInvalid) && (
+          <p className="px-4 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border-x border-slate-200">
+            {rateInvalid ? 'Enter a rate above 0. ' : ''}{periodInvalid ? 'Enter the period in whole days (1 or more).' : ''} The report shows the last valid values.
+          </p>
+        )}
         {/* Loan amount + compound interest - payments = final balance after compounding */}
         <div className="grid grid-cols-4 gap-4 bg-slate-100 p-4 rounded-b-lg border border-slate-200 text-center items-center">
           <div>
@@ -105,7 +187,7 @@ const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({
         </div>
 
         <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs font-semibold flex items-center justify-between">
-          <span>ℹ️ {summary.tooltipText || "Estimated compounded value based on pure 30-day time cycles, payments and principal reductions. Informational only."}</span>
+          <span>ℹ️ {summary.tooltipText || `Estimated compounded value based on pure ${periodDays}-day time cycles, payments and principal reductions. Informational only.`}</span>
           {summary.isClosed && (
             <span className="ml-2 px-2 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-black uppercase rounded tracking-wider">Loan Closed (Simulation Frozen)</span>
           )}
@@ -196,7 +278,7 @@ const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({
           </div>
 
           <div className="flex-1 overflow-auto p-0">
-            {printableContent}
+            {reportContent(true)}
           </div>
           
         </div>
@@ -208,7 +290,7 @@ const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({
         title="Compound Interest Calculation Report"
         documentTitle={`Compound_Interest_${cdNumber}`}
       >
-        {printableContent}
+        {reportContent(false)}
       </FinancePrintPreview>
     </>
   );

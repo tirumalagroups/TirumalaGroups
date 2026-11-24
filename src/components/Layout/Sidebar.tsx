@@ -217,7 +217,7 @@ const Sidebar: React.FC = () => {
     { icon: FileText, label: 'Partner Performance', path: '/finance/partner-performance', key: 'partner_performance' },
     { icon: FileText, label: 'New Customers', path: '/finance/new-customers', key: 'new_customers' },
     { icon: Phone, label: 'Phone Number Editor', path: '/finance/phone-editor', key: 'phone_editor' },
-    { icon: FileEdit, label: 'Edited / Deleted Logs', path: '/finance/logs', key: 'logs' },
+    { icon: FileEdit, label: 'Edited / Deleted Entry', path: '/finance/logs', key: 'logs' },
     {
       icon: Shield,
       label: 'User Access',

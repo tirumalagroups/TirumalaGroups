@@ -150,6 +150,21 @@ export const createFakeSupabase = (): FakeDb => {
       is: (c: string, v: any) => { filters.push(r => (r[c] ?? null) === v); return b; },
       gte: (c: string, v: any) => { filters.push(r => r[c] !== null && r[c] !== undefined && String(r[c]) >= String(v)); return b; },
       lte: (c: string, v: any) => { filters.push(r => r[c] !== null && r[c] !== undefined && String(r[c]) <= String(v)); return b; },
+      // numbers compare as numbers (e.g. paid_amount > 0), anything else as text (dates)
+      gt: (c: string, v: any) => {
+        filters.push(r => {
+          if (r[c] === null || r[c] === undefined) return false;
+          return typeof v === 'number' ? Number(r[c]) > v : String(r[c]) > String(v);
+        });
+        return b;
+      },
+      lt: (c: string, v: any) => {
+        filters.push(r => {
+          if (r[c] === null || r[c] === undefined) return false;
+          return typeof v === 'number' ? Number(r[c]) < v : String(r[c]) < String(v);
+        });
+        return b;
+      },
       like: (c: string, v: string) => {
         const re = new RegExp('^' + v.replace(/%/g, '.*') + '$');
         filters.push(r => re.test(String(r[c] ?? '')));

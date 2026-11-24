@@ -7,15 +7,36 @@ import { getCachedMasterData } from './offlineMasterData';
 import { baseTableName, isNetworkFailure, isQueueableWrite, runOfflineSync, SyncOp, SyncResult, SyncStore } from './offlineSyncEngine';
 import { toast } from 'react-hot-toast';
 
-// Columns deleted_cash_book has always had (original table + book_id).
-// Used as a fallback when a newer cash_book column is missing there.
-const DELETED_CASH_BOOK_CORE_COLUMNS = [
-  'id', 'sno', 'acc_name', 'sub_acc_name', 'particulars', 'c_date',
-  'credit', 'debit', 'credit_online', 'credit_offline', 'debit_online', 'debit_offline',
-  'lock_record', 'company_name', 'address', 'staff', 'users', 'entry_time',
-  'sale_qty', 'purchase_qty', 'approved', 'edited', 'e_count', 'cb', 'payment_mode',
-  'created_at', 'updated_at', 'deleted_by', 'deleted_at', 'book_id',
-];
+/**
+ * The column a failed save names as missing from the table, or null.
+ * PostgREST: "Could not find the 'payment_mode' column of 'deleted_cash_book' in the schema cache" (PGRST204);
+ * Postgres: column "payment_mode" of relation "deleted_cash_book" does not exist (42703).
+ */
+export const missingColumnOf = (error: { code?: string; message?: string } | null | undefined): string | null => {
+  if (!error || (error.code !== 'PGRST204' && error.code !== '42703')) return null;
+  const m = String(error.message || '').match(/'([^']+)' column|column "([^"]+)"/);
+  return m ? (m[1] || m[2]) : null;
+};
+
+/**
+ * Saves a copy of a deleted entry in Deleted Records. When Deleted Records lacks a column that the
+ * day book has (newer columns, e.g. payment_mode, credit_online), that column is left out and the
+ * save is tried again, so a delete never fails only because of a missing column.
+ */
+export const insertSkippingMissingColumns = async (
+  insert: (row: Record<string, any>) => PromiseLike<{ error: any }>,
+  row: Record<string, any>
+): Promise<{ error: any; skipped: string[] }> => {
+  const data = { ...row };
+  const skipped: string[] = [];
+  for (;;) {
+    const { error } = await insert(data);
+    const missing = missingColumnOf(error);
+    if (!missing || !(missing in data) || skipped.length >= 20) return { error, skipped };
+    delete data[missing];
+    skipped.push(missing);
+  }
+};
 
 // Types
 export interface Company {
@@ -2700,21 +2721,13 @@ class SupabaseDatabase {
 
       console.log('📝 DELETED ENTRY DATA:', deletedEntry);
 
-      let { error: insertError } = await supabase
-        .from(getTableName('deleted_cash_book'))
-        .insert(deletedEntry);
-
-      // A column that exists in cash_book but not yet in deleted_cash_book
-      // (PostgREST PGRST204 / Postgres 42703): retry with the core columns only.
-      if (insertError && (insertError.code === 'PGRST204' || insertError.code === '42703')) {
-        console.warn('⚠️ deleted_cash_book is missing a column, retrying with core columns:', insertError.message);
-        const coreEntry: Record<string, any> = {};
-        for (const key of DELETED_CASH_BOOK_CORE_COLUMNS) {
-          if (key in deletedEntry) coreEntry[key] = (deletedEntry as Record<string, any>)[key];
-        }
-        ({ error: insertError } = await supabase
-          .from(getTableName('deleted_cash_book'))
-          .insert(coreEntry));
+      // A column that exists in cash_book but not in deleted_cash_book is left out and the save retried
+      const { error: insertError, skipped } = await insertSkippingMissingColumns(
+        row => supabase.from(getTableName('deleted_cash_book')).insert(row),
+        deletedEntry
+      );
+      if (skipped.length > 0) {
+        console.warn('⚠️ deleted_cash_book lacks these columns, saved without them:', skipped.join(', '));
       }
 
       // Never remove the entry unless its copy is safely in Deleted Records,

@@ -45,12 +45,12 @@ const ChangePasswordRequired: React.FC = () => {
         </p>
         <form onSubmit={submit} className='space-y-4'>
           <div className='relative'>
-            <Input label='New password' type={show ? 'text' : 'password'} value={next} onChange={setNext} required />
+            <Input label='New password' password type={show ? 'text' : 'password'} value={next} onChange={setNext} required />
             <button type='button' onClick={() => setShow(v => !v)} className='absolute right-3 top-8 text-gray-400 hover:text-gray-600'>
               {show ? <EyeOff className='w-5 h-5' /> : <Eye className='w-5 h-5' />}
             </button>
           </div>
-          <Input label='New password again' type={show ? 'text' : 'password'} value={again} onChange={setAgain} required />
+          <Input label='New password again' password type={show ? 'text' : 'password'} value={again} onChange={setAgain} required />
           <div className='flex justify-between gap-2 pt-2'>
             <Button type='button' variant='secondary' onClick={() => logout()}>Log Out</Button>
             <Button type='submit' disabled={busy}>{busy ? 'Saving...' : 'Save Password'}</Button>

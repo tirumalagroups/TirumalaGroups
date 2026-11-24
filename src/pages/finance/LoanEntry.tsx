@@ -24,6 +24,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { BiometricScanner } from '../../components/finance/BiometricScanner';
 import FinancePrintPreview from '../../components/finance/FinancePrintPreview';
 import { cdLedgerRebuildService } from '../../services/cdLedgerRebuildService';
+import { buildHPContract, hpLoanPreview, isHPOpeningRow } from '../../services/hpLedgerEngine';
 
 
 import { getRelationshipDisplay } from "../../utils/relationship";
@@ -52,6 +53,7 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
   const docChargesRef = useRef<HTMLInputElement>(null);
   const interestRateRef = useRef<HTMLInputElement>(null);
   const durationMonthsRef = useRef<HTMLInputElement>(null);
+  const installmentsRef = useRef<HTMLInputElement>(null);
   const particularsRef = useRef<HTMLTextAreaElement>(null);
 
   const [loading, setLoading] = useState(true);
@@ -137,6 +139,8 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
   const [penaltyPercent, setPenaltyPercent] = useState('0.75'); // 0.75% default
   const [dueType, setDueType] = useState<'Daily' | 'Weekly' | 'Monthly'>('Daily');
   const [particulars, setParticulars] = useState('');
+  // HP only: total number of installments (saved in duration_months; the period goes in period_days)
+  const [installmentsCount, setInstallmentsCount] = useState('');
 
   // Edit-only states
   const [hasLedgerActivity, setHasLedgerActivity] = useState(false);
@@ -295,12 +299,12 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
           .eq('loan_id', id)
           .not('entry_type', 'in', '(original_loan,opening_commission,document_charge)')
           .limit(1),
+        // (an HP loan's opening row, installment 1 kept at disbursement, is not a repayment)
         supabase
           .from('finance_transactions')
-          .select('id')
+          .select('id, remarks')
           .eq('loan_id', id)
-          .neq('type', 'Disbursement')
-          .limit(1),
+          .neq('type', 'Disbursement'),
         supabase
           .from('finance_cd_interest_details')
           .select('id')
@@ -316,7 +320,7 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
 
       const hasCustomerRepaymentActivity =
         !!(cdNonOpeningRes.data && cdNonOpeningRes.data.length > 0) ||
-        !!(txNonDisbRes.data && txNonDisbRes.data.length > 0) ||
+        !!(txNonDisbRes.data && txNonDisbRes.data.some((t: any) => !isHPOpeningRow(t))) ||
         !!(cdInterestRes.data && cdInterestRes.data.length > 0) ||
         !!(duesPaidRes.data && duesPaidRes.data.length > 0);
 
@@ -350,7 +354,13 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
       }
       setAmount(String(fullLoan.amount));
       setInterestRate(String(fullLoan.interest_rate));
-      setDurationMonths(String(fullLoan.duration_months));
+      if (fullLoan.loan_category === 'HP') {
+        // HP: period in period_days, installments in duration_months
+        setDurationMonths(String(fullLoan.period_days || 30));
+        setInstallmentsCount(String(fullLoan.duration_months || ''));
+      } else {
+        setDurationMonths(String(fullLoan.duration_months));
+      }
       setDueType(fullLoan.due_type);
       setDocCharges(String(fullLoan.document_charges || 0));
       setPenaltyPercent(String(fullLoan.penalty_percent || 0.75));
@@ -523,7 +533,12 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
       setLoanCategory(loanData.loan_category || 'CD');
       setAmount(String(loanData.amount));
       setInterestRate(String(loanData.interest_rate));
-      setDurationMonths(String(loanData.duration_months));
+      if (loanData.loan_category === 'HP') {
+        setDurationMonths(String(loanData.period_days || 30));
+        setInstallmentsCount(String(loanData.duration_months || ''));
+      } else {
+        setDurationMonths(String(loanData.duration_months));
+      }
       setDueType(loanData.due_type);
       setDocCharges(String(loanData.document_charges || 0));
       setPenaltyPercent(String(loanData.penalty_percent || 0.75));
@@ -857,6 +872,30 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
     let duesCount = 0;
     let dueAmount = 0;
 
+    if (loanCategory === 'HP') {
+      // HP: flat interest per period; installment 1 principal and doc charges kept at disbursement
+      const N = Number(installmentsCount);
+      if (!Number.isInteger(N) || N < 2 || !Number.isInteger(D) || D < 1) return null;
+      const hp = hpLoanPreview(buildHPContract({
+        date, amount: P, duration_months: N, period_days: D, interest_rate: R,
+        penalty_percent: Number(penaltyPercent) || 0.75, document_charges: docFees
+      }));
+      return {
+        principal: P,
+        interestAmount: hp.totalInterest,
+        penalty: 0,
+        totalRenewal: 0,
+        totalClose: parseFloat((P + hp.totalInterest).toFixed(2)),
+        totalRepayment: parseFloat((P + hp.totalInterest).toFixed(2)),
+        duesCount: N,
+        dueAmount: hp.installmentAmount,
+        docFees,
+        netDisbursed: hp.netCash,
+        payableAmount: hp.netCash,
+        hp
+      };
+    }
+
     if (loanCategory === 'CD') {
       interestAmount = P * (R / 100) * (D / 30);
       duesCount = D;
@@ -888,9 +927,16 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
       dueAmount: parseFloat(dueAmount.toFixed(2)),
       docFees,
       netDisbursed: parseFloat(netDisbursed.toFixed(2)),
-      payableAmount: parseFloat(payableAmount.toFixed(2))
+      payableAmount: parseFloat(payableAmount.toFixed(2)),
+      hp: null as ReturnType<typeof hpLoanPreview> | null
     };
-  }, [amount, interestRate, durationMonths, dueType, docCharges, loanCategory]);
+  }, [amount, interestRate, durationMonths, dueType, docCharges, loanCategory, installmentsCount, penaltyPercent, date]);
+
+  // HP: period defaults to 30 days on a new loan
+  useEffect(() => {
+    if (loanCategory === 'HP' && !editLoanId && durationMonths === '') setDurationMonths('30');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loanCategory]);
 
   const handlePrintPreview = () => {
     setShowPrintPreview(true);
@@ -948,6 +994,7 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
     setDocCharges('');
     setInterestRate('3');
     setDurationMonths('');
+    setInstallmentsCount('');
     setPenaltyPercent('0.75');
     setDueType('Daily');
     setParticulars('');
@@ -997,6 +1044,9 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
       { name: 'docCharges', label: 'Document Charges', value: docCharges, required: true, ref: docChargesRef as any },
       { name: 'interestRate', label: 'Rate of Interest', value: interestRate, required: true, ref: interestRateRef },
       { name: 'durationMonths', label: 'Period', value: durationMonths, required: true, ref: durationMonthsRef },
+      ...(loanCategory === 'HP'
+        ? [{ name: 'installmentsCount', label: 'Installments', value: installmentsCount, required: true, ref: installmentsRef }]
+        : []),
       { name: 'particulars', label: 'Particulars', value: particulars, required: true, ref: particularsRef as any },
     ];
 
@@ -1009,6 +1059,21 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
     const { isValid, errors: newErrors } = validateFinanceForm(fields);
     setErrors(newErrors);
     if (!isValid) return;
+
+    if (loanCategory === 'HP') {
+      const n = Number(installmentsCount);
+      const d = Number(durationMonths);
+      if (!Number.isInteger(n) || n < 2) {
+        setErrors(p => ({ ...p, installmentsCount: true }));
+        toast.error('Installments must be a whole number, 2 or more.');
+        return;
+      }
+      if (!Number.isInteger(d) || d < 1) {
+        setErrors(p => ({ ...p, durationMonths: true }));
+        toast.error('Period must be a whole number of days, 1 or more.');
+        return;
+      }
+    }
 
     if (!liveCalculations) {
       toast.error('Please enter valid loan terms (Amount, Rate, Duration)');
@@ -1025,10 +1090,10 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
     try {
       const staffName = user?.username || 'Staff';
 
-      // Create dues schedule
+      // Create dues schedule (not for HP: its installments are worked out from the loan terms)
       const duesList: any[] = [];
       const start = new Date(date);
-      for (let i = 1; i <= liveCalculations.duesCount; i++) {
+      for (let i = 1; loanCategory !== 'HP' && i <= liveCalculations.duesCount; i++) {
         const dDate = new Date(start);
         if (dueType === 'Daily') {
           dDate.setDate(start.getDate() + i);
@@ -1077,7 +1142,8 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
         date,
         amount: liveCalculations.principal,
         interest_rate: Number(interestRate),
-        duration_months: Number(durationMonths),
+        // HP keeps the number of installments here (its period goes in period_days)
+        duration_months: loanCategory === 'HP' ? Number(installmentsCount) : Number(durationMonths),
         due_type: dueType,
         due_amount: liveCalculations.dueAmount,
         surety_name: combinedSuretyName,
@@ -1096,7 +1162,8 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
         partner_name: partnerName,
         penalty_percent: Number(penaltyPercent) || 0.75,
         document_charges: Number(docCharges) || 0,
-        period_days: loanCategory === 'CD' ? ((durationMonths === '' || durationMonths === null || durationMonths === undefined) ? 30 : Number(durationMonths)) : null
+        // CD and HP both count their period in days (HP: days between installments)
+        period_days: (loanCategory === 'CD' || loanCategory === 'HP') ? ((durationMonths === '' || durationMonths === null || durationMonths === undefined) ? 30 : Number(durationMonths)) : null
       };
 
       const linkedDocs: any[] = [];
@@ -2129,7 +2196,7 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
               />
             </div>
             <div>
-              <label className="text-[11px] font-bold text-slate-700 uppercase mb-1 block">INTEREST (% pm) <span className="text-red-500">*</span></label>
+              <label className="text-[11px] font-bold text-slate-700 uppercase mb-1 block">INTEREST ({loanCategory === 'HP' ? '% per period' : '% pm'}) <span className="text-red-500">*</span></label>
               <input
                 type="number"
                 ref={interestRateRef}
@@ -2141,7 +2208,7 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
               />
             </div>
             <div>
-              <label className="text-[11px] font-bold text-slate-700 uppercase mb-1 block">PENALTY (% pm) <span className="text-red-500">*</span></label>
+              <label className="text-[11px] font-bold text-slate-700 uppercase mb-1 block">PENALTY ({loanCategory === 'HP' ? '% per period' : '% pm'}) <span className="text-red-500">*</span></label>
               <input
                 type="number"
                 value={penaltyPercent}
@@ -2163,6 +2230,22 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
                 required
               />
             </div>
+            {loanCategory === 'HP' && (
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 uppercase mb-1 block">INSTALLMENTS <span className="text-red-500">*</span></label>
+                <input
+                  type="number"
+                  ref={installmentsRef}
+                  value={installmentsCount}
+                  min={2}
+                  step={1}
+                  disabled={!!editLoanId && hasLedgerActivity}
+                  onChange={(e) => { setInstallmentsCount(e.target.value); setErrors(p => ({...p, installmentsCount: false})) }}
+                  className={`w-full bg-white border rounded-lg p-2 text-sm text-slate-800 focus:outline-none h-[38px] disabled:bg-slate-100 disabled:cursor-not-allowed ${errors.installmentsCount ? 'border-red-500 bg-red-50 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:ring-1 focus:ring-slate-900'}`}
+                  required
+                />
+              </div>
+            )}
             <div>
               <label className="text-[11px] font-bold text-slate-700 uppercase mb-1 block">DOC CHARGES () <span className="text-red-500">*</span></label>
               <input
@@ -2190,6 +2273,17 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
               </span>
             </div>
           </div>
+
+          {loanCategory === 'HP' && liveCalculations?.hp && (
+            <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 text-xs text-indigo-900 leading-relaxed">
+              <span className="font-bold">HP schedule: </span>
+              installment 1 = {formatRupee(liveCalculations.hp.schedule[0].principal)} principal, kept today.
+              Then {liveCalculations.hp.schedule.length - 1} installments of {formatRupee(liveCalculations.hp.installmentAmount)} every {durationMonths} days
+              ({formatRupee(liveCalculations.hp.principalPerInstallment)} principal + {formatRupee(liveCalculations.hp.interestPerInstallment)} interest),
+              first on {liveCalculations.hp.schedule[1]?.dueDate}, last on {liveCalculations.hp.lastDueDate}.
+              Total interest {formatRupee(liveCalculations.hp.totalInterest)}.
+            </div>
+          )}
 
           <div className="w-full">
             <label className="text-[11px] font-bold text-slate-700 uppercase mb-1 block">PARTICULARS <span className="text-red-500">*</span></label>
@@ -2545,9 +2639,19 @@ const LoanEntry: React.FC<LoanEntryProps> = ({ editLoanId, onCancelEdit }) => {
             <h3 className="bg-slate-100 p-2 finance-sidebar-link uppercase font-bold text-sm">Loan Terms</h3>
             <div className="grid grid-cols-2 gap-4 mt-2 p-2">
                <div><span className="text-gray-500 peek-caption-12 font-bold">PRINCIPAL:</span> {formatRupee(Number(amount) || 0)}</div>
-               <div><span className="text-gray-500 peek-caption-12 font-bold">INTEREST RATE:</span> {interestRate}% / MONTH</div>
-               <div><span className="text-gray-500 peek-caption-12 font-bold">DURATION:</span> {durationMonths} MONTHS</div>
-               <div><span className="text-gray-500 peek-caption-12 font-bold">DUE TYPE:</span> {dueType}</div>
+               {loanCategory === 'HP' ? (
+                 <>
+                   <div><span className="text-gray-500 peek-caption-12 font-bold">INTEREST RATE:</span> {interestRate}% / PERIOD</div>
+                   <div><span className="text-gray-500 peek-caption-12 font-bold">PENALTY:</span> {penaltyPercent}% / PERIOD</div>
+                   <div><span className="text-gray-500 peek-caption-12 font-bold">INSTALLMENTS:</span> {installmentsCount} (EVERY {durationMonths} DAYS)</div>
+                 </>
+               ) : (
+                 <>
+                   <div><span className="text-gray-500 peek-caption-12 font-bold">INTEREST RATE:</span> {interestRate}% / MONTH</div>
+                   <div><span className="text-gray-500 peek-caption-12 font-bold">DURATION:</span> {durationMonths} MONTHS</div>
+                   <div><span className="text-gray-500 peek-caption-12 font-bold">DUE TYPE:</span> {dueType}</div>
+                 </>
+               )}
                <div><span className="text-gray-500 peek-caption-12 font-bold">DOC CHARGES:</span> {formatRupee(Number(docCharges) || 0)}</div>
                <div className="col-span-2"><span className="text-gray-500 peek-caption-12 font-bold">PARTICULARS:</span> {particulars}</div>
             </div>

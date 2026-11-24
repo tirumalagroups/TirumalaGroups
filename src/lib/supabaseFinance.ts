@@ -3,6 +3,10 @@ import { supabase } from './supabaseDatabase';
 import { financeCalculationService } from '../services/financeCalculationService';
 import { cdLedgerRebuildService } from '../services/cdLedgerRebuildService';
 import { FinanceCalculationEngine } from '../services/FinanceCalculationEngine';
+import {
+  buildHPContract, hpOpening, hpRound, hpOpeningRemarks, isHPOpeningRow, HP_OPENING_PREFIX,
+  hpPaymentsFromTransactions, previewHPPayment, hpReceiptRemarks, HPPaymentKind, HPSplit
+} from '../services/hpLedgerEngine';
 
 // TypeScript Interfaces for Finance Mode
 export interface FinancePartner {
@@ -1436,146 +1440,84 @@ class SupabaseFinance {
     }
   }
 
-  async postHpLedgerPayment(params: {
+  /**
+   * HP receipt (payment or close). The split is worked out by the HP engine from the loan terms and
+   * every earlier receipt, so the screen cannot post a wrong split. One finance_transactions row per
+   * receipt; the Day Book reads its split from the remarks (no separate cash book rows, which used to
+   * list the same money twice).
+   */
+  async postHPReceipt(params: {
     loanId: string;
-    customerId: string;
-    customerName: string;
-    loanIdStr: string;
-    userName: string;
-    payingInsts: number;
-    principalPaid: number;
-    commissionPaid: number;
-    penaltyPaid: number;
-    discount: number;
-    waivedPenalty?: number;
-    paymentDate: string;
+    kind: HPPaymentKind;
+    date: string;
+    amount: number;
     receiptNo: string;
-    waiverReason?: string;
-    waivedBy?: string;
-    waivedDate?: string;
-  }): Promise<{ success: boolean; error?: string }> {
+    userName: string;
+  }): Promise<{ success: boolean; error?: string; split?: HPSplit; closed?: boolean }> {
     try {
-      const entryDate = params.paymentDate;
-      const totalAmount = params.principalPaid + params.commissionPaid + params.penaltyPaid;
+      if (!params.receiptNo) return { success: false, error: 'Receipt number is missing.' };
+      const [{ data: loan, error: loanErr }, { data: txs, error: txErr }] = await Promise.all([
+        supabase.from('finance_loans').select('*').eq('id', params.loanId).single(),
+        supabase.from('finance_transactions').select('*').eq('loan_id', params.loanId)
+      ]);
+      if (loanErr) throw loanErr;
+      if (txErr) throw txErr;
+      if (!loan) return { success: false, error: 'Loan not found.' };
+      if (String(loan.loan_category || '').trim().toUpperCase() !== 'HP') return { success: false, error: 'This is not an HP loan.' };
+      const statusUp = String(loan.status || '').trim().toUpperCase();
+      if (statusUp !== 'ACTIVE') return { success: false, error: `This loan is ${loan.status}; no more receipts can be taken.` };
+      if ((txs || []).some((t: any) => (t.receipt_no || '') === params.receiptNo)) {
+        return { success: false, error: `Receipt ${params.receiptNo} is already used on this loan.` };
+      }
 
-      // 1. Post to finance_transactions (Daybook)
+      const existing = hpPaymentsFromTransactions(txs || []);
+      const result = previewHPPayment(loan, existing, { date: params.date, amount: params.amount, kind: params.kind });
+      if (!result.ok) return { success: false, error: result.error };
+      const split = result.split;
+      const kind = result.after.splits[result.after.splits.length - 1].kind;
+      const closed = result.after.status === 'Closed';
+
       const tx = await this.addTransaction({
         loan_id: params.loanId,
         type: 'Collection',
-        amount: totalAmount,
-        date: entryDate,
-        remarks: `HP Collection - ${params.receiptNo} (Inst: ${params.payingInsts}, Prin: ${params.principalPaid}, Comm: ${params.commissionPaid}, Pen: ${params.penaltyPaid})`,
+        amount: hpRound(params.amount),
+        date: params.date,
+        remarks: hpReceiptRemarks(kind, params.receiptNo, split),
         collected_by: params.userName,
         receipt_no: params.receiptNo
-      });
+      } as any);
 
-      // Log transaction review entry asynchronously
       this.logTransactionForReview({
         loanId: params.loanId,
         sourceType: 'Loan Payment',
         sourceId: tx.id,
         receiptNo: params.receiptNo,
-        transactionType: 'HP Payment',
-        transactionDate: entryDate,
-        amount: totalAmount,
-        penaltyAmount: params.penaltyPaid,
-        interestAmount: params.commissionPaid,
-        principalAmount: params.principalPaid,
+        transactionType: kind === 'close' ? 'HP Close' : 'HP Payment',
+        transactionDate: params.date,
+        amount: hpRound(params.amount),
+        penaltyAmount: split.penalty,
+        interestAmount: hpRound(split.interest + split.lateInterest),
+        principalAmount: split.principal,
         enteredBy: params.userName
-      }).catch(err => console.error('Error logging HP payment for review:', err));
+      }).catch(err => console.error('Error logging HP receipt for review:', err));
 
-      // 2. Post splits to finance_cashbook_entries
-      await this.createCashbookEntry({
-        entry_date: entryDate,
-        account_number: params.loanIdStr,
-        head_of_account: 'HP A/c',
-        particulars: `${params.customerName} - Installment Payment ${params.receiptNo}`,
-        credit: params.principalPaid,
-        debit: 0,
-        created_by: params.userName
-      });
-
-      await this.createCashbookEntry({
-        entry_date: entryDate,
-        account_number: params.loanIdStr,
-        head_of_account: 'HP COMMISSION A/C',
-        particulars: `${params.customerName} - Commission Payment ${params.receiptNo}`,
-        credit: params.commissionPaid,
-        debit: 0,
-        created_by: params.userName
-      });
-
-      if (params.penaltyPaid > 0) {
-        await this.createCashbookEntry({
-          entry_date: entryDate,
-          account_number: params.loanIdStr,
-          head_of_account: 'HP PENALTY A/C',
-          particulars: `${params.customerName} - Penalty Payment ${params.receiptNo}`,
-          credit: params.penaltyPaid,
-          debit: 0,
-          created_by: params.userName
-        });
-      }
-
-      // 3. Update Loan account metrics
-      const { data: loan } = await supabase
-        .from('finance_loans')
-        .select('*')
-        .eq('id', params.loanId)
-        .single();
-
-      if (!loan) throw new Error('Loan not found');
-
-      const amount = Number(loan.amount);
-      const period = Number(loan.duration_months);
-      const installmentAmount = Number(loan.due_amount);
-
-      // Capitalized interest HP uses 2% monthly
-      const interestAmount = amount * 0.02 * period;
-      const totalLoan = amount + interestAmount;
-
-      const currentBalanceWithout = Number(loan.balance_without_interest ?? amount);
-      const currentOnlyPremiumPaid = amount - currentBalanceWithout;
-
-      const newOnlyPremiumPaid = currentOnlyPremiumPaid + params.principalPaid;
-      const newIpaid = newOnlyPremiumPaid / (amount / period);
-      const newPaidAmount = Math.min(totalLoan, financeCalculationService.roundRupee(newIpaid * installmentAmount));
-
-      const newBalanceWithout = Math.max(0, amount - newOnlyPremiumPaid);
-      const newBalanceWith = Math.max(0, totalLoan - newPaidAmount);
-
-      const isClosed = newBalanceWithout <= 2 || newBalanceWith <= 2;
-
-      const { error: updateError } = await supabase
-        .from('finance_loans')
-        .update({
-          installments_paid: newIpaid,
-          balance_without_interest: isClosed ? 0 : newBalanceWithout,
-          balance_with_interest: isClosed ? 0 : newBalanceWith,
-          status: isClosed ? 'Closed' : 'Active',
+      // Keep the summary columns on the loan in step (lists read them); amount stays the original loan
+      const pos = result.after;
+      const { error: updErr } = await runLoanWriteWithColumnFallback<any>(
+        {
+          installments_paid: pos.installmentsPaid,
+          balance_without_interest: pos.principalBalance,
+          balance_with_interest: hpRound(pos.installments.reduce((a, i) => a + i.balance, 0)),
+          status: closed ? 'Closed' : 'Active',
           updated_at: new Date().toISOString()
-        })
-        .eq('id', params.loanId);
+        },
+        row => supabase.from('finance_loans').update(row).eq('id', params.loanId).select().single()
+      );
+      if (updErr) throw updErr;
 
-      if (updateError) throw updateError;
-
-      // Log waiver if any discount or penalty is waived
-      if (params.discount > 0 || (params.waivedPenalty && params.waivedPenalty > 0)) {
-        await this.addWaiverAudit({
-          loan_id: params.loanId,
-          waived_date: params.waivedDate || params.paymentDate,
-          waived_by: params.waivedBy || params.userName,
-          waiver_reason: params.waiverReason || 'Payment waiver adjustment',
-          waived_interest: 0,
-          waived_penalty: params.waivedPenalty || 0,
-          waived_commission: params.discount,
-          receipt_no: params.receiptNo
-        });
-      }
-
-      return { success: true };
+      return { success: true, split, closed };
     } catch (e: any) {
-      console.error('Error posting HP payment:', e);
+      console.error('Error posting HP receipt:', e);
       return { success: false, error: e?.message || String(e) };
     }
   }
@@ -2213,6 +2155,38 @@ class SupabaseFinance {
     }
   }
 
+  /**
+   * HP loan-date row in finance_transactions: installment 1 principal + document charges kept back.
+   * The Day Book reads the split from its remarks (HP principal and HP DOCUMENT CHARGES credits).
+   * Rewrites the row if one exists (used when an unpaid HP loan is edited).
+   */
+  async writeHPOpeningRow(loan: any, staffName: string): Promise<void> {
+    const contract = buildHPContract(loan);
+    const opening = hpOpening(contract);
+    const amount = hpRound(opening.installment1Principal + opening.docCharges);
+    const { data: rows } = await supabase
+      .from('finance_transactions')
+      .select('id, remarks')
+      .eq('loan_id', loan.id)
+      .eq('type', 'Collection');
+    const existing = (rows || []).filter((r: any) => isHPOpeningRow(r));
+    for (const r of existing) {
+      const { error } = await supabase.from('finance_transactions').delete().eq('id', r.id);
+      if (error) throw error;
+    }
+    if (amount > 0) {
+      const { error } = await supabase.from('finance_transactions').insert([{
+        loan_id: loan.id,
+        date: loan.date,
+        amount,
+        type: 'Collection',
+        collected_by: staffName,
+        remarks: hpOpeningRemarks(contract)
+      }]);
+      if (error) throw error;
+    }
+  }
+
   async createLoan(
     loanData: Omit<FinanceLoan, 'id' | 'created_at' | 'updated_at' | 'status'>,
     customerData: { 
@@ -2326,6 +2300,7 @@ class SupabaseFinance {
 
       if (loanError) throw loanError;
       if (!loan) throw new Error('Loan was not saved');
+      const savedCategory = String(loan.loan_category || loanInsertRow.loan_category || '').trim().toUpperCase();
 
       // Create disbursement transaction
       const { error: txError } = await supabase
@@ -2341,57 +2316,66 @@ class SupabaseFinance {
 
       if (txError) throw txError;
 
-      // --- Write immutable CD ledger opening rows ---
-      // These rows are fixed at disbursement time and must NEVER be updated or recalculated.
-
-      // 1. Original Loan Disbursement (debit row)
-      await supabase.from('finance_cd_ledger_entries').insert([{
-        loan_id: loan.id,
-        customer_id: customerId,
-        account_name: 'CD A/C',
-        entry_date: loan.date,
-        credit: 0,
-        debit: Number(loan.amount),
-        receipt_no: '-',
-        particulars: 'Original Loan Disbursement',
-        user_name: staffName,
-        entry_type: 'original_loan'
-      }]);
-
-      // 2. Opening CD Commission (fixed at disbursement; never recalculated)
-      const _commRate = Number(loan.interest_rate) || 3;
-      const pDays = (loan.period_days && Number(loan.period_days) > 0) ? Number(loan.period_days) : 30;
-      const _commAmount = Number(((Number(loan.amount) * (_commRate / 100) * pDays) / 30).toFixed(2));
-      if (_commAmount > 0) {
-        await supabase.from('finance_cd_ledger_entries').insert([{
-          loan_id: loan.id,
-          customer_id: customerId,
-          account_name: 'CD COMMISSION A/C',
-          entry_date: loan.date,
-          credit: _commAmount,
-          debit: 0,
-          receipt_no: '-',
-          particulars: 'Opening CD Commission Charged',
-          user_name: staffName,
-          entry_type: 'opening_commission'
-        }]);
+      // HP: installment 1 principal and the document charges are kept back on the loan date
+      if (savedCategory === 'HP') {
+        await this.writeHPOpeningRow(loan, staffName);
       }
 
-      // 3. Document Charges (fixed at disbursement; never recalculated)
-      const _docCharges = Number(loan.document_charges) || 0;
-      if (_docCharges > 0) {
+      // --- Write immutable CD ledger opening rows ---
+      // These rows are fixed at disbursement time and must NEVER be updated or recalculated.
+      // Never for an HP loan: these rows would show it in the Day Book as a CD loan, take one
+      // month of CD interest at disbursement and count the disbursement twice (here and in
+      // finance_transactions above). HP keeps its own records in finance_transactions.
+      if (savedCategory !== 'HP') {
+        // 1. Original Loan Disbursement (debit row)
         await supabase.from('finance_cd_ledger_entries').insert([{
           loan_id: loan.id,
           customer_id: customerId,
-          account_name: 'CD DOCUMENT CHARGES A/C',
+          account_name: 'CD A/C',
           entry_date: loan.date,
-          credit: _docCharges,
-          debit: 0,
+          credit: 0,
+          debit: Number(loan.amount),
           receipt_no: '-',
-          particulars: 'Document Charges Collected',
+          particulars: 'Original Loan Disbursement',
           user_name: staffName,
-          entry_type: 'document_charge'
+          entry_type: 'original_loan'
         }]);
+
+        // 2. Opening CD Commission (fixed at disbursement; never recalculated)
+        const _commRate = Number(loan.interest_rate) || 3;
+        const pDays = (loan.period_days && Number(loan.period_days) > 0) ? Number(loan.period_days) : 30;
+        const _commAmount = Number(((Number(loan.amount) * (_commRate / 100) * pDays) / 30).toFixed(2));
+        if (_commAmount > 0) {
+          await supabase.from('finance_cd_ledger_entries').insert([{
+            loan_id: loan.id,
+            customer_id: customerId,
+            account_name: 'CD COMMISSION A/C',
+            entry_date: loan.date,
+            credit: _commAmount,
+            debit: 0,
+            receipt_no: '-',
+            particulars: 'Opening CD Commission Charged',
+            user_name: staffName,
+            entry_type: 'opening_commission'
+          }]);
+        }
+
+        // 3. Document Charges (fixed at disbursement; never recalculated)
+        const _docCharges = Number(loan.document_charges) || 0;
+        if (_docCharges > 0) {
+          await supabase.from('finance_cd_ledger_entries').insert([{
+            loan_id: loan.id,
+            customer_id: customerId,
+            account_name: 'CD DOCUMENT CHARGES A/C',
+            entry_date: loan.date,
+            credit: _docCharges,
+            debit: 0,
+            receipt_no: '-',
+            particulars: 'Document Charges Collected',
+            user_name: staffName,
+            entry_type: 'document_charge'
+          }]);
+        }
       }
       // --- End of opening rows ---
 
@@ -2510,9 +2494,20 @@ class SupabaseFinance {
           .gt('paid_amount', 0)
       ]);
 
+      // An HP loan's opening row (installment 1 kept at disbursement) is not a repayment
+      let txRepaymentCount = txNonDisbCount || 0;
+      if (txRepaymentCount > 0 && String(oldData.loan_category || '').trim().toUpperCase() === 'HP') {
+        const { count: hpOpeningCount } = await supabase
+          .from('finance_transactions')
+          .select('*', { count: 'exact', head: true })
+          .eq('loan_id', id)
+          .like('remarks', `${HP_OPENING_PREFIX}%`);
+        txRepaymentCount = Math.max(0, txRepaymentCount - (hpOpeningCount || 0));
+      }
+
       const hasCustomerRepaymentActivity =
         (cdNonOpeningCount || 0) > 0 ||
-        (txNonDisbCount || 0) > 0 ||
+        txRepaymentCount > 0 ||
         (cdInterestCount || 0) > 0 ||
         (duesPaidCount || 0) > 0;
 
@@ -2639,6 +2634,11 @@ class SupabaseFinance {
         .eq('loan_id', id)
         .eq('type', 'Disbursement');
 
+      // 1b. HP: rewrite the loan-date row (installment 1 + document charges) while nothing is paid yet
+      if (String(data.loan_category || '').trim().toUpperCase() === 'HP' && !hasCustomerRepaymentActivity) {
+        await this.writeHPOpeningRow(data, editedBy);
+      }
+
       // 2. Sync native finance_cd_ledger_entries (for CD loans)
       if (data.loan_category === 'CD') {
         const commRate = Number(data.interest_rate) || 3;
@@ -2764,8 +2764,12 @@ class SupabaseFinance {
 
       let duesCount = 0;
       let dueAmount = 0;
+      const isHPLoan = String(data.loan_category || '').trim().toUpperCase() === 'HP';
 
-      if (data.loan_category === 'CD') {
+      if (isHPLoan) {
+        // HP has no dues rows: its installments are worked out from the loan terms (hpLedgerEngine)
+        duesCount = 0;
+      } else if (data.loan_category === 'CD') {
         duesCount = data.period_days || data.duration_months || 30;
         dueAmount = 0;
       } else {
@@ -2813,8 +2817,8 @@ class SupabaseFinance {
         if (insertDuesError) throw insertDuesError;
       }
 
-      // Reallocate dues sequentially for non-CD loans
-      if (data.loan_category !== 'CD') {
+      // Reallocate dues sequentially for non-CD loans (HP has none)
+      if (data.loan_category !== 'CD' && !isHPLoan) {
         await this.recalculateDuesForLoan(id);
       }
 
@@ -4972,14 +4976,35 @@ class SupabaseFinance {
           console.warn('Could not fetch ledger settings:', err);
         }
 
+        // HP loans are worked out from their receipts by the HP engine (they have no dues rows)
+        const isHPRow = (l: any) => String(l.loan_category || '').trim().toUpperCase() === 'HP'
+          || (!l.loan_category && String(l.loan_id || '').toUpperCase().startsWith('HP'));
+        const hpIds = nonCdLoans.filter(isHPRow).map((l: any) => l.id);
+        const hpTxByLoan = new Map<string, any[]>();
+        for (let i = 0; i < hpIds.length; i += 200) {
+          const chunk = hpIds.slice(i, i + 200);
+          const { data: hpTxs, error: hpTxErr } = await supabase
+            .from('finance_transactions')
+            .select('*')
+            .in('loan_id', chunk);
+          if (hpTxErr) throw hpTxErr;
+          (hpTxs || []).forEach((t: any) => {
+            const list = hpTxByLoan.get(t.loan_id) || [];
+            list.push(t);
+            hpTxByLoan.set(t.loan_id, list);
+          });
+        }
+
         nonCdResults = nonCdLoans.map(loan => {
-          const dueItem = FinanceCalculationEngine.buildNonCdDueItem(
-            loan,
-            borrowerMap,
-            dueEntries,
-            ledgerSettings,
-            targetDate
-          );
+          const dueItem: any = isHPRow(loan)
+            ? FinanceCalculationEngine.buildHPDueItem(loan, borrowerMap, hpTxByLoan.get(loan.id) || [], targetDate)
+            : FinanceCalculationEngine.buildNonCdDueItem(
+              loan,
+              borrowerMap,
+              dueEntries,
+              ledgerSettings,
+              targetDate
+            );
 
           return {
             id: dueItem.id,
@@ -5010,7 +5035,8 @@ class SupabaseFinance {
             guarantor_2_id: dueItem.guarantor_2_id,
             closing_amount: dueItem.closingAmount ?? (dueItem.currentPrincipal + dueItem.pendingInterest + dueItem.penalty),
             total_paid: dueItem.totalPaid ?? (dueItem.interestPaid + dueItem.penaltyPaid),
-            pending_penalty: dueItem.pendingPenalty ?? dueItem.penalty
+            pending_penalty: dueItem.pendingPenalty ?? dueItem.penalty,
+            ...(dueItem.principalPaid !== undefined ? { principal_paid: dueItem.principalPaid } : {})
           };
         });
       }

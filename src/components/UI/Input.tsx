@@ -18,6 +18,8 @@ interface InputProps {
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   size?: 'sm' | 'md' | 'lg';
   uppercase?: boolean;
+  /** Password box: never forced to capitals, even while shown as text (eye toggle) */
+  password?: boolean;
   style?: React.CSSProperties;
   error?: boolean;
   inputMode?: 'none' | 'text' | 'decimal' | 'numeric' | 'tel' | 'search' | 'email' | 'url';
@@ -47,6 +49,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
       onKeyDown,
       size = 'md',
       uppercase = false,
+      password = false,
       style,
       error = false,
       inputMode,
@@ -102,7 +105,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
 
       // Apply uppercase transformation for text inputs when uppercase prop is true or we are in finance flow
       const forceUpper = uppercase || isFinance;
-      if (forceUpper && type !== 'number' && type !== 'date' && type !== 'password') {
+      if (forceUpper && !password && type !== 'number' && type !== 'date' && type !== 'password') {
         val = val.toUpperCase();
       }
 
@@ -154,10 +157,11 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
                   ? ''
                   : value === null || value === undefined
                     ? ''
-                    : (uppercase || isFinance) && type !== 'number' && type !== 'date' && type !== 'password'
+                    : (uppercase || isFinance) && !password && type !== 'number' && type !== 'date' && type !== 'password'
                       ? String(value).toUpperCase()
                       : value
             }
+            data-password={password ? 'true' : undefined}
             onChange={handleInputChange}
             onKeyDown={onKeyDown}
             placeholder={type === 'date' ? (placeholder || 'dd/MM/yyyy') : placeholder}

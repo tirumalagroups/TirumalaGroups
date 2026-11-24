@@ -112,7 +112,7 @@ const FinanceSidebar: React.FC = () => {
     {
       title: 'Admin',
       items: [
-        { icon: History, label: 'Edited / Deleted Logs', path: '/finance/logs', key: 'logs' },
+        { icon: History, label: 'Edited / Deleted Entry', path: '/finance/logs', key: 'logs' },
         {
           icon: Shield,
           label: 'User Management',

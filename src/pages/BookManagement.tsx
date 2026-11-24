@@ -18,6 +18,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
+// The app looks up these system books by their code, so their codes never change
+const isSystemBookCode = (code?: string | null) => /-LEGACY$/i.test(String(code || '').trim());
+
 interface BookMetrics {
   companies: number;
   accounts: number;
@@ -34,6 +37,7 @@ const BookManagement: React.FC = () => {
 
   // Edit Modal State
   const [editingBook, setEditingBook] = useState<Book | null>(null);
+  const [editCode, setEditCode] = useState('');
   const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editColor, setEditColor] = useState('#3b82f6');
@@ -66,6 +70,7 @@ const BookManagement: React.FC = () => {
 
   const handleEditClick = (book: Book) => {
     setEditingBook(book);
+    setEditCode(book.book_code || '');
     setEditName(book.name);
     setEditDesc(book.description || '');
     setEditColor(book.color || '#3b82f6');
@@ -79,6 +84,17 @@ const BookManagement: React.FC = () => {
       toast.error('Book Name is required.');
       return;
     }
+    const codeLocked = isSystemBookCode(editingBook.book_code);
+    const newCode = codeLocked ? editingBook.book_code : editCode.trim().toUpperCase();
+    if (!newCode) {
+      toast.error('Book Code is required.');
+      return;
+    }
+    if (newCode !== editingBook.book_code &&
+        books.some(b => b.id !== editingBook.id && String(b.book_code || '').toUpperCase() === newCode)) {
+      toast.error(`Book code "${newCode}" is already used by another book. Please choose a different code.`);
+      return;
+    }
 
     setUpdating(true);
     try {
@@ -88,6 +104,7 @@ const BookManagement: React.FC = () => {
         return await supabase
           .from('books')
           .update({
+            book_code: newCode,
             name: editName.trim(),
             description: editDesc.trim(),
             // Start date stays the day the book was created; books have no end date.
@@ -98,6 +115,10 @@ const BookManagement: React.FC = () => {
       });
 
       if (error) {
+        // The database keeps book codes unique (another user may have just used this code)
+        if ((error as any).code === '23505' || /duplicate|unique/i.test(error.message || '')) {
+          throw new Error(`Book code "${newCode}" is already used by another book. Please choose a different code.`);
+        }
         throw new Error(error.message);
       }
 
@@ -372,16 +393,32 @@ const BookManagement: React.FC = () => {
             {/* Modal Form */}
             <form onSubmit={handleUpdateBook} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                  Book Code
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Book Code *
                 </label>
-                <input
-                  type="text"
-                  disabled
-                  value={editingBook.book_code}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed font-mono uppercase"
-                />
-                <p className="text-[11px] text-gray-400 mt-0.5">Book codes cannot be changed after creation.</p>
+                {isSystemBookCode(editingBook.book_code) ? (
+                  <>
+                    <input
+                      type="text"
+                      disabled
+                      value={editingBook.book_code}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed font-mono uppercase"
+                    />
+                    <p className="text-[11px] text-gray-400 mt-0.5">This is a system book: the app finds it by this code, so it cannot be changed.</p>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      required
+                      maxLength={50}
+                      value={editCode}
+                      onChange={(e) => setEditCode(e.target.value.toUpperCase())}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono uppercase"
+                    />
+                    <p className="text-[11px] text-gray-400 mt-0.5">Each book needs its own code. Entries stay with the book when the code changes.</p>
+                  </>
+                )}
               </div>
 
               <div>
